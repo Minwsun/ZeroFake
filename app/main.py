@@ -6,13 +6,22 @@ from pydantic import BaseModel
 import asyncio
 import traceback
 import logging
+import signal
+import sys
 from dotenv import load_dotenv
 import datetime
 import json
 
-# Setup logging
-logging.basicConfig(level=logging.INFO)
+# Setup logging - suppress CancelledError và KeyboardInterrupt trong shutdown
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
+
+# Suppress CancelledError và KeyboardInterrupt trong asyncio
+import warnings
+warnings.filterwarnings('ignore', category=RuntimeWarning, message='.*CancelledError.*')
 
 # Import các module cơ sở
 from app.kb import init_kb, search_knowledge_base, add_to_knowledge_base
@@ -87,6 +96,48 @@ async def startup_event():
         SITE_QUERY_STRING = ""  # Fallback
     
     print(f"ZeroFake V2.0 (Agent, DDG Search-Only) đã sẵn sàng! Site Query: '[{SITE_QUERY_STRING}]'")
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Xử lý graceful shutdown"""
+    try:
+        logger.info("Server đang shutdown gracefully...")
+        # Có thể thêm cleanup code ở đây nếu cần
+    except (asyncio.CancelledError, KeyboardInterrupt):
+        # Bỏ qua CancelledError và KeyboardInterrupt khi shutdown - đây là hành vi bình thường
+        pass
+    except Exception as e:
+        logger.warning(f"Lỗi trong shutdown event: {e}")
+
+
+def setup_signal_handlers():
+    """Thiết lập signal handlers để xử lý graceful shutdown"""
+    def signal_handler(signum, frame):
+        logger.info(f"Received signal {signum}, shutting down gracefully...")
+        sys.exit(0)
+    
+    # Chỉ setup trên Unix-like systems (Windows không hỗ trợ signal.SIGTERM)
+    if hasattr(signal, 'SIGTERM'):
+        try:
+            signal.signal(signal.SIGTERM, signal_handler)
+        except (ValueError, OSError):
+            # Signal handler có thể không hoạt động trong một số môi trường
+            pass
+    if hasattr(signal, 'SIGINT'):
+        try:
+            signal.signal(signal.SIGINT, signal_handler)
+        except (ValueError, OSError):
+            # Signal handler có thể không hoạt động trong một số môi trường
+            pass
+
+
+# Setup signal handlers khi module được import
+try:
+    setup_signal_handlers()
+except Exception:
+    # Bỏ qua nếu không thể setup signal handlers
+    pass
 
 
 # Pydantic Models (Giữ nguyên)

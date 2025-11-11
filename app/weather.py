@@ -5,7 +5,7 @@ import re
 import os
 import requests
 from typing import Optional, Dict, List
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
 
 
@@ -93,16 +93,16 @@ def extract_weather_info(text: str) -> Optional[Dict]:
         patterns = [
             r"(?:tại|ở|in|at|thành phố|city of|ville de|ciudad de|stadt)\s+([A-ZÀ-ÝÁÉÍÓÚÝĂÂÊÔƠƯĐ][A-Za-zÀ-ỹáéíóúýăâêôơưđ\-'\.\s]+?)(?:[,\.;:!\?\)\]\}]|\s|$)",
             r"([A-ZÀ-ÝÁÉÍÓÚÝĂÂÊÔƠƯĐ][A-Za-zÀ-ỹáéíóúýăâêôơưđ\-'\.\s]+?)\s+(?:city|province|state|county|prefecture|shi|ken|市|省)",
-    ]
-    for p in patterns:
-        m = re.search(p, text, flags=re.IGNORECASE)
-        if m:
-            candidate = m.group(1).strip().strip('"\'')
+        ]
+        for p in patterns:
+            m = re.search(p, text, flags=re.IGNORECASE)
+            if m:
+                candidate = m.group(1).strip().strip('"\'')
                 candidate_clean = re.sub(r"\b(trong|vào|lúc|ngày|tháng|năm|buổi|sáng|chiều|tối)\b", "", candidate, flags=re.IGNORECASE).strip()
                 if valid_candidate(candidate_clean) and len(candidate_clean.split()) >= 2:
                     location_name = candidate_clean
                     break
-
+    
     # Pattern 2: Tìm các cụm từ viết hoa đa từ (ưu tiên cụm dài, hỗ trợ Unicode)
     if not location_name:
         # Pattern mở rộng hỗ trợ nhiều ký tự Unicode
@@ -142,9 +142,9 @@ def classify_claim(text: str) -> Dict:
     days_ahead: Optional[int] = None
     relative_time_str: Optional[str] = None
 
-    # Kiểm tra pattern "X ngày nữa/tới/sau" hoặc "X days" trước
+    # Kiểm tra pattern "X ngày nữa/tới/sau" hoặc "X days" trước (QUAN TRỌNG: Phải check TRƯỚC các keyword khác)
     import re
-    # Pattern 1: "X ngày nữa/tới/sau" hoặc "X days ahead/later"
+    # Pattern 1: "X ngày nữa/tới/sau" hoặc "X days ahead/later" (ưu tiên cao nhất)
     days_pattern = re.search(r'(\d+)\s*(?:ngày|day|days)\s*(?:nữa|sau|tới|toi|ahead|later)', text_lower)
     # Pattern 2: "trong X ngày tới" hoặc "in X days"
     days_pattern2 = re.search(r'(?:trong|in)\s+(\d+)\s*(?:ngày|day|days)\s*(?:tới|toi|ahead)', text_lower)
@@ -154,7 +154,7 @@ def classify_claim(text: str) -> Dict:
             days_ahead = int(days_pattern.group(1))
             time_scope = 'present_future'
             relative_time_str = f"{days_ahead} ngày nữa"
-            print(f"Classify: Phát hiện '{days_ahead} ngày nữa/tới/sau' từ input")
+            print(f"Classify: Phát hiện '{days_ahead} ngày nữa/tới/sau' từ input -> days_ahead={days_ahead}")
         except ValueError:
             pass
     elif days_pattern2:
@@ -162,30 +162,31 @@ def classify_claim(text: str) -> Dict:
             days_ahead = int(days_pattern2.group(1))
             time_scope = 'present_future'
             relative_time_str = f"trong {days_ahead} ngày tới"
-            print(f"Classify: Phát hiện 'trong {days_ahead} ngày tới' từ input")
+            print(f"Classify: Phát hiện 'trong {days_ahead} ngày tới' từ input -> days_ahead={days_ahead}")
         except ValueError:
             pass
     
+    # CHỈ set days_ahead = 0 nếu CHƯA được set bởi pattern ở trên
     if days_ahead is None:
-    if any(k in text_lower for k in historical_keywords):
-        time_scope = 'historical'
+        if any(k in text_lower for k in historical_keywords):
+            time_scope = 'historical'
             if "hom qua" in text_lower or "yesterday" in text_lower:
                 relative_time_str = "hôm qua"
-    elif any(k in text_lower for k in present_keywords):
-        time_scope = 'present_future'
-        days_ahead = 0
+        elif any(k in text_lower for k in present_keywords):
+            time_scope = 'present_future'
+            days_ahead = 0
             relative_time_str = "hôm nay"
-    elif any(k in text_lower for k in future_keywords):
-        time_scope = 'present_future'
+        elif any(k in text_lower for k in future_keywords):
+            time_scope = 'present_future'
             relative_time_str = "ngày mai"
             if "week" in text_lower or "tuan" in text_lower:
-            days_ahead = 7
+                days_ahead = 7
                 relative_time_str = "tuần tới"
-        elif "mai" in text_lower or "tomorrow" in text_lower:
-            days_ahead = 1
+            elif "mai" in text_lower or "tomorrow" in text_lower:
+                days_ahead = 1
                 relative_time_str = "ngày mai"
-        else:
-            days_ahead = 3
+            else:
+                days_ahead = 3
 
     part_of_day = None
     if any(k in text_lower for k in ["sáng", "morning"]):
@@ -322,7 +323,7 @@ def get_openweather_data(city_name: str, days_ahead: int = 0, part_of_day: Optio
             geocode_url = "http://api.openweathermap.org/geo/1.0/direct"
             geocode_params = {
                 "q": query_city,
-                "limit": 1,  # Chỉ lấy 1 kết quả chính xác nhất
+                "limit": 1,  # Chỉ lấy 1 kết quả tốt nhất (theo yêu cầu)
                 "appid": OPENWEATHER_API_KEY
             }
             
@@ -339,8 +340,8 @@ def get_openweather_data(city_name: str, days_ahead: int = 0, part_of_day: Optio
             elif geocode_response.status_code != 200:
                 print(f"ERROR: OpenWeather geocoding API trả về status code {geocode_response.status_code}")
                 print(f"Response: {geocode_response.text[:200]}")
-        return None
-
+                return None
+            
             geocode_response.raise_for_status()
             geocode_data = geocode_response.json()
             
@@ -369,7 +370,7 @@ def get_openweather_data(city_name: str, days_ahead: int = 0, part_of_day: Optio
                         return None
                 else:
                     print(f"Gợi ý: Thử dùng tên tiếng Anh (ví dụ: 'Ho Chi Minh City' thay vì 'Thành phố Hồ Chí Minh')")
-        return None
+                    return None
             
             # Chọn kết quả đầu tiên (có thể cải thiện logic chọn sau)
             selected = geocode_data[0]
@@ -447,125 +448,64 @@ def get_openweather_data(city_name: str, days_ahead: int = 0, part_of_day: Optio
                 return result
             elif days_ahead > 0:
                 # Forecast - Thử One Call API 3.0 trước, fallback về 2.5 nếu không có
-                # One Call API 3.0 cung cấp hourly forecast chính xác hơn
-                onecall_url = f"https://api.openweathermap.org/data/3.0/onecall"
+                # One Call API 3.0: hourly forecast trong 48h, daily trong 7 ngày
+                onecall_url = "https://api.openweathermap.org/data/3.0/onecall"
                 onecall_params = {
                     "lat": lat,
                     "lon": lon,
-                    "exclude": "current,minutely,daily,alerts",
+                    "exclude": "current,minutely,daily,alerts",  # Chỉ lấy hourly
                     "units": "metric",
+                    "lang": "vi",
                     "appid": OPENWEATHER_API_KEY
                 }
                 
                 print(f"OpenWeather: Thử One Call API 3.0 cho dự báo {days_ahead} ngày tới tại [{lat}, {lon}]...")
                 onecall_response = requests.get(onecall_url, params=onecall_params, timeout=10)
                 
-                # Nếu One Call API 3.0 thành công, dùng nó
+                # Nếu One Call API 3.0 không có (401, 403, hoặc không có subscription), fallback về 2.5
+                use_onecall = False
                 if onecall_response.status_code == 200:
-                    forecast_data = onecall_response.json()
-                    if "hourly" in forecast_data:
-                        print(f"OpenWeather: Sử dụng One Call API 3.0 (hourly forecast)")
-                        # Xử lý hourly data từ One Call API 3.0
-                        hourly_data = forecast_data.get("hourly", [])
-                        timezone_offset = forecast_data.get("timezone_offset", 0)  # Offset từ UTC (giây)
-                        
-                        # Tính target datetime (ngày + part_of_day)
-                        target_date = (datetime.now() + timedelta(days=days_ahead)).date()
-                        
-                        # Xác định khung giờ cho part_of_day
-                        if part_of_day:
-                            time_ranges = {
-                                "sáng": (6, 12),   # 6h-12h
-                                "chiều": (12, 18),  # 12h-18h
-                                "tối": (18, 24),    # 18h-24h
-                                "đêm": (20, 24)     # 20h-24h
-                            }
-                            target_range = time_ranges.get(part_of_day.lower())
-                            if target_range:
-                                start_hour, end_hour = target_range
-                                # Lấy giờ giữa khoảng (ví dụ: sáng = 9h, chiều = 15h, tối = 21h)
-                                target_hour = (start_hour + end_hour) // 2
-                            else:
-                                target_hour = 12  # Mặc định giữa trưa
-                        else:
-                            target_hour = 12  # Mặc định giữa trưa
-                        
-                        # Tạo target datetime với giờ cụ thể
-                        target_datetime = datetime.combine(target_date, datetime.min.time().replace(hour=target_hour))
-                        target_timestamp = int(target_datetime.timestamp())
-                        
-                        print(f"OpenWeather: Tìm forecast cho {target_date} lúc {target_hour}h (timestamp: {target_timestamp})...")
-                        
-                        # Tìm forecast gần nhất với target timestamp
-                        closest_forecast = None
-                        min_diff = float('inf')
-                        
-                        for item in hourly_data:
-                            item_timestamp = item.get("dt", 0)
-                            diff = abs(item_timestamp - target_timestamp)
-                            if diff < min_diff:
-                                min_diff = diff
-                                closest_forecast = item
-                        
-                        if closest_forecast:
-                            # Chuyển đổi timestamp sang datetime (có timezone offset)
-                            forecast_timestamp = closest_forecast.get("dt", 0)
-                            forecast_datetime = datetime.fromtimestamp(forecast_timestamp + timezone_offset)
-                            time_str = forecast_datetime.strftime('%H:%M')
-                            
-                            result = {
-                                "location": normalized_city_name,
-                                "date": target_date.strftime('%Y-%m-%d'),
-                                "time": time_str,
-                                "temperature": closest_forecast.get("temp", 0),
-                                "feels_like": closest_forecast.get("feels_like", 0),
-                                "description": closest_forecast.get("weather", [{}])[0].get("description", "N/A"),
-                                "main": closest_forecast.get("weather", [{}])[0].get("main", "N/A"),
-                                "humidity": closest_forecast.get("humidity", 0),
-                                "wind_speed": closest_forecast.get("wind_speed", 0),
-                                "source": "openweathermap.org"
-                            }
-                            print(f"OpenWeather: Thành công (One Call 3.0) - {result['location']} ngày {target_date} {time_str}: {result['description']} ({result['temperature']}°C)")
-                            return result
-                        else:
-                            print(f"WARNING: One Call API 3.0 không có hourly data, fallback về forecast API 2.5")
-                    else:
-                        print(f"WARNING: One Call API 3.0 không có 'hourly' field, fallback về forecast API 2.5")
-                elif onecall_response.status_code == 401:
-                    print(f"WARNING: One Call API 3.0 yêu cầu subscription, fallback về forecast API 2.5")
-                else:
-                    print(f"WARNING: One Call API 3.0 trả về status {onecall_response.status_code}, fallback về forecast API 2.5")
+                    try:
+                        onecall_data = onecall_response.json()
+                        if "hourly" in onecall_data:
+                            use_onecall = True
+                            forecast_data = {"list": onecall_data["hourly"], "source": "onecall3"}
+                            print(f"OpenWeather: Sử dụng One Call API 3.0 (hourly forecast)")
+                    except Exception as e:
+                        print(f"OpenWeather: Lỗi khi parse One Call API 3.0: {e}, fallback về 2.5")
                 
-                # Fallback: Forecast API 2.5 (5 days, 3-hour intervals)
-                forecast_url = "https://api.openweathermap.org/data/2.5/forecast"
-                forecast_params = {
-                    "lat": lat,
-                    "lon": lon,
-                    "appid": OPENWEATHER_API_KEY,
-                    "units": "metric",
-                    "lang": "vi"
-                }
-                print(f"OpenWeather: Lấy dự báo {days_ahead} ngày tới bằng Forecast API 2.5 cho [{lat}, {lon}]...")
-                forecast_response = requests.get(forecast_url, params=forecast_params, timeout=10)
+                if not use_onecall:
+                    # Fallback về Forecast API 2.5
+                    forecast_url = "https://api.openweathermap.org/data/2.5/forecast"
+                    forecast_params = {
+                        "lat": lat,
+                        "lon": lon,
+                        "appid": OPENWEATHER_API_KEY,
+                        "units": "metric",
+                        "lang": "vi"
+                    }
+                    print(f"OpenWeather: Fallback về Forecast API 2.5 cho dự báo {days_ahead} ngày tới...")
+                    forecast_response = requests.get(forecast_url, params=forecast_params, timeout=10)
+                    
+                    if forecast_response.status_code == 401:
+                        print("ERROR: OpenWeather API key không hợp lệ khi gọi forecast API.")
+                        return None
+                    elif forecast_response.status_code == 429:
+                        print("ERROR: OpenWeather API rate limit đã vượt quá khi gọi forecast API.")
+                        return None
+                    elif forecast_response.status_code != 200:
+                        print(f"ERROR: OpenWeather forecast API trả về status code {forecast_response.status_code}")
+                        print(f"Response: {forecast_response.text[:200]}")
+                        return None
+                    
+                    forecast_response.raise_for_status()
+                    forecast_data_raw = forecast_response.json()
+                    forecast_data = {"list": forecast_data_raw.get("list", []), "source": "forecast25"}
+                    
+                    if not forecast_data["list"]:
+                        print("ERROR: OpenWeather forecast API trả về dữ liệu không hợp lệ (thiếu 'list' field)")
+                        return None
                 
-                if forecast_response.status_code == 401:
-                    print("ERROR: OpenWeather API key không hợp lệ khi gọi forecast API.")
-                    return None
-                elif forecast_response.status_code == 429:
-                    print("ERROR: OpenWeather API rate limit đã vượt quá khi gọi forecast API.")
-                    return None
-                elif forecast_response.status_code != 200:
-                    print(f"ERROR: OpenWeather forecast API trả về status code {forecast_response.status_code}")
-                    print(f"Response: {forecast_response.text[:200]}")
-                    return None
-                
-                forecast_response.raise_for_status()
-                forecast_data = forecast_response.json()
-                
-                if not forecast_data or "list" not in forecast_data:
-                    print("ERROR: OpenWeather forecast API trả về dữ liệu không hợp lệ (thiếu 'list' field)")
-        return None
-
                 # Tìm forecast cho ngày cụ thể
                 # Đảm bảo days_ahead không None
                 if days_ahead is None:
@@ -578,109 +518,106 @@ def get_openweather_data(city_name: str, days_ahead: int = 0, part_of_day: Optio
                 print(f"OpenWeather: Tìm forecast cho ngày {target_date} (days_ahead={days_ahead})...")
                 
                 # Lấy tất cả forecast cho ngày target
-                for item in forecast_data.get("list", []):
-                    item_date = datetime.fromtimestamp(item["dt"]).date()
+                # Chuyển đổi timestamp sang timezone địa phương (UTC+7 cho Việt Nam)
+                vietnam_tz = timezone(timedelta(hours=7))  # UTC+7
+                
+                forecast_list = forecast_data.get("list", [])
+                print(f"OpenWeather: Có {len(forecast_list)} forecast items để tìm kiếm...")
+                
+                for item in forecast_list:
+                    # Chuyển đổi timestamp sang datetime với timezone
+                    item_dt_utc = datetime.fromtimestamp(item["dt"], tz=timezone.utc)
+                    item_dt_local = item_dt_utc.astimezone(vietnam_tz)
+                    item_date = item_dt_local.date()
+                    
                     if item_date == target_date:
                         target_forecasts.append(item)
-                        item_time = datetime.fromtimestamp(item["dt"])
-                        print(f"OpenWeather: Tìm thấy forecast cho {target_date} lúc {item_time.strftime('%H:%M')}")
+                        print(f"OpenWeather: Tìm thấy forecast cho {target_date} lúc {item_dt_local.strftime('%H:%M')} (local time)")
                 
                 # Nếu không tìm thấy forecast cho ngày chính xác, tìm forecast gần nhất trong tương lai
                 if not target_forecasts:
                     print(f"WARNING: Không tìm thấy forecast cho ngày {target_date}, tìm forecast gần nhất trong tương lai...")
-                    # Sắp xếp tất cả forecast theo thời gian
+                    # Sắp xếp tất cả forecast theo thời gian (với timezone địa phương)
                     all_forecasts = []
-                    for item in forecast_data.get("list", []):
-                        item_date = datetime.fromtimestamp(item["dt"]).date()
+                    for item in forecast_list:
+                        item_dt_utc = datetime.fromtimestamp(item["dt"], tz=timezone.utc)
+                        item_dt_local = item_dt_utc.astimezone(vietnam_tz)
+                        item_date = item_dt_local.date()
                         if item_date >= target_date:  # Chỉ lấy forecast từ target_date trở đi
-                            all_forecasts.append((item_date, item))
+                            all_forecasts.append((item_date, item_dt_local, item))
                     
                     if all_forecasts:
-                        # Sắp xếp theo ngày (gần nhất trước)
-                        all_forecasts.sort(key=lambda x: (x[0], datetime.fromtimestamp(x[1]["dt"])))
+                        # Sắp xếp theo ngày và giờ (gần nhất trước)
+                        all_forecasts.sort(key=lambda x: (x[0], x[1]))
                         # Lấy forecast đầu tiên (gần nhất)
-                        closest_date, closest_item = all_forecasts[0]
+                        closest_date, closest_time_local, closest_item = all_forecasts[0]
                         target_forecasts = [closest_item]
-                        closest_time = datetime.fromtimestamp(closest_item["dt"])
-                        print(f"OpenWeather: Sử dụng forecast gần nhất cho ngày {closest_date} lúc {closest_time.strftime('%H:%M')} (thay vì {target_date})")
+                        print(f"OpenWeather: Sử dụng forecast gần nhất cho ngày {closest_date} lúc {closest_time_local.strftime('%H:%M')} (local time, thay vì {target_date})")
                     else:
                         # Nếu vẫn không có, lấy forecast cuối cùng (xa nhất trong tương lai)
-                        if forecast_data.get("list"):
-                            last_item = forecast_data["list"][-1]
+                        if forecast_list:
+                            last_item = forecast_list[-1]
                             target_forecasts = [last_item]
-                            last_date = datetime.fromtimestamp(last_item["dt"]).date()
-                            last_time = datetime.fromtimestamp(last_item["dt"])
-                            print(f"OpenWeather: WARNING - Sử dụng forecast cuối cùng cho ngày {last_date} lúc {last_time.strftime('%H:%M')} (thay vì {target_date})")
+                            last_dt_utc = datetime.fromtimestamp(last_item["dt"], tz=timezone.utc)
+                            last_dt_local = last_dt_utc.astimezone(vietnam_tz)
+                            last_date = last_dt_local.date()
+                            print(f"OpenWeather: WARNING - Sử dụng forecast cuối cùng cho ngày {last_date} lúc {last_dt_local.strftime('%H:%M')} (local time, thay vì {target_date})")
                 
                 if target_forecasts:
                     # Chọn forecast đúng thời điểm trong ngày (nếu có yêu cầu)
                     forecast = None
                     if part_of_day:
-                        # Xác định khung giờ cụ thể cho part_of_day
+                        # Xác định khoảng thời gian dựa trên part_of_day (theo giờ địa phương UTC+7)
                         time_ranges = {
-                            "sáng": (6, 12),   # 6h-12h (ưu tiên 9h)
-                            "chiều": (12, 18),  # 12h-18h (ưu tiên 15h)
-                            "tối": (18, 24),    # 18h-24h (ưu tiên 21h)
-                            "đêm": (20, 24)     # 20h-24h (ưu tiên 22h)
+                            "sáng": (3, 10),   # 6h-12h (local time)
+                            "chiều": (10, 17),  # 12h-18h (local time)
+                            "tối": (17, 23),    # 18h-24h (local time)
+                            "đêm": (23, 3)     # 20h-24h (local time)
                         }
                         target_range = time_ranges.get(part_of_day.lower())
                         
                         if target_range:
                             start_hour, end_hour = target_range
-                            # Giờ ưu tiên (giữa khoảng)
-                            preferred_hour = (start_hour + end_hour) // 2
-                            print(f"OpenWeather: Tìm forecast cho {part_of_day} (khung giờ: {start_hour}h-{end_hour}h, ưu tiên: {preferred_hour}h)...")
+                            print(f"OpenWeather: Tìm forecast cho {part_of_day} ({start_hour}h-{end_hour}h local time)...")
                             
-                            # Tìm forecast trong khoảng thời gian yêu cầu
+                            # Tìm forecast trong khoảng thời gian yêu cầu (theo giờ địa phương)
                             for item in target_forecasts:
-                                item_time = datetime.fromtimestamp(item["dt"])
-                                hour = item_time.hour
+                                item_dt_utc = datetime.fromtimestamp(item["dt"], tz=timezone.utc)
+                                item_dt_local = item_dt_utc.astimezone(vietnam_tz)
+                                hour = item_dt_local.hour
                                 if start_hour <= hour < end_hour:
                                     forecast = item
-                                    print(f"OpenWeather: Tìm thấy forecast cho {part_of_day} lúc {item_time.strftime('%H:%M')} (trong khung giờ {start_hour}h-{end_hour}h)")
+                                    print(f"OpenWeather: Tìm thấy forecast cho {part_of_day} lúc {item_dt_local.strftime('%H:%M')} (local time)")
                                     break
                             
-                            # Nếu không tìm thấy trong khoảng, lấy forecast gần nhất với giờ ưu tiên
+                            # Nếu không tìm thấy trong khoảng, lấy forecast gần nhất
                             if not forecast:
                                 best_forecast = None
                                 min_diff = float('inf')
                                 for item in target_forecasts:
-                                    item_time = datetime.fromtimestamp(item["dt"])
-                                    hour = item_time.hour
-                                    # Tính khoảng cách đến giờ ưu tiên
-                                    diff = abs(hour - preferred_hour)
+                                    item_dt_utc = datetime.fromtimestamp(item["dt"], tz=timezone.utc)
+                                    item_dt_local = item_dt_utc.astimezone(vietnam_tz)
+                                    hour = item_dt_local.hour
+                                    # Tính khoảng cách đến giữa khoảng thời gian
+                                    mid_hour = (start_hour + end_hour) / 2
+                                    diff = abs(hour - mid_hour)
                                     if diff < min_diff:
                                         min_diff = diff
                                         best_forecast = item
                                 if best_forecast:
                                     forecast = best_forecast
-                                    forecast_time = datetime.fromtimestamp(forecast["dt"])
-                                    print(f"OpenWeather: Sử dụng forecast gần nhất với {part_of_day} (giờ ưu tiên {preferred_hour}h) lúc {forecast_time.strftime('%H:%M')}")
+                                    forecast_dt_utc = datetime.fromtimestamp(forecast["dt"], tz=timezone.utc)
+                                    forecast_dt_local = forecast_dt_utc.astimezone(vietnam_tz)
+                                    print(f"OpenWeather: Sử dụng forecast gần nhất cho {part_of_day} lúc {forecast_dt_local.strftime('%H:%M')} (local time)")
                     
-                    # Nếu không có part_of_day hoặc không tìm thấy, lấy forecast gần giữa trưa (12h) hoặc đầu tiên
+                    # Nếu không có part_of_day hoặc không tìm thấy, lấy forecast đầu tiên
                     if not forecast:
-                        # Ưu tiên forecast gần 12h (giữa trưa)
-                        best_forecast = None
-                        min_diff = float('inf')
-                        for item in target_forecasts:
-                            item_time = datetime.fromtimestamp(item["dt"])
-                            hour = item_time.hour
-                            diff = abs(hour - 12)  # Ưu tiên 12h
-                            if diff < min_diff:
-                                min_diff = diff
-                                best_forecast = item
-                        if best_forecast:
-                            forecast = best_forecast
-                        else:
-                            forecast = target_forecasts[0]
+                        forecast = target_forecasts[0]
                     
-                    # Lấy thời gian từ forecast (dt là timestamp Unix)
-                    forecast_timestamp = forecast["dt"]
-                    forecast_time = datetime.fromtimestamp(forecast_timestamp)
-                    time_str = forecast_time.strftime('%H:%M')
-                    
-                    # Log timestamp để debug
-                    print(f"OpenWeather: Forecast timestamp: {forecast_timestamp} → {forecast_time.strftime('%Y-%m-%d %H:%M:%S')}")
+                    # Lấy thời gian từ forecast (chuyển đổi sang timezone địa phương)
+                    forecast_dt_utc = datetime.fromtimestamp(forecast["dt"], tz=timezone.utc)
+                    forecast_dt_local = forecast_dt_utc.astimezone(vietnam_tz)
+                    time_str = forecast_dt_local.strftime('%H:%M')
                     
                     # Sử dụng normalized_city_name từ geopy nếu có
                     final_location_name = normalized_city_name

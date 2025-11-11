@@ -455,6 +455,26 @@ def _normalize_plan(plan: dict, text_input: str, flash_mode: bool = False) -> di
         },
         "required_tools": plan.get("required_tools") if isinstance(plan.get("required_tools"), list) else []
     }
+    
+    # QUAN TRỌNG: Hiệu chỉnh volatility cho tin lịch sử
+    time_scope = plan_struct.get("time_references", {}).get("time_scope", "present")
+    claim_type = plan_struct.get("claim_type", "").lower()
+    
+    # Danh sách claim_type liên quan đến lịch sử (không thể thay đổi)
+    historical_claim_types = [
+        "lịch sử", "history", "sự kiện lịch sử", "phân tích lịch sử",
+        "historical event", "historical analysis", "lịch sử & địa lý"
+    ]
+    
+    # Tin lịch sử (historical) → volatility = "low" (không thể thay đổi)
+    is_historical = (
+        time_scope == "historical" or 
+        any(ht in claim_type for ht in historical_claim_types)
+    )
+    
+    if is_historical:
+        plan_struct["volatility"] = "low"
+        print(f"Agent Planner: Hiệu chỉnh volatility = 'low' cho tin lịch sử (time_scope={time_scope}, claim_type={claim_type})")
 
     # Trích data_points (ví dụ 40°C, mm mưa, %)
     data_points = set(plan_struct["entities_and_values"]["data_points"] or [])
@@ -478,6 +498,58 @@ def _normalize_plan(plan: dict, text_input: str, flash_mode: bool = False) -> di
         explicit_date = plan_struct.get("time_references", {}).get("explicit_date")
         days_ahead = claim.get("days_ahead")
         
+        # QUAN TRỌNG: Parse trực tiếp từ input để tính days_ahead/date (fallback nếu Agent 1 không làm đúng)
+        import re
+        from datetime import datetime, timedelta
+        text_lower = text_input.lower()
+        today = datetime.now().date()
+        parsed_date = None
+        parsed_days_ahead = None
+        
+        # Pattern 1: "X ngày nữa", "X ngày tới", "X ngày sau"
+        days_match = re.search(r'(\d+)\s*(?:ngày|day|days)\s*(?:nữa|tới|sau|toi|ahead|later)', text_lower)
+        if days_match:
+            try:
+                num_days = int(days_match.group(1))
+                parsed_days_ahead = num_days
+                parsed_date = (today + timedelta(days=num_days)).strftime('%Y-%m-%d')
+                print(f"Agent Planner: Parse trực tiếp từ input - '{num_days} ngày nữa' → days_ahead={parsed_days_ahead}, date={parsed_date}")
+            except ValueError:
+                pass
+        
+        # Pattern 2: "trong X ngày tới"
+        if not parsed_days_ahead:
+            days_match2 = re.search(r'(?:trong|in)\s+(\d+)\s*(?:ngày|day|days)\s*(?:tới|toi|ahead)', text_lower)
+            if days_match2:
+                try:
+                    num_days = int(days_match2.group(1))
+                    parsed_days_ahead = num_days
+                    parsed_date = (today + timedelta(days=num_days)).strftime('%Y-%m-%d')
+                    print(f"Agent Planner: Parse trực tiếp từ input - 'trong {num_days} ngày tới' → days_ahead={parsed_days_ahead}, date={parsed_date}")
+                except ValueError:
+                    pass
+        
+        # Pattern 3: "ngày mai", "tomorrow"
+        if not parsed_days_ahead:
+            if "ngày mai" in text_lower or "tomorrow" in text_lower:
+                parsed_days_ahead = 1
+                parsed_date = (today + timedelta(days=1)).strftime('%Y-%m-%d')
+                print(f"Agent Planner: Parse trực tiếp từ input - 'ngày mai' → days_ahead={parsed_days_ahead}, date={parsed_date}")
+        
+        # Pattern 4: "hôm nay", "today"
+        if not parsed_days_ahead:
+            if "hôm nay" in text_lower or "today" in text_lower:
+                parsed_days_ahead = 0
+                parsed_date = today.strftime('%Y-%m-%d')
+                print(f"Agent Planner: Parse trực tiếp từ input - 'hôm nay' → days_ahead={parsed_days_ahead}, date={parsed_date}")
+        
+        # Pattern 5: "tuần tới", "next week"
+        if not parsed_days_ahead:
+            if "tuần tới" in text_lower or "next week" in text_lower:
+                parsed_days_ahead = 7
+                parsed_date = (today + timedelta(days=7)).strftime('%Y-%m-%d')
+                print(f"Agent Planner: Parse trực tiếp từ input - 'tuần tới' → days_ahead={parsed_days_ahead}, date={parsed_date}")
+        
         # Lưu city thô vào entities
         if city and city not in (plan_struct["entities_and_values"].get("locations") or []):
             plan_struct["entities_and_values"].setdefault("locations", []).append(city)
@@ -490,19 +562,73 @@ def _normalize_plan(plan: dict, text_input: str, flash_mode: bool = False) -> di
             # Lấy part_of_day từ claim (sáng, chiều, tối)
             part_of_day = claim.get("part_of_day")
             
-            # Đảm bảo days_ahead không None
-            if days_ahead is None:
-                days_ahead = 0
-                print(f"Agent Planner: WARNING - days_ahead là None, sử dụng 0 (hôm nay)")
+            # QUAN TRỌNG: Tính days_ahead với thứ tự ưu tiên (parse trực tiếp > Agent 1 > explicit_date > classify_claim)
+            # Ưu tiên 1: Parse trực tiếp từ input (chính xác nhất)
+            calculated_days_ahead = None
+            final_date = None
             
-            print(f"Agent Planner: Weather tool params - city={city_en}, days_ahead={days_ahead}, part_of_day={part_of_day}")
+            if parsed_days_ahead is not None:
+                calculated_days_ahead = parsed_days_ahead
+                final_date = parsed_date
+                print(f"Agent Planner: ƯU TIÊN - Sử dụng parse trực tiếp: days_ahead={calculated_days_ahead}, date={final_date}")
+            
+            # Ưu tiên 2: Date từ Agent 1
+            if calculated_days_ahead is None:
+                agent1_weather_tool = None
+                agent1_date = None
+                for tool in plan_struct.get("required_tools", []):
+                    if tool.get("tool_name") == "weather":
+                        agent1_weather_tool = tool
+                        agent1_date = tool.get("parameters", {}).get("date")
+                        break
+                
+                if agent1_date:
+                    try:
+                        target_date = datetime.strptime(agent1_date, '%Y-%m-%d').date()
+                        calculated_days_ahead = (target_date - today).days
+                        final_date = agent1_date
+                        print(f"Agent Planner: Sử dụng date từ Agent 1: {agent1_date} → days_ahead={calculated_days_ahead}")
+                    except Exception as e:
+                        print(f"Agent Planner: WARNING - Không thể parse date từ Agent 1: {agent1_date}, lỗi: {e}")
+            
+            # Ưu tiên 3: explicit_date từ plan
+            if calculated_days_ahead is None and explicit_date:
+                try:
+                    target_date = datetime.strptime(explicit_date, '%Y-%m-%d').date()
+                    calculated_days_ahead = (target_date - today).days
+                    final_date = explicit_date
+                    print(f"Agent Planner: Sử dụng explicit_date={explicit_date} → days_ahead={calculated_days_ahead}")
+                except Exception as e:
+                    print(f"Agent Planner: WARNING - Không thể parse explicit_date: {explicit_date}, lỗi: {e}")
+            
+            # Ưu tiên 4: days_ahead từ classify_claim
+            if calculated_days_ahead is None and days_ahead is not None:
+                calculated_days_ahead = days_ahead
+                if not final_date:
+                    final_date = (today + timedelta(days=days_ahead)).strftime('%Y-%m-%d')
+                print(f"Agent Planner: Sử dụng days_ahead={days_ahead} từ classify_claim")
+            
+            # Fallback: mặc định = 0 (hôm nay)
+            if calculated_days_ahead is None:
+                calculated_days_ahead = 0
+                final_date = today.strftime('%Y-%m-%d')
+                print(f"Agent Planner: WARNING - Không có thông tin thời gian, sử dụng days_ahead=0 (hôm nay)")
+            
+            final_days_ahead = calculated_days_ahead
+            print(f"Agent Planner: Weather tool params - city={city_en}, days_ahead={final_days_ahead}, part_of_day={part_of_day}")
+            
+            # Xóa weather tool cũ từ Agent 1 (nếu có) và tạo lại với days_ahead đúng
+            plan_struct["required_tools"] = [t for t in plan_struct.get("required_tools", []) if t.get("tool_name") != "weather"]
             
             # Tạo tool "weather" với OpenWeather API
             weather_tool_params = {
                 "city": city_en,  # Dùng tên tiếng Anh cho OpenWeather
-                "days_ahead": days_ahead  # Đã đảm bảo không None ở trên
+                "days_ahead": final_days_ahead  # Đã tính toán chính xác
             }
-            if explicit_date:
+            # Truyền date nếu có (ưu tiên final_date từ parse trực tiếp)
+            if final_date:
+                weather_tool_params["date"] = final_date
+            elif explicit_date:
                 weather_tool_params["date"] = explicit_date
             if part_of_day:
                 weather_tool_params["part_of_day"] = part_of_day
@@ -563,8 +689,13 @@ async def create_action_plan(text_input: str, flash_mode: bool = False) -> dict:
         
     genai.configure(api_key=GEMINI_API_KEY)
     
+    # Lấy ngày hiện tại để tính toán days_ahead chính xác
+    from datetime import datetime
+    current_date = datetime.now().strftime('%Y-%m-%d')
+    
     # Tránh lỗi KeyError do dấu ngoặc nhọn trong prompt ví dụ JSON
     prompt = PLANNER_PROMPT.replace("{text_input}", text_input)
+    prompt = prompt.replace("{current_date}", current_date)
 
     # Flash mode: dùng gemini-2.5-flash. Normal: cũng dùng gemini-2.5-flash
     model_names = ['models/gemini-2.5-flash']

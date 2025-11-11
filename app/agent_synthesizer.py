@@ -255,10 +255,10 @@ def _heuristic_summarize(text_input: str, bundle: Dict[str, Any], current_date: 
                 "cached": False
             }
 
-    # Không đủ điều kiện → CHƯA XÁC THỰC
+    # Không đủ điều kiện → TIN GIẢ (không có bằng chứng xác nhận)
     return {
-        "conclusion": "TIN CHƯA XÁC THỰC",
-        "reason": _as_str("Heuristic fallback: Không tìm thấy đủ nguồn LỚP 2 hoặc LỚP 3 (Search-Only)."),
+        "conclusion": "TIN GIẢ",
+        "reason": _as_str("Heuristic fallback: Không tìm thấy đủ nguồn LỚP 2 hoặc LỚP 3 (Search-Only) để xác nhận thông tin."),
         "style_analysis": "",
         "key_evidence_snippet": "",
         "key_evidence_source": "",

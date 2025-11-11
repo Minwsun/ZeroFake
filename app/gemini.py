@@ -178,7 +178,7 @@ def call_gemini_analysis(text_input: str, evidence_json_string: str, current_dat
                 return result
             except:
                 return {
-                    "conclusion": "TIN CHƯA XÁC THỰC",
+                    "conclusion": "TIN GIẢ",
                     "reason": "Không thể phân tích kết quả từ Gemini API.",
                     "style_analysis": "",
                     "key_evidence_snippet": "",

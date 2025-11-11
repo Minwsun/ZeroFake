@@ -55,7 +55,7 @@ Bạn cực kỳ giỏi suy luận và tổng hợp bằng chứng theo 4 lớp.
 
      - So sánh điều kiện thời tiết trong [INPUT GỐC] với dữ liệu LỚP 1 (đọc từ "weather_data" field) để đưa ra kết luận.
 
-     - **Nếu LỚP 1 có dữ liệu nhưng bạn vẫn kết luận "TIN CHƯA XÁC THỰC" → ĐÂY LÀ LỖI NGHIÊM TRỌNG.**
+     - **Nếu LỚP 1 có dữ liệu, BẮT BUỘC phải sử dụng để đưa ra kết luận TIN THẬT hoặc TIN GIẢ.**
 
    - **Ưu tiên 1: LỚP 2 (Nguồn chính thống/uy tín)**
 
@@ -189,7 +189,7 @@ Trước khi áp dụng các quy tắc kết luận, hãy phân tích [INPUT G�
      * **Nếu không có LỚP 1, dùng LỚP 2/3:**
        - Nếu snippet từ Lớp 2/Lớp 3 KHỚP CHÍNH XÁC với điều kiện trong [INPUT GỐC] → **"TIN THẬT"**
        - Nếu snippet MÂU THUẪN với [INPUT GỐC] → **"TIN GIẢ"**
-       - Nếu snippet chỉ nói chung chung về "dự báo thời tiết" mà KHÔNG có thông tin cụ thể → **"TIN CHƯA XÁC THỰC"**
+       - Nếu snippet chỉ nói chung chung về "dự báo thời tiết" mà KHÔNG có thông tin cụ thể → **"TIN GIẢ"** (không có bằng chứng xác nhận)
        - Nếu snippet có thông tin nhưng KHÔNG KHỚP mức độ → **"TIN GIẢ"**
 
    - **A. NẾU BẰNG CHỨNG MÂU THUẪN (Contradiction) - THÔNG TIN SAI:**
@@ -261,7 +261,7 @@ Trước khi áp dụng các quy tắc kết luận, hãy phân tích [INPUT G�
 
      - **Trường hợp 1: Không có thông tin gì**
        * Nếu Lớp 2 và Lớp 3 đều không tìm thấy thông tin gì về [INPUT GỐC].
-       * => **Kết luận: "TIN CHƯA XÁC THỰC"**.
+       * => **Kết luận: "TIN GIẢ"** (không có bằng chứng xác nhận từ nguồn uy tín).
 
      - **Trường hợp 2: Có thông tin chung nhưng KHÔNG có số liệu cụ thể (QUAN TRỌNG)**
        * Nếu [INPUT GỐC] chứa số liệu cụ thể (ví dụ: "10 chức vô địch", "5 triệu người", "100 tỷ USD")
@@ -300,7 +300,7 @@ Chỉ trả về JSON với schema:
 
 {
 
-  "conclusion": "TIN THẬT" | "TIN GIẢ" | "GÂY HIỂU LẦM" | "TIN CHƯA XÁC THỰC",
+  "conclusion": "TIN THẬT" | "TIN GIẢ" | "GÂY HIỂU LẦM",
 
   "reason": "Giải thích ngắn gọn (<=3 câu) logic của bạn, áp dụng các quy tắc A, B, C, D ở trên (ví dụ: 'Kết luận GÂY HIỂU LẦM theo Quy tắc B. Tin về iPhone 15 là đúng, nhưng đã cũ (2023) và bị thay thế bởi tin iPhone 17 (2025).').",
 
