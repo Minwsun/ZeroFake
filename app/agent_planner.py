@@ -7,7 +7,7 @@ import asyncio
 from dotenv import load_dotenv
 from typing import List, Optional
 
-from app.weather import extract_weather_info, classify_claim
+from app.weather import extract_weather_info, classify_claim, geocode_city
 
 load_dotenv()
 
@@ -41,7 +41,9 @@ def _parse_json_from_text(text: str) -> dict:
 
 
 def _normalize_plan(plan: dict, text_input: str) -> dict:
-    """Đảm bảo plan đủ schema, điền đúng mục thông tin, và tạo search/weather module phù hợp."""
+    """Đảm bảo plan đủ schema, điền đúng mục thông tin, và tạo search/weather module phù hợp.
+    (Cập nhật) Xuất tên địa danh chuẩn để tra cứu toàn cầu: "City, CC" nếu có country code.
+    """
     import re
     plan = plan or {}
 
@@ -96,29 +98,44 @@ def _normalize_plan(plan: dict, text_input: str) -> dict:
         data_points.add(m.strip())
     plan_struct["entities_and_values"]["data_points"] = list(data_points)
 
-    # Phát hiện claim thời tiết và thành phố
+    # Luôn cố gắng trích xuất địa danh và CHUẨN HOÁ 'City, CC'
+    canonical_location = None
     try:
         info = extract_weather_info(text_input)
+        if info and info.get("city"):
+            raw_city = info.get("city")
+            country = info.get("country")
+            if not country:
+                # Thử geocoding để bổ sung CC
+                geo = geocode_city(raw_city)
+                if geo and geo.get("country"):
+                    country = geo.get("country")
+            canonical_location = f"{raw_city}, {country}" if (raw_city and country) else (raw_city or None)
+            if canonical_location and canonical_location not in (plan_struct["entities_and_values"].get("locations") or []):
+                plan_struct["entities_and_values"].setdefault("locations", []).append(canonical_location)
+    except Exception:
+        pass
+
+    # Phát hiện claim thời tiết
+    try:
         claim = classify_claim(text_input)
     except Exception:
-        info, claim = None, {"is_weather": False}
+        claim = {"is_weather": False}
 
     if claim.get("is_weather"):
-        city = (info or {}).get("city")
-        if city and city not in plan_struct["entities_and_values"]["locations"]:
-            plan_struct["entities_and_values"]["locations"].append(city)
         plan_struct["claim_type"] = "Thời tiết"
         plan_struct["volatility"] = "high"
 
-        # Thêm weather module với tham số phù hợp
         time_scope_norm = plan_struct["time_references"]["time_scope"]
         weather_module = {
             "tool_name": "weather",
             "parameters": {
-                "location": city or "",
+                "location": canonical_location or "",
                 "time_scope": time_scope_norm,
                 "relative_time": plan_struct["time_references"].get("relative_time"),
-                "explicit_date": plan_struct["time_references"].get("explicit_date")
+                "explicit_date": plan_struct["time_references"].get("explicit_date"),
+                "original_text": text_input,
+                "fallback_locations": plan_struct["entities_and_values"].get("locations", [])
             }
         }
         plan_struct["required_tools"].append(weather_module)
@@ -127,19 +144,20 @@ def _normalize_plan(plan: dict, text_input: str) -> dict:
     has_search = any(m.get('tool_name') == 'search' for m in plan_struct["required_tools"])
     if not has_search:
         queries = [text_input]
-        # mở rộng nếu có thành phố và relative_time
-        city = (info or {}).get("city") if info else None
+        canonical = None
+        if plan_struct["entities_and_values"]["locations"]:
+            canonical = plan_struct["entities_and_values"]["locations"][0]
         rel = plan_struct["time_references"].get("relative_time")
-        if city:
+        if canonical:
             base_kw = ["dự báo thời tiết", "mưa", "nhiệt độ", "cảnh báo"]
             for kw in base_kw:
-                q = f"{kw} {city}"
+                q = f"{kw} {canonical}"
                 if rel:
                     q = f"{q} {rel}"
                 queries.append(q)
         plan_struct["required_tools"].append({
             "tool_name": "search",
-            "parameters": {"queries": list(dict.fromkeys(queries)), "search_type": "precise_data" if city else "broad"}
+            "parameters": {"queries": list(dict.fromkeys(queries)), "search_type": "precise_data" if canonical else "broad"}
         })
 
     return plan_struct
@@ -160,33 +178,8 @@ async def create_action_plan(text_input: str) -> dict:
     # Tránh lỗi KeyError do dấu ngoặc nhọn trong prompt ví dụ JSON
     prompt = PLANNER_PROMPT.replace("{text_input}", text_input)
 
-    model_names = [
-        'gemini-1.5-flash-002',
-        'models/gemini-1.5-flash-002',
-        'gemini-1.5-flash-latest',
-        'models/gemini-1.5-flash-latest',
-        'gemini-1.5-flash-8b',
-        'models/gemini-1.5-flash-8b',
-        'gemini-1.5-flash'
-    ]
-
-    # Cố gắng lấy danh sách model khả dụng và ưu tiên cái phù hợp
-    try:
-        available = list(genai.list_models())
-        available_names = {m.name: m for m in available}
-        supported = []
-        for name in model_names:
-            m = available_names.get(name)
-            if m and ('generateContent' in (getattr(m, 'supported_generation_methods', []) or [])):
-                supported.append(name)
-        if supported:
-            model_names = supported
-        else:
-            flash_fallback = [m.name for m in available if 'generateContent' in (getattr(m, 'supported_generation_methods', []) or []) and 'flash' in m.name]
-            if flash_fallback:
-                model_names = flash_fallback
-    except Exception:
-        pass
+    # Bắt buộc dùng gemini-2.5-flash
+    model_names = ['models/gemini-2.5-flash']
 
     last_err = None
     for model_name in model_names:

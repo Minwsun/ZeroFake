@@ -1,309 +1,316 @@
 # app/tool_executor.py
 import asyncio
+import json
+import os
+import sys
+import subprocess
 from urllib.parse import urlparse
 from datetime import datetime
-import json
-
-# Feature flags / diagnostics
-USE_WEATHER_API = True  # Use OpenWeather API with precise date/location; CSE used as fallback when disabled
 
 # Import các tool thực thi
-from app.search import call_google_search
+from app.retriever import gemini_web_search
+from app.search import call_google_search  # CSE fallback
 from app.weather import (
-    get_current_weather,
-    get_forecast_data,
-    get_forecast_for_date,
-    get_historical_weather,
-    forecast_window_supported,
-    relative_to_date,
-    resolve_time_parameters,
+	get_current_weather,
+	get_forecast_for_date,
+	get_historical_weather,
+	resolve_time_parameters,
+	extract_weather_info,
+	geocode_city,
 )
 from app.ranker import get_rank_from_url, _extract_date
 
 
-# --- MODULE THỰC THI TOOL ---
+# --- SEARCH TOOL (Gemini Web Search với fallback CSE) ---
 
 async def _execute_search_tool(parameters: dict, site_query_string: str) -> dict:
-    """
-    Thực thi mô-đun "search".
-    Phân loại kết quả vào các Lớp 2, 3, 4.
-    """
-    queries = parameters.get("queries", [])
-    if not queries:
-        return {"tool_name": "search", "status": "no_queries", "layer_2": [], "layer_3": [], "layer_4": []}
+	"""
+	Thực thi mô-đun "search" bằng Gemini Flash web browsing; nếu rỗng → fallback Google CSE.
+	Phân loại kết quả vào các Lớp 2, 3, 4 theo ranker.
+	"""
+	queries = parameters.get("queries", [])
+	if not queries:
+		return {"tool_name": "search", "status": "no_queries", "layer_2": [], "layer_3": [], "layer_4": []}
 
-    all_items = []
-    seen_urls = set()
+	all_items = []
+	seen_urls = set()
 
-    for query in queries:
-        try:
-            search_items = await asyncio.to_thread(call_google_search, query, site_query_string)
-            for item in search_items:
-                link = item.get('link')
-                if link and link not in seen_urls:
-                    all_items.append(item)
-                    seen_urls.add(link)
-        except Exception as e:
-            print(f"Lỗi khi thực thi search query '{query}': {e}")
+	# Pass 1: Gemini web search
+	try:
+		results = await asyncio.to_thread(gemini_web_search, queries)
+		for r in results:
+			url = r.get("url")
+			if url and url not in seen_urls:
+				item = {
+					"link": url,
+					"snippet": (r.get("snippet") or "").replace("\n", " "),
+					"pagemap": {"metatags": [{"article:published_time": r.get("date")}]}
+				}
+				all_items.append(item)
+				seen_urls.add(url)
+	except Exception as e:
+		print(f"Lỗi Gemini web search: {e}")
 
-    # Phân loại kết quả vào các Lớp
-    layer_2 = []
-    layer_3 = []
-    layer_4 = []
+	# Pass 2: Fallback CSE nếu không có kết quả
+	if not all_items:
+		for query in queries:
+			try:
+				search_items = await asyncio.to_thread(call_google_search, query, site_query_string)
+				for item in search_items or []:
+					link = item.get('link')
+					if link and link not in seen_urls:
+						all_items.append(item)
+						seen_urls.add(link)
+			except Exception as e:
+				print(f"Lỗi khi thực thi CSE query '{query}': {e}")
 
-    for item in all_items:
-        link = item.get('link', '')
-        rank_score = get_rank_from_url(link)
-        
-        evidence_item = {
-            "source": urlparse(link).netloc.replace('www.', ''),
-            "url": link,
-            "snippet": (item.get('snippet', '') or '').replace('\n', ' '),
-            "rank_score": rank_score,
-            "date": _extract_date(item)
-        }
-        
-        # Phân loại dựa trên rank_score từ config.json
-        if rank_score > 0.9:
-            layer_2.append(evidence_item)
-        elif rank_score > 0.5:
-            layer_3.append(evidence_item)
-        else:
-            layer_4.append(evidence_item)
+	# Phân loại kết quả vào các Lớp
+	layer_2 = []
+	layer_3 = []
+	layer_4 = []
 
-    layer_2.sort(key=lambda x: x.get('date') or '1970-01-01', reverse=True)
-    layer_3.sort(key=lambda x: x.get('date') or '1970-01-01', reverse=True)
+	for item in all_items:
+		link = item.get('link', '')
+		rank_score = get_rank_from_url(link)
+		evidence_item = {
+			"source": urlparse(link).netloc.replace('www.', ''),
+			"url": link,
+			"snippet": (item.get('snippet', '') or ''),
+			"rank_score": rank_score,
+			"date": _extract_date(item)
+		}
+		if rank_score > 0.9:
+			layer_2.append(evidence_item)
+		elif rank_score > 0.5:
+			layer_3.append(evidence_item)
+		else:
+			layer_4.append(evidence_item)
 
-    return {
-        "tool_name": "search", "status": "success",
-        "layer_2_high_trust": layer_2,
-        "layer_3_general": layer_3,
-        "layer_4_social_low": layer_4
-    }
+	layer_2.sort(key=lambda x: x.get('date') or '1970-01-01', reverse=True)
+	layer_3.sort(key=lambda x: x.get('date') or '1970-01-01', reverse=True)
+
+	return {
+		"tool_name": "search", "status": "success",
+		"layer_2_high_trust": layer_2,
+		"layer_3_general": layer_3,
+		"layer_4_social_low": layer_4
+	}
 
 
-async def _execute_weather_via_cse(parameters: dict, site_query_string: str) -> dict:
-    """
-    Weather via CSE only: xây dựng bộ truy vấn theo location + thời gian, thu thập bài báo/nguồn dữ liệu thời tiết.
-    Trả về như một tool lớp 1 để Agent 2 ưu tiên.
-    """
-    location = (parameters.get("location") or '').strip()
-    relative_time = parameters.get("relative_time")
-    explicit_date = parameters.get("explicit_date")
+# --- WEATHER TOOL (Refactored: OpenWeather API with CLI fallback) ---
 
-    target_date, part_of_day = resolve_time_parameters(relative_time, explicit_date)
+def _run_ow_cli(city: str, mode: str, relative_time: str | None, explicit_date: str | None) -> dict | None:
+	"""Chạy script scripts/ow_cli.py để lấy JSON thời tiết khi API nội bộ thất bại."""
+	try:
+		script_path = os.path.join(os.getcwd(), 'scripts', 'ow_cli.py')
+		if not os.path.exists(script_path):
+			return None
+		cmd = [sys.executable, script_path, '--city', city, '--mode', mode]
+		if relative_time:
+			cmd += ['--relative', relative_time]
+		if explicit_date:
+			cmd += ['--date', explicit_date]
+		out = subprocess.check_output(cmd, stderr=subprocess.STDOUT, text=True, timeout=20)
+		return json.loads(out)
+	except subprocess.TimeoutExpired:
+		print("OW CLI fallback timeout after 20s")
+		return {"tool_name": "weather", "status": "error", "reason": "CLI fallback timeout"}
+	except Exception as e:
+		print(f"OW CLI fallback error: {e}")
+		return None
 
-    # Tạo bộ query đa dạng, ưu tiên site uy tín (SITE_QUERY_STRING sẽ được nối trong call_google_search)
-    queries = []
-    base_terms = ["dự báo thời tiết", "mưa", "lượng mưa", "nhiệt độ", "độ ẩm", "gió"]
-    date_term = (target_date or '').strip()
-    pod_term = None
-    if part_of_day == 'morning':
-        pod_term = 'sáng'
-    elif part_of_day == 'afternoon':
-        pod_term = 'chiều'
-    elif part_of_day == 'evening':
-        pod_term = 'tối'
 
-    if location:
-        for t in base_terms:
-            q = f"{t} {location}"
-            if pod_term:
-                q += f" {pod_term}"
-            if date_term:
-                q += f" {date_term}"
-            queries.append(q)
-    # thêm câu tổng quát từ text gốc nếu có
-    original_text = parameters.get("original_text")
-    if original_text:
-        queries.append(original_text)
+def _canonicalize(city_like: str | None) -> str | None:
+	if not city_like:
+		return None
+	geo = geocode_city(city_like)
+	if geo and geo.get("name"):
+		cc = geo.get("country")
+		return f"{geo.get('name')}, {cc}" if cc else geo.get('name')
+	return None
 
-    # Loại trùng, giữ tối đa ~8 query
-    seen = set()
-    uniq_queries = []
-    for q in queries:
-        if q and q not in seen:
-            uniq_queries.append(q)
-            seen.add(q)
-        if len(uniq_queries) >= 8:
-            break
 
-    # Gọi CSE và gom kết quả như lớp search, nhưng đóng gói trong lớp 1 để ưu tiên
-    search_params = {"queries": uniq_queries, "search_type": "precise_data"}
-    search_res = await _execute_search_tool(search_params, site_query_string)
-
-    return {
-        "tool_name": "weather_cse",
-        "status": "success",
-        "diagnostics": {"weather_api_used": False, "reason": "Configured to use CSE-only for weather."},
-        "data": {
-            "location": location,
-            "target_date": target_date,
-            "part_of_day": part_of_day,
-            "layer_2_high_trust": search_res.get("layer_2_high_trust", []),
-            "layer_3_general": search_res.get("layer_3_general", []),
-            "layer_4_social_low": search_res.get("layer_4_social_low", [])
-        }
-    }
+def _pick_city(parameters: dict) -> str | None:
+	"""Cố gắng suy ra city theo thứ tự: location -> fallback_locations -> extract từ original_text; canonicalize bằng geocoding."""
+	# 1) location trực tiếp
+	city = (parameters.get("location") or "").strip()
+	if city:
+		canon = _canonicalize(city)
+		return canon or city
+	# 2) fallback_locations
+	for cand in (parameters.get("fallback_locations") or []):
+		if cand and isinstance(cand, str) and cand.strip():
+			canon = _canonicalize(cand.strip())
+			return canon or cand.strip()
+	# 3) extract từ original_text
+	try:
+		info = extract_weather_info(parameters.get("original_text") or "")
+		if info and info.get("city"):
+			city_like = f"{info.get('city')}, {info.get('country')}" if info.get('country') else info.get('city')
+			canon = _canonicalize(city_like)
+			return canon or city_like
+	except Exception:
+		pass
+	return None
 
 
 async def _execute_weather_tool(parameters: dict, site_query_string: str = "") -> dict:
-    """
-    Thực thi mô-đun "weather".
-    Nếu USE_WEATHER_API=False, dùng CSE-only; ngược lại giữ luồng API (present/future/historical).
-    """
-    if not USE_WEATHER_API:
-        return await _execute_weather_via_cse(parameters, site_query_string)
+	"""
+	Thực thi mô-đun "weather" chỉ với OpenWeather API; nếu thất bại, fallback sang scripts/ow_cli.py.
+	Loại bỏ đường CSE cho thời tiết để giải quyết triệt để vấn đề thiếu dữ liệu tool weather.
+	"""
+	tool_name = "weather"
+	try:
+		city = _pick_city(parameters)
+		time_scope = parameters.get("time_scope", "present")
+		relative_time = parameters.get("relative_time")
+		explicit_date = parameters.get("explicit_date")
+		if not city:
+			return {"tool_name": tool_name, "status": "error", "reason": "Không thể xác định địa danh (hãy ghi rõ như 'Hanoi, VN' hoặc tên thành phố khác).", "diagnostics": {"weather_api_used": False, "fallback_cli": False}}
 
-    tool_name = "weather"
-    try:
-        location = parameters.get("location")
-        time_scope = parameters.get("time_scope", "present")
-        relative_time = parameters.get("relative_time")
-        explicit_date = parameters.get("explicit_date")
+		# Giải quyết tham số thời gian
+		target_date, part_of_day = resolve_time_parameters(relative_time, explicit_date)
 
-        if not location:
-            return {"tool_name": tool_name, "status": "error", "reason": "Không thể xác định địa danh."}
+		# API nội bộ
+		data = None
+		mode = "present"
+		if time_scope == 'historical':
+			mode = 'historical'
+			if not (explicit_date or target_date):
+				return {"tool_name": tool_name, "status": "historical_date_required", "reason": "Thiếu ngày cụ thể cho dữ liệu lịch sử.", "diagnostics": {"weather_api_used": False, "fallback_cli": False}}
+			data = await asyncio.to_thread(get_historical_weather, city, (explicit_date or target_date))
+		elif time_scope == 'future':
+			mode = 'future'
+			data = await asyncio.to_thread(get_forecast_for_date, city, target_date, part_of_day)
+		else:
+			mode = 'present'
+			data = await asyncio.to_thread(get_current_weather, city)
 
-        # 1. Giải quyết tham số thời gian
-        target_date, part_of_day = resolve_time_parameters(relative_time, explicit_date)
+		if data:
+			return {"tool_name": tool_name, "status": "success", "mode": mode, "data": data, "diagnostics": {"weather_api_used": True, "fallback_cli": False}}
 
-        # 2. Gọi tool phù hợp
-        data = None
-        mode = "unknown"
-        if time_scope == "historical":
-            mode = "historical"
-            if not target_date:
-                return {"tool_name": tool_name, "status": "historical_date_required", "reason": "Thiếu ngày cụ thể cho dữ liệu lịch sử."}
-            data = await asyncio.to_thread(get_historical_weather, location, target_date)
+		# Fallback: CLI script
+		cli_res = _run_ow_cli(city, mode, relative_time, explicit_date or target_date)
+		if isinstance(cli_res, dict) and cli_res.get('status') == 'success':
+			return {"tool_name": tool_name, "status": "success", "mode": cli_res.get('mode', mode), "data": cli_res.get('data'), "diagnostics": {"weather_api_used": True, "fallback_cli": True}}
+		elif isinstance(cli_res, dict):
+			return {"tool_name": tool_name, "status": cli_res.get('status', 'api_error'), "reason": cli_res.get('reason', 'CLI fallback failed'), "diagnostics": {"weather_api_used": True, "fallback_cli": True}}
 
-        elif time_scope == "future":
-            mode = "future"
-            data = await asyncio.to_thread(get_forecast_for_date, location, target_date, part_of_day)
+		return {"tool_name": tool_name, "status": "api_error", "reason": f"OpenWeather và CLI fallback đều thất bại cho {city}.", "diagnostics": {"weather_api_used": True, "fallback_cli": True}}
 
-        else:  # present
-            mode = "present"
-            data = await asyncio.to_thread(get_current_weather, location)
-
-        # 3. Trả về kết quả
-        if data:
-            return {"tool_name": tool_name, "status": "success", "mode": mode, "data": data, "diagnostics": {"weather_api_used": True}}
-        else:
-            return {"tool_name": tool_name, "status": "api_error", "reason": f"Không gọi được API cho {location} với mode {mode}.", "diagnostics": {"weather_api_used": True}}
-
-    except Exception as e:
-        return {"tool_name": tool_name, "status": "error", "reason": str(e), "diagnostics": {"weather_api_used": True}}
+	except Exception as e:
+		return {"tool_name": tool_name, "status": "error", "reason": str(e)}
 
 
-# --- BỘ ĐIỀU PHỐI THỰC THI (Executor Orchestrator) ---
+# --- ENRICHMENT ---
 
 def enrich_plan_with_evidence(plan: dict, evidence_bundle: dict) -> dict:
-    """Làm giàu kế hoạch: điền thông tin đúng mục, theo ưu tiên Lớp 1 -> Lớp 2 -> Lớp 3.
-    - Tập trung tốt cho case thời tiết: city, nhiệt độ, độ ẩm, gió.
-    - Trích data_points bổ sung từ snippet báo chí (°C, mm, %).
-    """
-    import re
-    enriched = json.loads(json.dumps(plan))  # deep copy đơn giản
-    ev = enriched.get("entities_and_values") or {"locations": [], "persons": [], "organizations": [], "events": [], "data_points": []}
+	import re
+	enriched = json.loads(json.dumps(plan))
+	ev = enriched.get("entities_and_values") or {"locations": [], "persons": [], "organizations": [], "events": [], "data_points": []}
 
-    # 1) Ưu tiên Lớp 1: weather (API hoặc CSE)
-    for item in evidence_bundle.get("layer_1_tools", []):
-        if item.get("tool_name") in ("weather", "weather_cse") and item.get("status") == "success":
-            data = item.get("data") or {}
-            city = (data.get("city") or data.get("location") or '').strip()
-            if city and city not in ev.get("locations", []):
-                ev.setdefault("locations", []).append(city)
-            # data points từ API nếu có
-            for key, suffix in [("temperature", "°C"), ("humidity", "%"), ("wind_speed", "m/s")]:
-                val = data.get(key)
-                if isinstance(val, (int, float)):
-                    ev.setdefault("data_points", []).append(f"{val}{suffix}")
-            enriched["entities_and_values"] = ev
-            break
+	# Ưu tiên Lớp 1: weather
+	for item in evidence_bundle.get("layer_1_tools", []):
+		if item.get("tool_name") == "weather" and item.get("status") == "success":
+			data = item.get("data") or {}
+			city = (data.get("city") or '').strip()
+			if city and city not in ev.get("locations", []):
+				ev.setdefault("locations", []).append(city)
+			for key, suffix in [("temperature", "°C"), ("humidity", "%"), ("wind_speed", "m/s")]:
+				val = data.get(key)
+				if isinstance(val, (int, float)):
+					ev.setdefault("data_points", []).append(f"{val}{suffix}")
+			enriched["entities_and_values"] = ev
+			break
 
-    # 2) Trích thêm data_points từ snippets Lớp 2, sau đó Lớp 3
-    def snippets(lvl: str):
-        return [x.get("snippet") or "" for x in evidence_bundle.get(lvl, [])]
+	# Trích thêm data_points từ snippets L2 rồi L3
+	def snippets(lvl: str):
+		return [x.get("snippet") or "" for x in evidence_bundle.get(lvl, [])]
+	pattern = re.compile(r"\b\d{1,3}\s?(?:°C|mm|%)\b")
+	for lvl in ["layer_2_high_trust", "layer_3_general"]:
+		for sn in snippets(lvl):
+			for m in pattern.findall(sn):
+				if m not in ev.setdefault("data_points", []):
+					ev["data_points"].append(m)
+	enriched["entities_and_values"] = ev
 
-    import re as _re
-    pattern = _re.compile(r"\b\d{1,3}\s?(?:°C|mm|%)\b")
-    for lvl in ["layer_2_high_trust", "layer_3_general"]:
-        for sn in snippets(lvl):
-            for m in pattern.findall(sn):
-                if m not in ev.setdefault("data_points", []):
-                    ev["data_points"].append(m)
-    enriched["entities_and_values"] = ev
+	return enriched
 
-    return enriched
 
+# --- ORCHESTRATOR ---
 
 async def execute_tool_plan(plan: dict, site_query_string: str) -> dict:
-    """
-    Điều phối việc gọi các tool dựa trên Kế hoạch thực thi (mô-đun) và tập hợp Gói Bằng Chứng 4 Lớp.
-    """
-    required_tools = plan.get("required_tools", [])
-    
-    evidence_bundle = {
-        "layer_1_tools": [],
-        "layer_2_high_trust": [],
-        "layer_3_general": [],
-        "layer_4_social_low": []
-    }
-    
-    tasks = []
-    
-    # Tạo các task bất đồng bộ cho từng mô-đun
-    for module in required_tools:
-        tool_name = module.get("tool_name")
-        parameters = module.get("parameters", {})
-        
-        if tool_name == "search":
-            tasks.append(_execute_search_tool(parameters, site_query_string))
-        elif tool_name == "weather":
-            tasks.append(_execute_weather_tool(parameters, site_query_string))
-        # (Có thể bổ sung: econ_data, sports_results ...)
-    
-    if not tasks:
-        print("Cảnh báo: Không có tool nào được lập kế hoạch.")
-        return evidence_bundle
+	required_tools = plan.get("required_tools", [])
+	evidence_bundle = {
+		"layer_1_tools": [],
+		"layer_2_high_trust": [],
+		"layer_3_general": [],
+		"layer_4_social_low": []
+	}
 
-    # Chạy song song các tool
-    results = await asyncio.gather(*tasks)
-    
-    # Tập hợp kết quả vào Gói Bằng Chứng
-    has_weather_success = False
-    for res in results:
-        if not res:
-            continue
-        tn = res.get("tool_name")
-        if tn == "search":
-            evidence_bundle["layer_2_high_trust"].extend(res.get("layer_2_high_trust", []))
-            evidence_bundle["layer_3_general"].extend(res.get("layer_3_general", []))
-            evidence_bundle["layer_4_social_low"].extend(res.get("layer_4_social_low", []))
-        elif tn in ["weather", "weather_cse", "econ_data", "sports_results"]:
-            evidence_bundle["layer_1_tools"].append(res)
-            if tn in ("weather", "weather_cse") and res.get("status") == "success":
-                has_weather_success = True
+	tasks = []
 
-    # Fallback: nếu chưa có dữ liệu lớp 1 cho thời tiết, thử gọi lại (chỉ áp dụng khi có city)
-    if not has_weather_success:
-        tr = plan.get("time_references", {})
-        city = None
-        try:
-            city = (plan.get("entities_and_values", {}) or {}).get("locations", [None])[0]
-        except Exception:
-            city = None
-        time_scope = tr.get("time_scope") or "present"
-        rel = tr.get("relative_time")
-        explicit = tr.get("explicit_date")
-        if city:
-            extra_res = await _execute_weather_tool({
-                "location": city,
-                "time_scope": time_scope,
-                "relative_time": rel,
-                "explicit_date": explicit,
-                "original_text": plan.get("main_claim")
-            }, site_query_string)
-            evidence_bundle["layer_1_tools"].append(extra_res)
+	for module in required_tools:
+		tool_name = module.get("tool_name")
+		parameters = module.get("parameters", {})
+		if tool_name == "search":
+			tasks.append(_execute_search_tool(parameters, site_query_string))
+		elif tool_name == "weather":
+			tasks.append(_execute_weather_tool(parameters, site_query_string))
 
-    return evidence_bundle
+	if not tasks:
+		print("Cảnh báo: Không có tool nào được lập kế hoạch.")
+		return evidence_bundle
+
+	results = await asyncio.gather(*tasks)
+
+	for res in results:
+		if not res:
+			continue
+		tn = res.get("tool_name")
+		if tn == "search":
+			evidence_bundle["layer_2_high_trust"].extend(res.get("layer_2_high_trust", []))
+			evidence_bundle["layer_3_general"].extend(res.get("layer_3_general", []))
+			evidence_bundle["layer_4_social_low"].extend(res.get("layer_4_social_low", []))
+		elif tn in ["weather", "econ_data", "sports_results"]:
+			evidence_bundle["layer_1_tools"].append(res)
+
+	# Fallback cuối: nếu toàn bộ bundle trống và có ít nhất một mô-đun search, chạy CSE một lượt với tất cả queries
+	if not (evidence_bundle["layer_1_tools"] or evidence_bundle["layer_2_high_trust"] or evidence_bundle["layer_3_general"] or evidence_bundle["layer_4_social_low"]):
+		all_queries = []
+		for module in required_tools:
+			if module.get("tool_name") == "search":
+				all_queries.extend(module.get("parameters", {}).get("queries", []))
+			break
+		seen_urls = set()
+		layer_2, layer_3, layer_4 = [], [], []
+		for q in all_queries:
+			try:
+				items = await asyncio.to_thread(call_google_search, q, site_query_string)
+				for item in items or []:
+					link = item.get('link')
+					if link and link not in seen_urls:
+						rank_score = get_rank_from_url(link)
+						mapped = {
+							"source": urlparse(link).netloc.replace('www.', ''),
+							"url": link,
+							"snippet": (item.get('snippet', '') or ''),
+							"rank_score": rank_score,
+							"date": _extract_date(item)
+						}
+						if rank_score > 0.9:
+							layer_2.append(mapped)
+						elif rank_score > 0.5:
+							layer_3.append(mapped)
+						else:
+							layer_4.append(mapped)
+						seen_urls.add(link)
+			except Exception as e:
+				print(f"Fallback CSE batch error: {e}")
+		layer_2.sort(key=lambda x: x.get('date') or '1970-01-01', reverse=True)
+		layer_3.sort(key=lambda x: x.get('date') or '1970-01-01', reverse=True)
+		evidence_bundle["layer_2_high_trust"].extend(layer_2)
+		evidence_bundle["layer_3_general"].extend(layer_3)
+		evidence_bundle["layer_4_social_low"].extend(layer_4)
+
+	return evidence_bundle

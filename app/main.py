@@ -26,6 +26,9 @@ from app.tool_executor import execute_tool_plan, enrich_plan_with_evidence
 from app.agent_synthesizer import load_synthesis_prompt, execute_final_analysis
 # ------------------------------
 
+# Weather extraction for GUI
+from app.weather import extract_weather_info
+
 app = FastAPI(title="ZeroFake V2.0 - Agent Architecture")
 
 # CORS middleware (Giữ nguyên)
@@ -39,6 +42,24 @@ app.add_middleware(
 
 # Biến toàn cục
 SITE_QUERY_STRING = ""
+
+
+def _sanitize_check_response(obj: dict) -> dict:
+    """Đảm bảo các trường CheckResponse là string, tránh None gây lỗi Pydantic."""
+    if obj is None:
+        obj = {}
+    for k in ["conclusion", "reason", "style_analysis", "key_evidence_snippet", "key_evidence_source"]:
+        v = obj.get(k)
+        if v is None:
+            obj[k] = ""
+        elif not isinstance(v, str):
+            try:
+                obj[k] = str(v)
+            except Exception:
+                obj[k] = ""
+    if "cached" not in obj or obj.get("cached") is None:
+        obj["cached"] = False
+    return obj
 
 
 @app.on_event("startup")
@@ -90,11 +111,40 @@ class FeedbackRequest(BaseModel):
     notes: str = ""
 
 
+# GUI helper: extract location from text for OpenWeather usage
+class ExtractLocationRequest(BaseModel):
+    text: str
+
+class ExtractLocationResponse(BaseModel):
+    city: str | None
+    country: str | None
+    lat: float | None
+    lon: float | None
+    canonical: str | None
+    success: bool
+
+
+@app.post("/extract_location", response_model=ExtractLocationResponse)
+async def extract_location_endpoint(request: ExtractLocationRequest):
+    try:
+        info = await asyncio.to_thread(extract_weather_info, request.text)
+        if not info or not info.get("city"):
+            return ExtractLocationResponse(city=None, country=None, lat=None, lon=None, canonical=None, success=False)
+        city = info.get("city")
+        country = info.get("country")
+        canonical = f"{city}, {country}" if country else city
+        return ExtractLocationResponse(city=city, country=country, lat=info.get("lat"), lon=info.get("lon"), canonical=canonical, success=True)
+    except Exception as e:
+        logger.warning(f"extract_location error: {e}")
+        return ExtractLocationResponse(city=None, country=None, lat=None, lon=None, canonical=None, success=False)
+
+
 @app.post("/check_news", response_model=CheckResponse)
 async def handle_check_news(request: CheckRequest, background_tasks: BackgroundTasks):
     """
     Endpoint chính (Agent Workflow):
-    Cache -> Agent 1 (Plan) -> Tool Executor (Gather) -> Agent 2 (Synthesize) -> Update Cache (Conditional)
+    Input -> Agent 1 (Flash) lập kế hoạch + thu thập search (embedded) ->
+    (Nếu claim là thời tiết) gọi OpenWeather theo metadata -> Agent 2 (Pro) tổng hợp.
     """
     try:
         # Bước 1: Kiểm tra KB Cache (Giữ nguyên)
@@ -102,20 +152,37 @@ async def handle_check_news(request: CheckRequest, background_tasks: BackgroundT
         cached_result = await asyncio.to_thread(search_knowledge_base, request.text)
         if cached_result:
             logger.info("Tìm thấy trong cache!")
-            return CheckResponse(**cached_result)
+            return CheckResponse(**_sanitize_check_response(cached_result))
         
-        # --- Bắt đầu Workflow Agent Mới ---
-        
-        # Bước 2: Agent 1 (Planner) tạo kế hoạch
+        # Bước 2: Agent 1 (Planner) tạo kế hoạch (có thể kèm embedded evidence để tiết kiệm request)
         logger.info("Agent 1 (Planner) đang tạo kế hoạch...")
         plan = await create_action_plan(request.text)
         logger.info(f"Kế hoạch: {json.dumps(plan, ensure_ascii=False, indent=2)}")
 
-        # Bước 3: Tool Executor thi hành kế hoạch
-        logger.info("Tool Executor đang thu thập bằng chứng...")
-        evidence_bundle = await execute_tool_plan(plan, SITE_QUERY_STRING)
+        # Bước 3: Thu thập bằng chứng
+        embedded = plan.get("embedded_evidence") if isinstance(plan, dict) else None
+        if embedded and isinstance(embedded, dict):
+            logger.info("Dùng embedded_evidence từ Planner (bỏ qua Executor search) để tiết kiệm quota.")
+            evidence_bundle = {
+                "layer_1_tools": [],
+                "layer_2_high_trust": embedded.get("layer_2_high_trust", []) or [],
+                "layer_3_general": embedded.get("layer_3_general", []) or [],
+                "layer_4_social_low": embedded.get("layer_4_social_low", []) or [],
+            }
+            # Nếu kế hoạch có module weather, chạy riêng weather và hợp nhất Layer 1
+            weather_modules = [m for m in (plan.get("required_tools") or []) if (m or {}).get("tool_name") == "weather"]
+            if weather_modules:
+                weather_only_plan = {"required_tools": weather_modules}
+                logger.info("Thực thi weather theo metadata từ Planner...")
+                weather_bundle = await execute_tool_plan(weather_only_plan, SITE_QUERY_STRING)
+                if isinstance(weather_bundle, dict):
+                    for it in (weather_bundle.get("layer_1_tools") or []):
+                        evidence_bundle["layer_1_tools"].append(it)
+        else:
+            logger.info("Tool Executor đang thu thập bằng chứng...")
+            evidence_bundle = await execute_tool_plan(plan, SITE_QUERY_STRING)
 
-        # Làm giàu kế hoạch từ Gói Bằng Chứng theo ưu tiên Lớp 1 -> 2 -> 3
+        # Enrich kế hoạch với bằng chứng thu được
         enriched_plan = enrich_plan_with_evidence(plan, evidence_bundle)
         logger.info(f"Kế hoạch (đã làm giàu): {json.dumps(enriched_plan, ensure_ascii=False, indent=2)}")
         
@@ -123,11 +190,11 @@ async def handle_check_news(request: CheckRequest, background_tasks: BackgroundT
         logger.info("Agent 2 (Synthesizer) đang tổng hợp...")
         current_date = datetime.datetime.now().strftime('%Y-%m-%d')
         gemini_result = await execute_final_analysis(request.text, evidence_bundle, current_date)
+        gemini_result = _sanitize_check_response(gemini_result)
         logger.info(f"Kết quả Agent 2: {gemini_result.get('conclusion', 'N/A')}")
         
-        # --- Bước 5: Cập nhật KB có điều kiện (THEO YÊU CẦU) ---
+        # Bước 5: Cập nhật KB có điều kiện
         plan_volatility = plan.get('volatility', 'medium')
-        
         if gemini_result.get("conclusion") and plan_volatility in ['static', 'low']:
             logger.info(f"Đang lưu kết quả (Volatility: {plan_volatility}) vào KB...")
             try:

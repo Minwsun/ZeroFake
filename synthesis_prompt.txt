@@ -8,14 +8,18 @@ Bạn là một chuyên gia kiểm chứng thông tin (fact-checker) hàng đầ
 [GÓI BẰNG CHỨNG 4 LỚP (JSON)]:
 {evidence_bundle_json}
 
-YÊU CẦU: Tổng hợp theo quy tắc ưu tiên. Nếu có kết quả từ tool lớp 1 (ví dụ: weather/econ/sports) trạng thái success thì ưu tiên tuyệt đối. Nếu không, dựa vào lớp 2 (nguồn uy tín, mới nhất), sau đó lớp 3, rồi lớp 4.
+YÊU CẦU: Áp dụng thứ tự ưu tiên NGUỒN BÁO CHÍ trước, TOOL sau. Cụ thể:
+1) Ưu tiên LỚP 2 (nguồn chính thống/uy tín, mới nhất, phù hợp bối cảnh) để ra quyết định.
+2) Nếu LỚP 2 không đủ, dùng LỚP 3 (nguồn trung bình, phổ thông) để bổ trợ.
+3) Nếu LỚP 2 và 3 vẫn không đủ, mới dùng LỚP 1 (tool/API, kể cả thời tiết) hoặc LỚP 4 làm tham chiếu phụ.
+- Nếu tool trả về chẩn đoán thất bại (diagnostics hoặc status không "success"), coi như KHÔNG DÙNG tool để ra kết luận.
+- Khi có mâu thuẫn giữa tool và nguồn chính thống, ưu tiên NGUỒN CHÍNH THỐNG (LỚP 2), giải thích rõ lý do.
 
 Chỉ trả về JSON với schema:
 {
   "conclusion": "TIN THẬT" | "TIN GIẢ" | "GÂY HIỂU LẦM" | "TIN CHƯA XÁC THỰC",
-  "reason": "Giải thích ngắn gọn (<=3 câu).",
+  "reason": "Giải thích ngắn gọn (<=3 câu), nêu rõ lớp nguồn đã quyết định kết luận (ví dụ: 'Dựa LỚP 2: vnexpress.net (ngày ...), LỚP 3 bổ trợ, tool thời tiết thất bại nên không dùng').",
   "style_analysis": "Nhận xét văn phong ngắn",
-  "key_evidence_snippet": "Snippet quan trọng nhất",
+  "key_evidence_snippet": "Snippet quan trọng nhất (ưu tiên LỚP 2; nếu không có thì LỚP 3; cuối cùng mới đến LỚP 1/4)",
   "key_evidence_source": "Nguồn bằng chứng"
 }
-
