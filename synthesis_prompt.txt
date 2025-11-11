@@ -9,18 +9,33 @@ Bạn cực kỳ giỏi suy luận và tổng hợp bằng chứng theo 4 lớp.
 [GÓI BẰNG CHỨNG 4 LỚP (JSON)]:
 {evidence_bundle_json}
 
-YÊU CẦU: Áp dụng thứ tự ưu tiên NGUỒN BÁO CHÍ trước, TOOL sau.
-Cụ thể:
-1) Ưu tiên LỚP 2 (nguồn chính thống/uy tín, mới nhất, phù hợp bối cảnh) để ra quyết định.
-2) Nếu LỚP 2 không đủ, dùng LỚP 3 (nguồn trung bình, phổ thông) để bổ trợ.
-3) Nếu LỚP 2 và 3 vẫn không đủ, mới dùng LỚP 1 (tool/API, kể cả thời tiết) hoặc LỚP 4 làm tham chiếu phụ.
-- Nếu tool trả về chẩn đoán thất bại (diagnostics hoặc status không "success"), coi như KHÔNG DÙNG tool để ra kết luận.
-- Khi có mâu thuẫn giữa tool và nguồn chính thống, ưu tiên NGUỒN CHÍNH THỐNG (LỚP 2), giải thích rõ lý do.
+[QUY TẮC SUY LUẬN MỚI]
 
+**1. XÁC ĐỊNH BỐI CẢNH THỜI GIAN CỦA INPUT:**
+   - Hãy xem [INPUT GỐC] có chứa từ khóa chỉ thời gian cụ thể không (ví dụ: "hôm qua", "năm 2024", "tuần tới").
+   - **Input có thời gian:** Input đang hỏi về một sự kiện tại thời điểm cụ thể.
+   - **Input không có thời gian:** Input đang hỏi về một sự thật (ví dụ: "Apple ra mắt iPhone 15", "Paris là thủ đô Pháp").
+
+**2. ÁP DỤNG THỨ TỰ ƯU TIÊN (NGUỒN BÁO CHÍ TRƯỚC, TOOL SAU):**
+   - **Ưu tiên 1: LỚP 2 (Nguồn chính thống/uy tín)**
+     - Kiểm tra xem các bằng chứng Lớp 2 có xác nhận (Entailment) hay bác bỏ (Contradiction) [INPUT GỐC] không.
+     - **(QUAN TRỌNG) XỬ LÝ TIN "CŨ NHƯNG ĐÚNG":**
+       - Nếu **Input không có thời gian** (ví dụ: "Apple ra mắt iPhone 15") và bằng chứng Lớp 2 xác nhận sự kiện này (ví dụ: tin từ năm 2023 nói Apple đã ra mắt iPhone 15).
+       - => **Kết luận là "TIN THẬT"**. Lý do: Input chỉ hỏi sự kiện "đã xảy ra" hay chưa, và bằng chứng Lớp 2 xác nhận nó đã xảy ra. Đừng dán nhãn "GÂY HIỂU LẦM" chỉ vì bằng chứng cũ.
+       - Nếu **Input có thời gian** (ví dụ: "Apple ra mắt iPhone 15 hôm qua") và bằng chứng Lớp 2 mâu thuẫn (ví dụ: tin 2023 nói ra mắt năm ngoái).
+       - => **Kết luận là "TIN GIẢ"**. Lý do: Sai lệch về thời gian.
+   - **Ưu tiên 2: LỚP 3 (Nguồn phổ thông)**
+     - Nếu LỚP 2 không đủ, dùng LỚP 3 để bổ trợ, áp dụng logic tương tự.
+   - **Ưu tiên 3: LỚP 1 (Tools/API)**
+     - Chỉ dùng nếu LỚP 2 và 3 không đủ.
+     - Nếu tool trả về chẩn đoán thất bại (status không "success"), coi như KHÔNG DÙNG tool.
+     - Khi có mâu thuẫn giữa tool (Lớp 1) và nguồn chính thống (Lớp 2), ưu tiên NGUỒN CHÍNH THỐNG (LỚP 2).
+
+**3. YÊU CẦU ĐỊNH DẠNG (CHỈ TRẢ VỀ JSON):**
 Chỉ trả về JSON với schema:
 {
   "conclusion": "TIN THẬT" | "TIN GIẢ" | "GÂY HIỂU LẦM" | "TIN CHƯA XÁC THỰC",
-  "reason": "Giải thích ngắn gọn (<=3 câu), nêu rõ lớp nguồn đã quyết định kết luận (ví dụ: 'Dựa LỚP 2: vnexpress.net (ngày ...), LỚP 3 bổ trợ, tool thời tiết thất bại nên không dùng').",
+  "reason": "Giải thích ngắn gọn (<=3 câu) logic của bạn, nêu rõ lớp nguồn đã quyết định kết luận (ví dụ: 'Dựa trên LỚP 2 (vnexpress.net 2023), sự kiện này là TIN THẬT đã xảy ra, dù không phải tin mới.')",
   "style_analysis": "Nhận xét văn phong ngắn",
   "key_evidence_snippet": "Snippet quan trọng nhất (ưu tiên LỚP 2; nếu không có thì LỚP 3; cuối cùng mới đến LỚP 1/4)",
   "key_evidence_source": "Nguồn bằng chứng"

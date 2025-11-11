@@ -18,7 +18,7 @@ Hãy phân tích và trả về một cấu trúc JSON duy nhất với các tr�
 
 4. "entities_and_values":
 
-   - "locations": ["Địa điểm CHUẨN HOÁ dạng 'City, CC'"]
+   - "locations": ["Địa điểm CHUẨN HOÁ dạng 'City, CC'"].
 
    - "persons": [], "organizations": [], "events": [], "data_points": []
 
@@ -30,7 +30,7 @@ Hãy phân tích và trả về một cấu trúc JSON duy nhất với các tr�
 
    - "time_scope": "historical" | "present" | "future"
 
-   - (Lưu ý: Các trường này sẽ được dùng trực tiếp cho OpenWeather API)
+   - (QUAN TRỌNG: Hãy phân tích kỹ "{text_input}" để điền các trường này. Nếu input KHÔNG HỀ nhắc đến thời gian (ví dụ: "Paris là thủ đô của Pháp"), hãy để "explicit_date" và "relative_time" là null, và "time_scope" là "present" (ngụ ý là hiện tại).)
 
 
 6. "required_tools" (KẾ HOẠCH MÔ-ĐUN):
@@ -83,13 +83,19 @@ Hãy phân tích và trả về một cấu trúc JSON duy nhất với các tr�
 
    }
 
-   - [QUY TẮC TÌM KIẾM THEO VOLATILITY (MỚI)]:
+   - [QUY TẮC TÌM KIẾM MỚI (THEO THỜI GIAN INPUT)]:
 
-     - Dựa vào "volatility" (Độ biến động) bạn đã xác định ở Bước 3.
+     - Dựa vào "time_references" (Mục 5) mà bạn đã xác định.
 
-     - Nếu "volatility" là 'high' hoặc 'medium' (ví dụ: thời tiết, giá vàng, tin thời sự nóng): Hãy TẬP TRUNG TÌM bài trong 7-14 ngày gần đây (tối đa 30 ngày).
+     - **TRƯỜNG HỢP 1: Input CÓ THỜI GIAN** (Nếu "explicit_date" hoặc "relative_time" KHÔNG rỗng):
 
-     - Nếu "volatility" là 'static' hoặc 'low' (ví dụ: sự kiện lịch sử, tiểu sử, kiến thức khoa học): Hãy TÌM BÀI UY TÍN NHẤT và MỚI NHẤT (gần nhất) về chủ đề đó, bất kể thời gian xuất bản (có thể là 1 tháng, 1 năm, hoặc 10 năm trước).
+       - Hãy TẬP TRUNG TÌM KIẾM các bài viết được xuất bản GẦN VỚI thời gian đó nhất. (Ví dụ: input nói "hôm qua", hãy tìm tin từ 1-2 ngày trước. Input nói "năm 2020", hãy tìm tin từ 2020).
+
+     - **TRƯỜNG HỢP 2: Input KHÔNG CÓ THỜI GIAN** (Nếu "explicit_date" và "relative_time" ĐỀU rỗng):
+
+       - Đây là một tuyên bố "vượt thời gian" (timeless claim), ví dụ "Sóng thần là gì".
+
+       - Hãy TÌM BÀI UY TÍN NHẤT (Lớp 2) xác nhận hoặc bác bỏ "main_claim", BẤT KỂ bài đó được xuất bản khi nào (có thể là 1 tháng, 1 năm, hoặc 10 năm trước).
 
    - Tuyệt đối KHÔNG bịa đặt tiêu đề/URL.
 
