@@ -9,10 +9,17 @@ echo Test trich xuat dia danh (API weather) - tuy chon
 set /p CLAIM=Nhap cau can trich dia danh (bo trong de bo qua): 
 if "%CLAIM%"=="" goto :end
 
-echo Dang goi /extract_location ...
-rem doi server khoi dong
-timeout /t 4 /nobreak >nul
-powershell -NoProfile -Command "$body = @{ text = '%CLAIM%' } | ConvertTo-Json; $resp = Invoke-RestMethod -Uri 'http://127.0.0.1:8000/extract_location' -Method Post -Body $body -ContentType 'application/json'; Write-Host 'Canonical:' $resp.canonical; $resp | ConvertTo-Json -Depth 6"
+setlocal EnableDelayedExpansion
+set "CLAIM_ESC=%CLAIM%"
+
+"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -Command ^
+  "$ErrorActionPreference='Stop';" ^
+  "$bodyObj = @{ text = $env:CLAIM };" ^
+  "$body = $bodyObj | ConvertTo-Json -Depth 5 -Compress;" ^
+  "$headers = @{ 'Content-Type' = 'application/json; charset=utf-8' };" ^
+  "$resp = Invoke-RestMethod -Uri 'http://127.0.0.1:8000/extract_location' -Method Post -Headers $headers -Body $body;" ^
+  "Write-Host 'Canonical:' ($resp.canonical);" ^
+  "$resp | ConvertTo-Json -Depth 6"
 
 :end
 echo.
