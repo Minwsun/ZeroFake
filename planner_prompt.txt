@@ -69,6 +69,14 @@ Hãy phân tích và trả về một cấu trúc JSON duy nhất với các tr�
     
      - **Nếu "claim_type" KHÔNG phải "Thời tiết":**
        - Sử dụng `tool_name: "search"` với các câu "queries" (truy vấn tìm kiếm) thông minh dựa trên "{text_input}" và các thực thể.
+       - **QUY TẮC TẠO QUERIES CHO SỰ KIỆN ĐÃ XẢY RA (RẤT QUAN TRỌNG):**
+         * Nếu input mô tả một sự kiện có vẻ đã xảy ra (ví dụ: "bão số 13 đổ bộ", "Apple ra mắt iPhone 15", "World Cup 2022"), hãy tạo NHIỀU queries với các biến thể:
+           - Query gốc: Giữ nguyên thông tin chính từ input (ví dụ: "bão số 13 đổ bộ Việt Nam")
+           - Query với năm: Thêm năm hiện tại hoặc năm gần đây (ví dụ: "bão số 13 Việt Nam 2024", "bão số 13 Việt Nam 2023")
+           - Query với từ khóa tin tức: Thêm "tin tức", "news", "thông tin" (ví dụ: "tin tức bão số 13 Việt Nam")
+           - Query tiếng Anh: Dịch sang tiếng Anh nếu có thể (ví dụ: "typhoon number 13 Vietnam", "storm number 13 Vietnam")
+           - Query với từ khóa xác nhận: Thêm "đã xảy ra", "đã đổ bộ", "confirmed", "happened" (ví dụ: "bão số 13 đã đổ bộ Việt Nam")
+         * **Mục tiêu:** Tìm kiếm thông tin về sự kiện đã xảy ra trong quá khứ, không chỉ tìm kiếm thông tin hiện tại.
        - **(Logic iPhone 15 vs 17)** Nếu input là sự kiện không có ngày tháng (ví dụ: "Apple ra mắt iPhone 15"), hãy thêm query: "tin tức mới nhất về [chủ đề]" (ví dụ: "iPhone mới nhất 2024 2025" hoặc "Apple ra mắt iPhone 17").
   
    - **VÍ DỤ KẾ HOẠCH MỤC 6:**
@@ -112,6 +120,24 @@ Hãy phân tích và trả về một cấu trúc JSON duy nhất với các tr�
                "iPhone 15 mới nhất 2024 2025"
              ],
              "search_type": "current_data"
+           }
+         }
+       ]
+     * Ví dụ 5: Input "bão số 13 đổ bộ vào Việt Nam" (Sự kiện đã xảy ra - KHÔNG phải Thời tiết)
+       [
+         {
+           "tool_name": "search",
+           "parameters": {
+             "queries": [
+               "bão số 13 đổ bộ Việt Nam",
+               "bão số 13 Việt Nam 2024",
+               "bão số 13 Việt Nam 2023",
+               "tin tức bão số 13 Việt Nam",
+               "bão số 13 đã đổ bộ Việt Nam",
+               "typhoon number 13 Vietnam",
+               "storm number 13 Vietnam"
+             ],
+             "search_type": "historical"
            }
          }
        ]

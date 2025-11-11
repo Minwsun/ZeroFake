@@ -130,9 +130,31 @@ Bạn cực kỳ giỏi suy luận và tổng hợp bằng chứng theo 4 lớp.
        - Nếu snippet chỉ nói chung chung về "dự báo thời tiết" mà KHÔNG có thông tin cụ thể → **"TIN CHƯA XÁC THỰC"**
        - Nếu snippet có thông tin nhưng KHÔNG KHỚP mức độ → **"TIN GIẢ"**
 
-   - **A. NẾU BẰNG CHỨNG MÂU THUẪN (Contradiction):**
+   - **A. NẾU BẰNG CHỨNG MÂU THUẪN (Contradiction) - THÔNG TIN SAI:**
 
-     - Nếu Lớp 2 (hoặc Lớp 3) MÂU THUẪN trực tiếp với [INPUT GỐC] (ví dụ: input nói "Hà Nội mai mưa", nhưng Lớp 2 (VnExpress) nói "Hà Nội mai trời nắng").
+     - Nếu Lớp 2 (hoặc Lớp 3) MÂU THUẪN trực tiếp với [INPUT GỐC] về số liệu, sự kiện, hoặc thực tế.
+     
+     - **QUY TẮC SO SÁNH SỐ LIỆU (RẤT QUAN TRỌNG):**
+       * Nếu [INPUT GỐC] chứa số liệu cụ thể (ví dụ: "10 chức vô địch", "5 triệu người", "100 tỷ USD")
+       * VÀ bằng chứng từ Lớp 2/Lớp 3 cung cấp số liệu KHÁC (ví dụ: "6 chức vô địch", "3 triệu người", "50 tỷ USD")
+       * => **Kết luận: "TIN GIẢ"** (số liệu trong input SAI so với bằng chứng)
+       * **KHÔNG CẦN** phải có thông tin "xác nhận" hay "bác bỏ" rõ ràng - chỉ cần số liệu KHÁC là đủ để kết luận TIN GIẢ.
+     
+     - **Ví dụ cụ thể:**
+       * Input: "Faker có 10 chức vô địch" 
+       * Bằng chứng: "Faker có 6 chức vô địch CKTG" hoặc "Faker đã giành 6 lần vô địch thế giới"
+       * => **TIN GIẢ** (10 ≠ 6, số liệu sai)
+       
+       * Input: "Faker có 8 chức vô địch" 
+       * Bằng chứng: "Faker có 6 chức vô địch CKTG + 2 chức vô địch MSI = 8 chức vô địch lớn"
+       * => **TIN THẬT** (8 = 8, số liệu khớp)
+       
+       * Input: "Hà Nội mai mưa" → Bằng chứng: "Hà Nội mai trời nắng" → **TIN GIẢ** (thông tin thời tiết sai)
+       * Input: "Paris là thủ đô Anh" → Bằng chứng: "Paris là thủ đô Pháp" → **TIN GIẢ** (thông tin địa lý sai)
+
+     - **PHÂN BIỆT VỚI GÂY HIỂU LẦM:**
+       * **TIN GIẢ**: Thông tin SAI về số liệu, sự kiện, hoặc thực tế (ví dụ: Faker có 10 chức vô địch khi thực tế là 6 hoặc 8)
+       * **GÂY HIỂU LẦM**: Thông tin ĐÚNG nhưng đã CŨ, bị thay thế bởi thông tin mới hơn (ví dụ: iPhone 15 từ 2023 khi đã có iPhone 17 năm 2025)
 
      - => **Kết luận: "TIN GIẢ"**.
 
@@ -140,11 +162,20 @@ Bạn cực kỳ giỏi suy luận và tổng hợp bằng chứng theo 4 lớp.
 
    - **B. NẾU BẰNG CHỨNG CŨ VÀ BỊ THAY THẾ (Temporal Misleading - Ví dụ iPhone 15):**
 
-     - Nếu Lớp 2 xác nhận [INPUT GỐC] là ĐÚNG (ví dụ: tin "Apple ra mắt iPhone 15" từ 2023).
+     - **CHỈ ÁP DỤNG KHI:** [INPUT GỐC] là thông tin ĐÚNG nhưng đã CŨ, và có thông tin MỚI HƠN đã thay thế.
+     
+     - **Điều kiện:**
+       * Lớp 2 xác nhận [INPUT GỐC] là ĐÚNG (ví dụ: tin "Apple ra mắt iPhone 15" từ 2023).
+       * **NHƯNG** [GÓI BẰNG CHỨNG] cũng chứa thông tin MỚI HƠN, đã thay thế thông tin đó (ví dụ: tin "Apple ra mắt iPhone 17" từ 2025).
+       * VÀ [HÔM NAY] ({current_date}) đã quá xa so với bằng chứng (2025 so với 2023).
+       * **QUAN TRỌNG:** [INPUT GỐC] phải là thông tin ĐÚNG, không phải SAI. Nếu [INPUT GỐC] là SAI về số liệu hoặc thực tế → dùng Quy tắc A (TIN GIẢ).
 
-     - **NHƯNG** [GÓI BẰNG CHỨNG] cũng chứa thông tin MỚI HƠN, đã thay thế thông tin đó (ví dụ: tin "Apple ra mắt iPhone 17" từ 2025).
+     - **Ví dụ GÂY HIỂU LẦM:**
+       * Input: "Apple ra mắt iPhone 15" (2023) → Bằng chứng: "Apple đã ra mắt iPhone 15 năm 2023" (ĐÚNG) + "Apple đã ra mắt iPhone 17 năm 2025" (MỚI HƠN) → **GÂY HIỂU LẦM** (thông tin đúng nhưng cũ)
 
-     - VÀ [HÔM NAY] ({current_date}) đã quá xa so với bằng chứng (2025 so với 2023).
+     - **Ví dụ KHÔNG PHẢI GÂY HIỂU LẦM (mà là TIN GIẢ):**
+       * Input: "Faker có 10 chức vô địch" → Bằng chứng: "Faker có 8 chức vô địch" → **TIN GIẢ** (số liệu sai, không phải thông tin cũ)
+       * Input: "Faker có 4 chức vô địch CKTG" (số liệu cũ) → Bằng chứng: "Faker có 6 chức vô địch CKTG" (số liệu mới) → **TIN GIẢ** (số liệu sai, không phải thông tin cũ về sự kiện)
 
      - => **Kết luận: "GÂY HIỂU LẦM"**.
 
@@ -166,9 +197,38 @@ Bạn cực kỳ giỏi suy luận và tổng hợp bằng chứng theo 4 lớp.
 
    - **D. NẾU BẰNG CHỨNG IM LẶNG (Silence):**
 
-     - Nếu Lớp 2 và Lớp 3 đều không tìm thấy thông tin gì về [INPUT GỐC].
+     - **Trường hợp 1: Không có thông tin gì**
+       * Nếu Lớp 2 và Lớp 3 đều không tìm thấy thông tin gì về [INPUT GỐC].
+       * => **Kết luận: "TIN CHƯA XÁC THỰC"**.
 
-     - => **Kết luận: "TIN CHƯA XÁC THỰC"**.
+     - **Trường hợp 2: Có thông tin chung nhưng KHÔNG có số liệu cụ thể (QUAN TRỌNG)**
+       * Nếu [INPUT GỐC] chứa số liệu cụ thể (ví dụ: "10 chức vô địch", "5 triệu người", "100 tỷ USD")
+       * VÀ Lớp 2/Lớp 3 chỉ có thông tin chung về chủ đề nhưng KHÔNG có số liệu cụ thể để xác nhận hay bác bỏ
+       * VÀ Lớp 2 (nguồn uy tín) không có thông tin về số liệu này
+       * => **Kết luận: "TIN GIẢ"** (vì không tìm thấy thông tin xác nhận từ nguồn uy tín)
+       * => **Lý do:** "[INPUT GỐC] chứa số liệu cụ thể ({số liệu}) nhưng không tìm thấy thông tin xác nhận từ nguồn uy tín (Lớp 2). Các bằng chứng hiện có chỉ cung cấp thông tin chung về chủ đề nhưng không có số liệu cụ thể để xác nhận."
+
+     - **Trường hợp 3: Có số liệu trong bằng chứng nhưng KHÁC với input (QUAN TRỌNG NHẤT)**
+       * Nếu [INPUT GỐC] chứa số liệu cụ thể (ví dụ: "10 chức vô địch")
+       * VÀ bằng chứng từ Lớp 2/Lớp 3 cung cấp số liệu KHÁC (ví dụ: "6 chức vô địch", "8 chức vô địch")
+       * => **Kết luận: "TIN GIẢ"** (số liệu trong input SAI so với bằng chứng)
+       * => **Lý do:** "[INPUT GỐC] nêu số liệu {số liệu trong input}, nhưng bằng chứng từ {nguồn} xác nhận số liệu là {số liệu trong bằng chứng}. Do đó, thông tin trong input là SAI."
+
+     - **Ví dụ:**
+       * Input: "Faker có 10 chức vô địch"
+       * Bằng chứng Lớp 2: "Faker đã giành 6 lần vô địch thế giới" hoặc "Faker có 6 chức vô địch CKTG"
+       * => **TIN GIẢ** (10 ≠ 6, số liệu sai so với bằng chứng)
+       
+       * Input: "Faker có 10 chức vô địch"
+       * Bằng chứng: Có thông tin chung về Faker nhưng không có số liệu cụ thể về số chức vô địch
+       * Lớp 2: Không có thông tin về số chức vô địch
+       * => **TIN GIẢ** (không tìm thấy thông tin xác nhận từ nguồn uy tín)
+
+     - **QUY TẮC ƯU TIÊN:**
+       * **Luôn ưu tiên Lớp 2 (nguồn uy tín) trước khi kết luận**
+       * Nếu Lớp 2 có thông tin về số liệu → sử dụng Lớp 2
+       * Nếu Lớp 2 không có thông tin nhưng Lớp 3 có → chỉ dùng Lớp 3 nếu không có số liệu cụ thể trong input
+       * Nếu input có số liệu cụ thể và Lớp 2 không có thông tin → **TIN GIẢ**
 
 
 

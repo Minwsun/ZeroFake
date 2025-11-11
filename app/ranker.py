@@ -67,10 +67,28 @@ def _flatten_config(nested_dict: dict) -> dict:
 
 
 def load_ranker_config(config_path="config.json"):
-    """Không còn phụ thuộc vào config.json. Sử dụng heuristic toàn cục."""
+    """Tải config từ config.json và kết hợp với heuristic toàn cục."""
     global SOURCE_RANKER_CONFIG
+    import json
+    import os
+    
+    # Khởi tạo với default
     SOURCE_RANKER_CONFIG = {"default": 0.6}
-    print("Ranker: Sử dụng heuristic toàn cục (config.json bị bỏ qua).")
+    
+    # Thử tải config.json
+    try:
+        if os.path.exists(config_path):
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config_data = json.load(f)
+            
+            # Làm phẳng config lồng nhau
+            flattened = _flatten_config(config_data)
+            SOURCE_RANKER_CONFIG.update(flattened)
+            print(f"Ranker: Đã tải {len(flattened)} nguồn từ config.json.")
+        else:
+            print(f"Ranker: Không tìm thấy {config_path}, sử dụng heuristic toàn cục.")
+    except Exception as e:
+        print(f"Ranker: Lỗi khi tải config.json: {e}, sử dụng heuristic toàn cục.")
 
 
 def get_rank_from_url(url: str) -> float:
@@ -94,7 +112,24 @@ def get_rank_from_url(url: str) -> float:
         if any(domain == d or domain.endswith('.' + d) for d in WEATHER_DOMAINS) or any(k in domain for k in WEATHER_KEYWORDS):
             return 0.95
 
-        # Domain heuristics
+        # Kiểm tra config.json trước (ưu tiên nguồn uy tín từ config)
+        if domain in SOURCE_RANKER_CONFIG:
+            config_score = SOURCE_RANKER_CONFIG[domain]
+            if config_score >= 0.85:  # Nguồn uy tín từ config
+                print(f"Ranker: Tìm thấy nguồn uy tín từ config.json: {domain} = {config_score}")
+                return config_score
+        
+        # Kiểm tra subdomain trong config
+        parts = domain.split('.')
+        if len(parts) > 2:
+            base_domain_2 = '.'.join(parts[-2:])
+            if base_domain_2 in SOURCE_RANKER_CONFIG:
+                config_score = SOURCE_RANKER_CONFIG[base_domain_2]
+                if config_score >= 0.85:
+                    print(f"Ranker: Tìm thấy nguồn uy tín từ config.json: {base_domain_2} = {config_score}")
+                    return config_score
+        
+        # Domain heuristics (fallback)
         score = None
 
         if domain.endswith(('.gov', '.gov.vn', '.gob', '.go.jp', '.mil', '.mil.vn')):
