@@ -90,13 +90,22 @@ def _trim_evidence_bundle(bundle: Dict[str, Any], cap_l2: int = 5, cap_l3: int =
     if not bundle:
         return {"layer_1_tools": [], "layer_2_high_trust": [], "layer_3_general": [], "layer_4_social_low": []}
     out = {
-        "layer_1_tools": [], # Sẽ luôn rỗng
+        "layer_1_tools": [], # OpenWeather API data
         "layer_2_high_trust": [],
         "layer_3_general": [],
         "layer_4_social_low": []
     }
     
-    # (XÓA BỎ) Lớp 1: không còn dùng
+    # Lớp 1: OpenWeather API data (quan trọng cho tin thời tiết)
+    for it in (bundle.get("layer_1_tools") or []):
+        out["layer_1_tools"].append({
+            "source": it.get("source"),
+            "url": it.get("url"),
+            "snippet": _trim_snippet(it.get("snippet")),
+            "rank_score": it.get("rank_score"),
+            "date": it.get("date"),
+            "weather_data": it.get("weather_data")  # Giữ nguyên dữ liệu gốc từ OpenWeather
+        })
     
     # Lớp 2
     for it in (bundle.get("layer_2_high_trust") or [])[:cap_l2]:
@@ -140,10 +149,10 @@ def _as_str(x: Any) -> str:
 def _heuristic_summarize(text_input: str, bundle: Dict[str, Any], current_date: str) -> Dict[str, Any]:
     """
     (ĐÃ SỬA ĐỔI)
-    Logic dự phòng khi LLM thất bại, đã loại bỏ Lớp 1 (weather).
+    Logic dự phòng khi LLM thất bại, sử dụng Lớp 1 (OpenWeather API) cho tin thời tiết.
     """
+    l1 = bundle.get("layer_1_tools") or []
     l2 = bundle.get("layer_2_high_trust") or []
-    # (XÓA BỎ) l1 = bundle.get("layer_1_tools") or []
 
     try:
         claim = classify_claim(text_input)
@@ -151,6 +160,61 @@ def _heuristic_summarize(text_input: str, bundle: Dict[str, Any], current_date: 
         claim = {"is_weather": False}
 
     is_weather_claim = claim.get("is_weather", False)
+
+    # Ưu tiên Lớp 1 (OpenWeather API) cho tin thời tiết
+    if is_weather_claim and l1:
+        weather_item = l1[0]
+        weather_data = weather_item.get("weather_data", {})
+        if weather_data:
+            # So sánh điều kiện thời tiết
+            main_condition = weather_data.get("main", "").lower()
+            description = weather_data.get("description", "").lower()
+            text_lower = text_input.lower()
+            
+            # Kiểm tra mưa
+            if "mưa" in text_lower or "rain" in text_lower:
+                if "rain" in main_condition or "rain" in description:
+                    # Kiểm tra mức độ mưa
+                    if "mưa to" in text_lower or "mưa lớn" in text_lower or "heavy rain" in text_lower:
+                        if "heavy" in description or "torrential" in description:
+                            return {
+                                "conclusion": "TIN THẬT",
+                                "reason": _as_str(f"Heuristic: OpenWeather API xác nhận {weather_item.get('source')} - {description} ({weather_data.get('temperature')}°C) cho {weather_data.get('location')} ngày {weather_data.get('date')}."),
+                                "style_analysis": "",
+                                "key_evidence_snippet": _as_str(weather_item.get("snippet")),
+                                "key_evidence_source": _as_str(weather_item.get("source")),
+                                "cached": False
+                            }
+                    else:
+                        # Mưa thường
+                        return {
+                            "conclusion": "TIN THẬT",
+                            "reason": _as_str(f"Heuristic: OpenWeather API xác nhận {weather_item.get('source')} - {description} ({weather_data.get('temperature')}°C) cho {weather_data.get('location')} ngày {weather_data.get('date')}."),
+                            "style_analysis": "",
+                            "key_evidence_snippet": _as_str(weather_item.get("snippet")),
+                            "key_evidence_source": _as_str(weather_item.get("source")),
+                            "cached": False
+                        }
+            # Kiểm tra nắng
+            elif "nắng" in text_lower or "sunny" in text_lower or "clear" in text_lower:
+                if "clear" in main_condition or "sunny" in description:
+                    return {
+                        "conclusion": "TIN THẬT",
+                        "reason": _as_str(f"Heuristic: OpenWeather API xác nhận {weather_item.get('source')} - {description} ({weather_data.get('temperature')}°C) cho {weather_data.get('location')} ngày {weather_data.get('date')}."),
+                        "style_analysis": "",
+                        "key_evidence_snippet": _as_str(weather_item.get("snippet")),
+                        "key_evidence_source": _as_str(weather_item.get("source")),
+                        "cached": False
+                    }
+            # Nếu không khớp điều kiện cụ thể, vẫn trả về dữ liệu từ OpenWeather
+            return {
+                "conclusion": "TIN THẬT",
+                "reason": _as_str(f"Heuristic: OpenWeather API cung cấp dữ liệu thời tiết {weather_item.get('source')} - {description} ({weather_data.get('temperature')}°C) cho {weather_data.get('location')} ngày {weather_data.get('date')}."),
+                "style_analysis": "",
+                "key_evidence_snippet": _as_str(weather_item.get("snippet")),
+                "key_evidence_source": _as_str(weather_item.get("source")),
+                "cached": False
+            }
 
     # Yêu cầu chặt chẽ: cần >=2 nguồn Lớp 2 đồng thuận để kết luận TIN THẬT
     if len(l2) >= 2:

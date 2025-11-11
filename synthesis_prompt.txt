@@ -12,9 +12,21 @@ Bạn cực kỳ giỏi suy luận và tổng hợp bằng chứng theo 4 lớp.
 
 [GÓI BẰNG CHỨNG 4 LỚP (JSON)]:
 
-(Lưu ý: LỚP 1 (Tools/API) không còn được sử dụng. Chỉ dựa vào LỚP 2, 3, 4)
-
 {evidence_bundle_json}
+
+**QUAN TRỌNG: LỚP 1 (OpenWeather API)**
+- Nếu [GÓI BẰNG CHỨNG] có "layer_1_tools" và không rỗng, đây là dữ liệu từ OpenWeather API.
+- Mỗi item trong "layer_1_tools" có:
+  * "source": "openweathermap.org"
+  * "snippet": Mô tả thời tiết đã format
+  * "weather_data": Dữ liệu gốc từ OpenWeather API với các field:
+    - "main": "Rain", "Clear", "Clouds", "Thunderstorm", etc.
+    - "description": "mưa nhẹ", "heavy rain", "clear sky", etc.
+    - "temperature": Nhiệt độ (°C)
+    - "location": Tên địa điểm
+    - "date": Ngày (YYYY-MM-DD)
+    - "time": Thời gian (HH:MM)
+- **ĐỐI VỚI TIN THỜI TIẾT: NẾU CÓ LỚP 1, BẮT BUỘC PHẢI SỬ DỤNG LỚP 1 ĐỂ ĐƯA RA KẾT LUẬN. KHÔNG ĐƯỢC BỎ QUA LỚP 1.**
 
 
 [QUY TẮC SUY LUẬN MỚI]
@@ -29,13 +41,25 @@ Bạn cực kỳ giỏi suy luận và tổng hợp bằng chứng theo 4 lớp.
 
 
 
-**2. ÁP DỤNG THỨ TỰ ƯU TIÊN (CHỈ DÙNG NGUỒN BÁO CHÍ/WEB):**
+**2. ÁP DỤNG THỨ TỰ ƯU TIÊN:**
 
 
+
+   - **Ưu tiên 0 (CHỈ CHO TIN THỜI TIẾT): LỚP 1 (OpenWeather API) - BẮT BUỘC**
+
+     - **NẾU [INPUT GỐC] LÀ TIN THỜI TIẾT VÀ CÓ DỮ LIỆU TỪ LỚP 1 (OpenWeather API), BẮT BUỘC PHẢI SỬ DỤNG LỚP 1 ĐỂ ĐƯA RA KẾT LUẬN.**
+
+     - **KHÔNG ĐƯỢC BỎ QUA LỚP 1 NẾU CÓ DỮ LIỆU.**
+
+     - LỚP 1 cung cấp dữ liệu thời tiết chính xác, cập nhật từ OpenWeatherMap.
+
+     - So sánh điều kiện thời tiết trong [INPUT GỐC] với dữ liệu LỚP 1 (đọc từ "weather_data" field) để đưa ra kết luận.
+
+     - **Nếu LỚP 1 có dữ liệu nhưng bạn vẫn kết luận "TIN CHƯA XÁC THỰC" → ĐÂY LÀ LỖI NGHIÊM TRỌNG.**
 
    - **Ưu tiên 1: LỚP 2 (Nguồn chính thống/uy tín)**
 
-     - Dùng Lớp 2 để ra quyết định chính.
+     - Dùng Lớp 2 để ra quyết định chính (hoặc bổ trợ cho LỚP 1 nếu là tin thời tiết).
 
      - Đây là nguồn chân lý để xác minh [INPUT GỐC] (kể cả tin thời tiết).
 
@@ -57,31 +81,54 @@ Bạn cực kỳ giỏi suy luận và tổng hợp bằng chứng theo 4 lớp.
 
 **3.1. QUY TẮC ĐẶC BIỆT CHO TIN THỜI TIẾT (CHỈ ÁP DỤNG KHI [INPUT GỐC] NÓI VỀ THỜI TIẾT):**
 
+   - **ƯU TIÊN LỚP 1 (OpenWeather API) - BẮT BUỘC:**
+     * **NẾU CÓ DỮ LIỆU TỪ LỚP 1 (OpenWeather API), BẮT BUỘC PHẢI SỬ DỤNG LỚP 1 ĐỂ ĐƯA RA KẾT LUẬN. KHÔNG ĐƯỢC BỎ QUA.**
+     * LỚP 1 cung cấp dữ liệu thời tiết chính xác, cập nhật từ OpenWeatherMap.
+     * **Đọc dữ liệu từ "weather_data" field trong mỗi item của "layer_1_tools":**
+       - "main": "Rain", "Clear", "Clouds", "Thunderstorm", etc.
+       - "description": "mưa nhẹ", "heavy rain", "clear sky", etc.
+       - "temperature": Nhiệt độ (°C)
+       - "location": Tên địa điểm
+       - "date": Ngày (YYYY-MM-DD)
+       - "time": Thời gian (HH:MM)
+     * **So sánh điều kiện thời tiết trong [INPUT GỐC] với dữ liệu LỚP 1 để đưa ra kết luận.**
+   
    - **Phân tích chi tiết điều kiện thời tiết trong [INPUT GỐC]:**
      * Xác định loại điều kiện: "mưa", "mưa to", "mưa lớn", "mưa nhẹ", "nắng", "nắng to", "gió", "bão", "thunderstorm", "dông", etc.
      * Xác định mức độ: "nhẹ", "vừa", "to", "lớn", "rất lớn", "dữ dội"
    
-   - **Quy tắc so khớp điều kiện thời tiết:**
+   - **Quy tắc so khớp điều kiện thời tiết (với LỚP 1 hoặc LỚP 2/3):**
      * **"Mưa to" / "Mưa lớn" / "Mưa rất lớn"**: Chỉ khớp với dự báo "mưa lớn", "mưa to", "mưa rất lớn", "thunderstorm", "dông", "bão", "heavy rain", "torrential rain", "thunderstorm". 
        - KHÔNG khớp với: "mưa nhẹ", "mưa rải rác", "light rain", "drizzle", "nắng", "sunny", "cloudy"
+       - Với LỚP 1: Kiểm tra "main" = "Rain" và "description" có chứa "heavy" hoặc "torrential"
      * **"Mưa" (không có mức độ)**: Khớp với bất kỳ loại mưa nào (nhẹ, vừa, to, lớn)
+       - Với LỚP 1: Kiểm tra "main" = "Rain"
      * **"Mưa nhẹ"**: Chỉ khớp với "mưa nhẹ", "mưa rải rác", "light rain", "drizzle"
        - KHÔNG khớp với: "mưa to", "mưa lớn", "thunderstorm", "heavy rain"
+       - Với LỚP 1: Kiểm tra "main" = "Rain" và "description" có chứa "light" hoặc "drizzle"
      * **"Nắng" / "Nắng to"**: Khớp với "nắng", "sunny", "clear", "nắng to", "nắng gắt"
        - KHÔNG khớp với: "mưa", "rain", "cloudy", "có mây"
+       - Với LỚP 1: Kiểm tra "main" = "Clear"
      * **"Bão" / "Thunderstorm" / "Dông"**: Chỉ khớp với "bão", "thunderstorm", "dông", "storm", "typhoon"
+       - Với LỚP 1: Kiểm tra "main" = "Thunderstorm"
    
    - **Phân tích snippet từ bằng chứng:**
-     * Đọc KỸ snippet từ Lớp 2 và Lớp 3 (đặc biệt từ các trang dự báo thời tiết)
+     * **LỚP 1 (OpenWeather API)**: Đọc weather_data để lấy thông tin chi tiết (main, description, temperature)
+     * **Lớp 2 và Lớp 3**: Đọc KỸ snippet từ các trang dự báo thời tiết
      * Tìm các từ khóa: "mưa", "rain", "nắng", "sunny", "gió", "wind", "bão", "storm", "thunderstorm", "dông"
      * Tìm mức độ: "nhẹ", "vừa", "to", "lớn", "rất lớn", "light", "heavy", "torrential", "severe"
      * Tìm điều kiện cụ thể: "thunderstorm", "dông", "bão", "typhoon", "hurricane"
    
    - **Kết luận cho tin thời tiết:**
-     * Nếu snippet từ Lớp 2/Lớp 3 KHỚP CHÍNH XÁC với điều kiện trong [INPUT GỐC] (theo quy tắc trên) → **"TIN THẬT"**
-     * Nếu snippet MÂU THUẪN với [INPUT GỐC] (ví dụ: input "mưa to" nhưng snippet "nắng" hoặc "mưa nhẹ") → **"TIN GIẢ"**
-     * Nếu snippet chỉ nói chung chung về "dự báo thời tiết" mà KHÔNG có thông tin cụ thể về điều kiện → **"TIN CHƯA XÁC THỰC"** (không đủ thông tin)
-     * Nếu snippet có thông tin nhưng KHÔNG KHỚP mức độ (ví dụ: input "mưa to" nhưng snippet "mưa nhẹ") → **"TIN GIẢ"**
+     * **Nếu có LỚP 1 (OpenWeather API):**
+       - Nếu dữ liệu LỚP 1 KHỚP CHÍNH XÁC với điều kiện trong [INPUT GỐC] → **"TIN THẬT"**
+       - Nếu dữ liệu LỚP 1 MÂU THUẪN với [INPUT GỐC] → **"TIN GIẢ"**
+       - Nếu dữ liệu LỚP 1 không đủ thông tin → dùng LỚP 2/3 để bổ trợ
+     * **Nếu không có LỚP 1, dùng LỚP 2/3:**
+       - Nếu snippet từ Lớp 2/Lớp 3 KHỚP CHÍNH XÁC với điều kiện trong [INPUT GỐC] → **"TIN THẬT"**
+       - Nếu snippet MÂU THUẪN với [INPUT GỐC] → **"TIN GIẢ"**
+       - Nếu snippet chỉ nói chung chung về "dự báo thời tiết" mà KHÔNG có thông tin cụ thể → **"TIN CHƯA XÁC THỰC"**
+       - Nếu snippet có thông tin nhưng KHÔNG KHỚP mức độ → **"TIN GIẢ"**
 
    - **A. NẾU BẰNG CHỨNG MÂU THUẪN (Contradiction):**
 

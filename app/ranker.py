@@ -88,7 +88,9 @@ def get_rank_from_url(url: str) -> float:
         if domain.startswith('www.'):
             domain = domain[4:]
 
-        # Ưu tiên các trang dự báo thời tiết chuyên dụng
+        # Ưu tiên các trang dự báo thời tiết chuyên dụng (accuweather.com được ưu tiên cao nhất)
+        if 'accuweather.com' in domain:
+            return 0.98  # Accuweather được ưu tiên cao nhất
         if any(domain == d or domain.endswith('.' + d) for d in WEATHER_DOMAINS) or any(k in domain for k in WEATHER_KEYWORDS):
             return 0.95
 

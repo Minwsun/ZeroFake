@@ -1,12 +1,17 @@
 # Module: Weather Verification & Classification
-# (ĐÃ SỬA ĐỔI - Chỉ còn chức năng phát hiện, không gọi API)
+# (ĐÃ SỬA ĐỔI - Thêm OpenWeather API để hỗ trợ query thời tiết)
 
 import re
-from typing import Optional, Dict
+import os
+import requests
+from typing import Optional, Dict, List
+from datetime import datetime, timedelta
 from dotenv import load_dotenv
 
 
 load_dotenv()
+
+OPENWEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY")
 
 
 def _norm(s: Optional[str]) -> str:
@@ -173,5 +178,422 @@ def classify_claim(text: str) -> Dict:
         "city": city,
         "time_scope": time_scope,
         "days_ahead": days_ahead,
-        "relative_time": relative_time_str
+        "relative_time": relative_time_str,
+        "part_of_day": part_of_day  # "sáng", "chiều", "tối", hoặc None
     }
+
+
+def get_openweather_data(city_name: str, days_ahead: int = 0, part_of_day: Optional[str] = None) -> Optional[Dict]:
+    """
+    Gọi OpenWeather API để lấy dữ liệu thời tiết.
+    Sử dụng geopy để geocoding trước, sau đó dùng OpenWeather API.
+    
+    Args:
+        city_name: Tên thành phố (ví dụ: "Hanoi", "Ho Chi Minh City", "Thành phố Hồ Chí Minh")
+        days_ahead: Số ngày sau hôm nay (0 = hôm nay, 1 = ngày mai, ...)
+        part_of_day: Phần trong ngày ("sáng", "chiều", "tối") hoặc None
+    
+    Returns:
+        dict: Dữ liệu thời tiết từ OpenWeather hoặc None nếu lỗi
+    """
+    if not OPENWEATHER_API_KEY:
+        print("ERROR: OPENWEATHER_API_KEY chưa được cấu hình trong .env file.")
+        print("Hướng dẫn: Thêm OPENWEATHER_API_KEY=your_api_key vào file .env")
+        return None
+    
+    print(f"OpenWeather: Đang tìm kiếm địa điểm '{city_name}'...")
+    
+    # Bước 0: Sử dụng geopy để geocoding trước (nếu có) - hỗ trợ toàn cầu
+    lat = None
+    lon = None
+    normalized_city_name = city_name
+    
+    try:
+        from geopy.geocoders import Nominatim
+        from geopy.exc import GeocoderTimedOut, GeocoderServiceError
+        
+        print(f"Geopy: Đang geocoding '{city_name}' (toàn cầu)...")
+        geolocator = Nominatim(user_agent="ZeroFake-FactChecker/1.0")
+        
+        # Thử nhiều cách tìm kiếm để tăng độ chính xác cho địa danh toàn cầu
+        location = None
+        
+        # Cách 1: Tìm kiếm trực tiếp với tên gốc
+        try:
+            location = geolocator.geocode(city_name, timeout=10, language='en', exactly_one=True)
+        except Exception as e:
+            print(f"Geopy: Lỗi khi geocode '{city_name}': {e}")
+        
+        # Cách 2: Nếu không tìm thấy, thử thêm "city" hoặc "thành phố" vào cuối
+        if not location:
+            try:
+                if "city" not in city_name.lower() and "thành phố" not in city_name.lower():
+                    location = geolocator.geocode(f"{city_name}, city", timeout=10, language='en', exactly_one=True)
+            except Exception:
+                pass
+        
+        # Cách 3: Nếu vẫn không tìm thấy, thử tìm kiếm rộng hơn
+        if not location:
+            try:
+                results = geolocator.geocode(city_name, timeout=10, language='en', exactly_one=False)
+                if results and len(results) > 0:
+                    # Chọn kết quả đầu tiên (có thể cải thiện logic chọn sau)
+                    location = results[0]
+            except Exception:
+                pass
+        
+        if location and location.latitude and location.longitude:
+            lat = location.latitude
+            lon = location.longitude
+            # Lấy tên chuẩn hóa từ geopy (thường là tiếng Anh)
+            address_parts = location.address.split(',')
+            normalized_city_name = address_parts[0].strip()
+            
+            # Thử lấy tên tiếng Anh từ raw data nếu có
+            if hasattr(location, 'raw') and location.raw:
+                raw_data = location.raw
+                if 'display_name' in raw_data:
+                    display_name = raw_data['display_name']
+                    normalized_city_name = display_name.split(',')[0].strip()
+                elif 'name' in raw_data:
+                    normalized_city_name = raw_data['name']
+            
+            print(f"Geopy: Tìm thấy '{normalized_city_name}' tại [{lat}, {lon}]")
+        else:
+            print(f"Geopy: Không tìm thấy '{city_name}', sẽ thử OpenWeather geocoding")
+    except ImportError:
+        print("Geopy: Không có geopy, bỏ qua geocoding bằng geopy")
+    except GeocoderTimedOut:
+        print(f"Geopy: Timeout khi geocoding '{city_name}', sẽ thử OpenWeather geocoding")
+    except GeocoderServiceError as e:
+        print(f"Geopy: Service error khi geocoding '{city_name}': {e}, sẽ thử OpenWeather geocoding")
+    except Exception as e:
+        print(f"Geopy: Lỗi khi geocoding '{city_name}': {type(e).__name__}: {e}, sẽ thử OpenWeather geocoding")
+    
+    # Nếu geopy không tìm thấy, dùng OpenWeather geocoding
+    if lat is None or lon is None:
+        # Mapping tên thành phố Việt Nam sang tiếng Anh (để geocoding tốt hơn)
+        CITY_NAME_MAP = {
+            "Thành phố Hồ Chí Minh": "Ho Chi Minh City",
+            "Hồ Chí Minh": "Ho Chi Minh City",
+            "Hà Nội": "Hanoi",
+            "Đà Nẵng": "Da Nang",
+            "Hải Phòng": "Hai Phong",
+            "Cần Thơ": "Can Tho",
+            "Nha Trang": "Nha Trang",
+            "Huế": "Hue",
+            "Vũng Tàu": "Vung Tau",
+        }
+        
+        # Thử dùng tên tiếng Anh nếu có trong map
+        query_city = CITY_NAME_MAP.get(city_name, city_name)
+        if query_city != city_name:
+            print(f"OpenWeather: Chuyển đổi '{city_name}' -> '{query_city}' để geocoding tốt hơn")
+        else:
+            query_city = normalized_city_name if normalized_city_name != city_name else city_name
+        
+        try:
+            # Bước 1: Geocoding bằng OpenWeather API
+            geocode_url = "http://api.openweathermap.org/geo/1.0/direct"
+            geocode_params = {
+                "q": query_city,
+                "limit": 5,  # Tăng limit để có nhiều kết quả hơn
+                "appid": OPENWEATHER_API_KEY
+            }
+            
+            print(f"OpenWeather: Gọi geocoding API với query: '{query_city}'")
+            geocode_response = requests.get(geocode_url, params=geocode_params, timeout=10)
+            
+            # Kiểm tra status code
+            if geocode_response.status_code == 401:
+                print("ERROR: OpenWeather API key không hợp lệ hoặc đã hết hạn.")
+                return None
+            elif geocode_response.status_code == 429:
+                print("ERROR: OpenWeather API rate limit đã vượt quá. Vui lòng thử lại sau.")
+                return None
+            elif geocode_response.status_code != 200:
+                print(f"ERROR: OpenWeather geocoding API trả về status code {geocode_response.status_code}")
+                print(f"Response: {geocode_response.text[:200]}")
+                return None
+            
+            geocode_response.raise_for_status()
+            geocode_data = geocode_response.json()
+            
+            if not geocode_data or len(geocode_data) == 0:
+                print(f"ERROR: OpenWeather không tìm thấy địa điểm '{query_city}' (original: '{city_name}')")
+                # Thử lại với tên gốc nếu đã dùng mapping
+                if query_city != city_name:
+                    print(f"OpenWeather: Thử lại với tên gốc '{city_name}'...")
+                    geocode_params_retry = {
+                        "q": city_name,
+                        "limit": 5,
+                        "appid": OPENWEATHER_API_KEY
+                    }
+                    geocode_response_retry = requests.get(geocode_url, params=geocode_params_retry, timeout=10)
+                    if geocode_response_retry.status_code == 200:
+                        geocode_data_retry = geocode_response_retry.json()
+                        if geocode_data_retry and len(geocode_data_retry) > 0:
+                            geocode_data = geocode_data_retry
+                            print(f"OpenWeather: Thành công với tên gốc '{city_name}'")
+                        else:
+                            print(f"ERROR: Vẫn không tìm thấy với tên gốc '{city_name}'")
+                            print(f"Gợi ý: Kiểm tra tên thành phố hoặc thử dùng tên tiếng Anh")
+                            return None
+                    else:
+                        print(f"ERROR: Geocoding retry failed với status {geocode_response_retry.status_code}")
+                        return None
+                else:
+                    print(f"Gợi ý: Thử dùng tên tiếng Anh (ví dụ: 'Ho Chi Minh City' thay vì 'Thành phố Hồ Chí Minh')")
+                    return None
+            
+            # Chọn kết quả đầu tiên (có thể cải thiện logic chọn sau)
+            selected = geocode_data[0]
+            lat = selected["lat"]
+            lon = selected["lon"]
+            location_name = selected.get("name", city_name)
+            country = selected.get("country", "")
+            
+            print(f"OpenWeather: Tìm thấy '{location_name}' ({country}) tại [{lat}, {lon}]")
+        except Exception as e:
+            print(f"ERROR: Lỗi khi geocoding bằng OpenWeather: {e}")
+            return None
+    
+    # Bước 2: Lấy dữ liệu thời tiết (dùng lat, lon từ geopy hoặc OpenWeather)
+    if lat is not None and lon is not None:
+        try:
+            if days_ahead == 0:
+                # Current weather
+                weather_url = "https://api.openweathermap.org/data/2.5/weather"
+                weather_params = {
+                    "lat": lat,
+                    "lon": lon,
+                    "appid": OPENWEATHER_API_KEY,
+                    "units": "metric",
+                    "lang": "vi"
+                }
+                print(f"OpenWeather: Lấy thời tiết hiện tại cho [{lat}, {lon}]...")
+                weather_response = requests.get(weather_url, params=weather_params, timeout=10)
+                
+                if weather_response.status_code == 401:
+                    print("ERROR: OpenWeather API key không hợp lệ khi gọi weather API.")
+                    return None
+                elif weather_response.status_code == 429:
+                    print("ERROR: OpenWeather API rate limit đã vượt quá khi gọi weather API.")
+                    return None
+                elif weather_response.status_code != 200:
+                    print(f"ERROR: OpenWeather weather API trả về status code {weather_response.status_code}")
+                    print(f"Response: {weather_response.text[:200]}")
+                    return None
+                
+                weather_response.raise_for_status()
+                weather_data = weather_response.json()
+                
+                if not weather_data or "main" not in weather_data:
+                    print("ERROR: OpenWeather API trả về dữ liệu không hợp lệ (thiếu 'main' field)")
+                    return None
+                
+                # Lấy thời gian cụ thể từ API (nếu có)
+                current_time = datetime.now()
+                time_str = current_time.strftime('%H:%M')
+                
+                # Sử dụng normalized_city_name từ geopy nếu có
+                final_location_name = normalized_city_name
+                
+                result = {
+                    "location": final_location_name,
+                    "date": current_time.strftime('%Y-%m-%d'),
+                    "time": time_str,
+                    "temperature": weather_data["main"]["temp"],
+                    "feels_like": weather_data["main"]["feels_like"],
+                    "description": weather_data["weather"][0]["description"],
+                    "main": weather_data["weather"][0]["main"],  # Rain, Clear, Clouds, etc.
+                    "humidity": weather_data["main"]["humidity"],
+                    "wind_speed": weather_data.get("wind", {}).get("speed", 0),
+                    "source": "openweathermap.org"
+                }
+                print(f"OpenWeather: Thành công - {result['location']}: {result['description']} ({result['temperature']}°C) vào {result['date']} {result['time']}")
+                return result
+            else:
+                # Forecast (5 days, 3-hour intervals)
+                forecast_url = "https://api.openweathermap.org/data/2.5/forecast"
+                forecast_params = {
+                    "lat": lat,
+                    "lon": lon,
+                    "appid": OPENWEATHER_API_KEY,
+                    "units": "metric",
+                    "lang": "vi"
+                }
+                print(f"OpenWeather: Lấy dự báo {days_ahead} ngày tới cho [{lat}, {lon}]...")
+                forecast_response = requests.get(forecast_url, params=forecast_params, timeout=10)
+                
+                if forecast_response.status_code == 401:
+                    print("ERROR: OpenWeather API key không hợp lệ khi gọi forecast API.")
+                    return None
+                elif forecast_response.status_code == 429:
+                    print("ERROR: OpenWeather API rate limit đã vượt quá khi gọi forecast API.")
+                    return None
+                elif forecast_response.status_code != 200:
+                    print(f"ERROR: OpenWeather forecast API trả về status code {forecast_response.status_code}")
+                    print(f"Response: {forecast_response.text[:200]}")
+                    return None
+                
+                forecast_response.raise_for_status()
+                forecast_data = forecast_response.json()
+                
+                if not forecast_data or "list" not in forecast_data:
+                    print("ERROR: OpenWeather forecast API trả về dữ liệu không hợp lệ (thiếu 'list' field)")
+                    return None
+                
+                # Tìm forecast cho ngày cụ thể
+                target_date = (datetime.now() + timedelta(days=days_ahead)).date()
+                target_forecasts = []
+                
+                print(f"OpenWeather: Tìm forecast cho ngày {target_date}...")
+                for item in forecast_data.get("list", []):
+                    item_date = datetime.fromtimestamp(item["dt"]).date()
+                    if item_date == target_date:
+                        target_forecasts.append(item)
+                
+                if not target_forecasts:
+                    print(f"WARNING: Không tìm thấy forecast cho ngày {target_date}, lấy forecast gần nhất...")
+                    # Lấy forecast gần nhất trong tương lai
+                    for item in forecast_data.get("list", []):
+                        item_date = datetime.fromtimestamp(item["dt"]).date()
+                        if item_date >= target_date:
+                            target_forecasts = [item]
+                            print(f"OpenWeather: Sử dụng forecast cho ngày {item_date} (gần nhất)")
+                            break
+                    
+                    # Nếu vẫn không có, lấy forecast đầu tiên
+                    if not target_forecasts and forecast_data.get("list"):
+                        target_forecasts = [forecast_data["list"][0]]
+                        first_date = datetime.fromtimestamp(forecast_data["list"][0]["dt"]).date()
+                        print(f"OpenWeather: Sử dụng forecast đầu tiên cho ngày {first_date}")
+                
+                if target_forecasts:
+                    # Chọn forecast đúng thời điểm trong ngày (nếu có yêu cầu)
+                    forecast = None
+                    if part_of_day:
+                        # Xác định khoảng thời gian dựa trên part_of_day
+                        time_ranges = {
+                            "sáng": (6, 12),   # 6h-12h
+                            "chiều": (12, 18),  # 12h-18h
+                            "tối": (18, 24),    # 18h-24h
+                            "đêm": (20, 24)     # 20h-24h
+                        }
+                        target_range = time_ranges.get(part_of_day.lower())
+                        
+                        if target_range:
+                            start_hour, end_hour = target_range
+                            print(f"OpenWeather: Tìm forecast cho {part_of_day} ({start_hour}h-{end_hour}h)...")
+                            
+                            # Tìm forecast trong khoảng thời gian yêu cầu
+                            for item in target_forecasts:
+                                item_time = datetime.fromtimestamp(item["dt"])
+                                hour = item_time.hour
+                                if start_hour <= hour < end_hour:
+                                    forecast = item
+                                    print(f"OpenWeather: Tìm thấy forecast cho {part_of_day} lúc {item_time.strftime('%H:%M')}")
+                                    break
+                            
+                            # Nếu không tìm thấy trong khoảng, lấy forecast gần nhất
+                            if not forecast:
+                                best_forecast = None
+                                min_diff = float('inf')
+                                for item in target_forecasts:
+                                    item_time = datetime.fromtimestamp(item["dt"])
+                                    hour = item_time.hour
+                                    # Tính khoảng cách đến giữa khoảng thời gian
+                                    mid_hour = (start_hour + end_hour) / 2
+                                    diff = abs(hour - mid_hour)
+                                    if diff < min_diff:
+                                        min_diff = diff
+                                        best_forecast = item
+                                if best_forecast:
+                                    forecast = best_forecast
+                                    forecast_time = datetime.fromtimestamp(forecast["dt"])
+                                    print(f"OpenWeather: Sử dụng forecast gần nhất cho {part_of_day} lúc {forecast_time.strftime('%H:%M')}")
+                    
+                    # Nếu không có part_of_day hoặc không tìm thấy, lấy forecast đầu tiên
+                    if not forecast:
+                        forecast = target_forecasts[0]
+                    
+                    # Lấy thời gian từ forecast (dt là timestamp)
+                    forecast_time = datetime.fromtimestamp(forecast["dt"])
+                    time_str = forecast_time.strftime('%H:%M')
+                    
+                    # Sử dụng normalized_city_name từ geopy nếu có
+                    final_location_name = normalized_city_name
+                    
+                    result = {
+                        "location": final_location_name,
+                        "date": target_date.strftime('%Y-%m-%d'),
+                        "time": time_str,
+                        "temperature": forecast["main"]["temp"],
+                        "feels_like": forecast["main"]["feels_like"],
+                        "description": forecast["weather"][0]["description"],
+                        "main": forecast["weather"][0]["main"],
+                        "humidity": forecast["main"]["humidity"],
+                        "wind_speed": forecast.get("wind", {}).get("speed", 0),
+                        "source": "openweathermap.org"
+                    }
+                    print(f"OpenWeather: Thành công - {result['location']} ngày {target_date} {time_str}: {result['description']} ({result['temperature']}°C)")
+                    return result
+                
+                print(f"ERROR: Không tìm thấy forecast nào cho '{normalized_city_name}' ngày {target_date}")
+                return None
+        except Exception as e:
+            print(f"ERROR: Lỗi khi lấy dữ liệu thời tiết: {e}")
+            return None
+    else:
+        print(f"ERROR: Không có lat/lon để lấy dữ liệu thời tiết cho '{city_name}'")
+        return None
+
+
+def format_openweather_snippet(weather_data: Dict) -> str:
+    """
+    Format dữ liệu OpenWeather thành snippet chi tiết theo format: date-time-thời tiết.
+    Snippet này sẽ được Agent 2 sử dụng để so sánh với input.
+    
+    Format: [DATE] [TIME] - [THỜI TIẾT] tại [LOCATION]
+    """
+    if not weather_data:
+        return ""
+    
+    location = weather_data.get("location", "N/A")
+    date = weather_data.get("date", "N/A")
+    time = weather_data.get("time", "N/A")
+    temp = round(weather_data.get("temperature", 0))
+    feels_like = round(weather_data.get("feels_like", 0))
+    description = weather_data.get("description", "N/A")
+    main = weather_data.get("main", "N/A")  # Rain, Clear, Clouds, Thunderstorm, etc.
+    humidity = weather_data.get("humidity", 0)
+    wind = round(weather_data.get("wind_speed", 0) * 3.6, 1)  # Chuyển m/s sang km/h
+    
+    # Format theo yêu cầu: date-time-thời tiết
+    # Chuyển đổi date từ YYYY-MM-DD sang DD/MM/YYYY cho dễ đọc
+    try:
+        date_obj = datetime.strptime(date, '%Y-%m-%d')
+        date_formatted = date_obj.strftime('%d/%m/%Y')
+    except:
+        date_formatted = date
+    
+    # Format chính: DATE TIME - THỜI TIẾT tại LOCATION
+    snippet = f"[{date_formatted}] [{time}] - {description} ({main}) tại {location}. Nhiệt độ {temp}°C (cảm giác như {feels_like}°C). Độ ẩm {humidity}%, gió {wind} km/h. Nguồn: OpenWeatherMap API."
+    
+    # Thêm thông tin chi tiết về điều kiện thời tiết
+    if main == "Rain":
+        if "heavy" in description.lower() or "torrential" in description.lower():
+            snippet += " [MƯA LỚN/MƯA TO]"
+        elif "light" in description.lower() or "drizzle" in description.lower():
+            snippet += " [MƯA NHẸ]"
+        else:
+            snippet += " [MƯA]"
+    elif main == "Clear":
+        snippet += " [NẮNG/TRỜI QUANG]"
+    elif main == "Thunderstorm":
+        snippet += " [DÔNG/THUNDERSTORM]"
+    elif main == "Clouds":
+        snippet += " [CÓ MÂY]"
+    
+    return snippet

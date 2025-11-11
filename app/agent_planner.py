@@ -77,11 +77,12 @@ _location_cache = {}
 
 def _geocode_location_online(location_name: str) -> Optional[Tuple[str, str]]:
     """
-    Sử dụng geopy/Nominatim để tìm kiếm địa danh online.
+    Sử dụng geopy/Nominatim để tìm kiếm địa danh toàn cầu online.
+    Hỗ trợ nhận diện địa danh từ mọi quốc gia trên thế giới.
     Trả về (tên chuẩn hóa, tên tiếng Anh) hoặc None nếu không tìm thấy.
     
     Args:
-        location_name: Tên địa danh cần tìm
+        location_name: Tên địa danh cần tìm (có thể là tiếng Việt, tiếng Anh, hoặc bất kỳ ngôn ngữ nào)
         
     Returns:
         Tuple[str, str] | None: (tên chuẩn hóa, tên tiếng Anh) hoặc None
@@ -95,23 +96,80 @@ def _geocode_location_online(location_name: str) -> Optional[Tuple[str, str]]:
         return _location_cache[location_key]
     
     try:
-        # Sử dụng Nominatim (OpenStreetMap) - free, không cần API key
+        # Sử dụng Nominatim (OpenStreetMap) - free, không cần API key, hỗ trợ toàn cầu
         geolocator = Nominatim(user_agent="ZeroFake-FactChecker/1.0")
         
-        # Tìm kiếm địa danh
-        location = geolocator.geocode(location_name, timeout=5, language='en')
+        # Thử nhiều cách tìm kiếm để tăng độ chính xác
+        location = None
+        
+        # Cách 1: Tìm kiếm trực tiếp với tên gốc
+        try:
+            location = geolocator.geocode(location_name, timeout=10, language='en', exactly_one=True)
+        except Exception as e:
+            print(f"Geopy: Lỗi khi geocode '{location_name}': {e}")
+        
+        # Cách 2: Nếu không tìm thấy, thử thêm "city" hoặc "thành phố" vào cuối
+        if not location:
+            try:
+                # Thử với "city" (tiếng Anh)
+                if "city" not in location_name.lower() and "thành phố" not in location_name.lower():
+                    location = geolocator.geocode(f"{location_name}, city", timeout=10, language='en', exactly_one=True)
+            except Exception:
+                pass
+        
+        # Cách 3: Nếu vẫn không tìm thấy, thử tìm kiếm rộng hơn (không exactly_one)
+        if not location:
+            try:
+                results = geolocator.geocode(location_name, timeout=10, language='en', exactly_one=False)
+                if results and len(results) > 0:
+                    # Chọn kết quả đầu tiên (có thể cải thiện logic chọn sau)
+                    location = results[0]
+            except Exception:
+                pass
         
         if location:
-            # Lấy tên chuẩn hóa và tên tiếng Anh
-            normalized_name = location.address.split(',')[0]  # Tên chính
-            english_name = location.address.split(',')[0]  # Có thể cải thiện sau
+            # Lấy thông tin chi tiết từ address
+            address_parts = location.address.split(',')
             
-            # Lưu vào cache
-            result = (normalized_name, english_name)
-            _location_cache[location_key] = result
-            return result
-    except (GeocoderTimedOut, GeocoderServiceError, Exception) as e:
-        print(f"Geocoding error cho '{location_name}': {e}")
+            # Tên chính (thường là phần đầu)
+            normalized_name = address_parts[0].strip()
+            
+            # Tên tiếng Anh: thử lấy từ raw (nếu có) hoặc dùng normalized_name
+            english_name = normalized_name
+            
+            # Nếu có raw data, thử lấy tên tiếng Anh từ đó
+            if hasattr(location, 'raw') and location.raw:
+                raw_data = location.raw
+                # Thử lấy tên từ display_name hoặc name
+                if 'display_name' in raw_data:
+                    display_name = raw_data['display_name']
+                    # Lấy phần đầu của display_name (thường là tên chính)
+                    english_name = display_name.split(',')[0].strip()
+                elif 'name' in raw_data:
+                    english_name = raw_data['name']
+            
+            # Kiểm tra xem có phải là địa danh hợp lệ không (có tọa độ)
+            if location.latitude and location.longitude:
+                # Lưu vào cache
+                result = (normalized_name, english_name)
+                _location_cache[location_key] = result
+                print(f"Geopy: Tìm thấy '{normalized_name}' (EN: '{english_name}') tại [{location.latitude}, {location.longitude}]")
+                return result
+            else:
+                print(f"Geopy: Tìm thấy '{normalized_name}' nhưng không có tọa độ hợp lệ")
+                return None
+        else:
+            print(f"Geopy: Không tìm thấy địa danh '{location_name}'")
+            return None
+            
+    except GeocoderTimedOut:
+        print(f"Geopy: Timeout khi tìm kiếm '{location_name}'")
+        return None
+    except GeocoderServiceError as e:
+        print(f"Geopy: Service error khi tìm kiếm '{location_name}': {e}")
+        return None
+    except Exception as e:
+        print(f"Geopy: Unexpected error khi tìm kiếm '{location_name}': {type(e).__name__}: {e}")
         return None
     
     return None
@@ -145,6 +203,83 @@ def _get_english_location_name(location_name: str) -> str:
 
 def _normalize_phrase(s: str) -> str:
     return re.sub(r"\s+", " ", s.strip())
+
+
+def _get_date_for_query(relative_time: str | None, explicit_date: str | None, days_ahead: int | None = None) -> tuple[str, str]:
+    """
+    Chuyển đổi relative_time hoặc explicit_date thành date cụ thể (DD/MM/YYYY) và time string cho query.
+    
+    Args:
+        relative_time: Chuỗi thời gian tương đối (ví dụ: "ngày mai", "chiều mai", "hôm nay")
+        explicit_date: Ngày cụ thể (YYYY-MM-DD)
+        days_ahead: Số ngày sau hôm nay (nếu có)
+    
+    Returns:
+        tuple[str, str]: (date_str DD/MM/YYYY, time_str với relative_time đầy đủ nếu có)
+    """
+    from datetime import datetime, timedelta
+    
+    today = datetime.now()
+    time_str = ""
+    
+    # Nếu có explicit_date (YYYY-MM-DD), chuyển sang DD/MM/YYYY
+    if explicit_date:
+        try:
+            date_obj = datetime.strptime(explicit_date, '%Y-%m-%d')
+            date_str = date_obj.strftime('%d/%m/%Y')
+            # Giữ nguyên relative_time nếu có để thêm vào query
+            if relative_time:
+                time_str = relative_time
+            return (date_str, time_str)
+        except Exception:
+            pass
+    
+    # Nếu có relative_time, chuyển đổi
+    if relative_time:
+        relative_lower = relative_time.lower()
+        relative_original = relative_time  # Giữ nguyên để dùng trong query
+        
+        # Hôm nay
+        if "hôm nay" in relative_lower or "today" in relative_lower:
+            date_str = today.strftime('%d/%m/%Y')
+            time_str = relative_original  # Giữ "hôm nay" hoặc "chiều hôm nay"
+            return (date_str, time_str)
+        
+        # Ngày mai
+        if "ngày mai" in relative_lower or "tomorrow" in relative_lower:
+            tomorrow = today + timedelta(days=1)
+            date_str = tomorrow.strftime('%d/%m/%Y')
+            # Giữ nguyên relative_time để có "chiều mai 13/11/2025"
+            time_str = relative_original  # Giữ "ngày mai" hoặc "chiều mai"
+            return (date_str, time_str)
+        
+        # Hôm qua
+        if "hôm qua" in relative_lower or "yesterday" in relative_lower:
+            yesterday = today - timedelta(days=1)
+            date_str = yesterday.strftime('%d/%m/%Y')
+            time_str = relative_original
+            return (date_str, time_str)
+        
+        # Tuần tới
+        if "tuần tới" in relative_lower or "next week" in relative_lower:
+            next_week = today + timedelta(days=7)
+            date_str = next_week.strftime('%d/%m/%Y')
+            time_str = relative_original
+            return (date_str, time_str)
+    
+    # Nếu có days_ahead
+    if days_ahead is not None:
+        target_date = today + timedelta(days=days_ahead)
+        date_str = target_date.strftime('%d/%m/%Y')
+        if relative_time:
+            time_str = relative_time
+        return (date_str, time_str)
+    
+    # Fallback: hôm nay
+    date_str = today.strftime('%d/%m/%Y')
+    if relative_time:
+        time_str = relative_time
+    return (date_str, time_str)
 
 
 def _refine_city_name(candidate: str | None, text_input: str) -> str | None:
@@ -333,7 +468,7 @@ def _normalize_plan(plan: dict, text_input: str, flash_mode: bool = False) -> di
     except Exception:
         claim = {"is_weather": False}
 
-    weather_queries = []
+    # (SỬA ĐỔI) Bỏ tìm kiếm thời tiết bằng search, chỉ dùng OpenWeather API
     if claim.get("is_weather"):
         plan_struct["claim_type"] = "Thời tiết"
         plan_struct["volatility"] = "high"
@@ -341,115 +476,70 @@ def _normalize_plan(plan: dict, text_input: str, flash_mode: bool = False) -> di
         city = _refine_city_name(city, text_input)
         relative_time = claim.get("relative_time")
         explicit_date = plan_struct.get("time_references", {}).get("explicit_date")
+        days_ahead = claim.get("days_ahead")
         
         # Lưu city thô vào entities
         if city and city not in (plan_struct["entities_and_values"].get("locations") or []):
             plan_struct["entities_and_values"].setdefault("locations", []).append(city)
         
-        # Tạo query theo format chuẩn: "thời tiết của + location + time + date"
-        # CHỈ tạo query nếu city hợp lệ (không phải từ đơn lẻ, có ít nhất 2 từ)
+        # CHỈ tạo tool "weather" với OpenWeather API, KHÔNG tạo search queries
         if city and len(city.split()) >= 2:
             # Lấy tên tiếng Anh sử dụng hàm helper (có geopy)
             city_en = _get_english_location_name(city)
             
-            # Trích xuất điều kiện thời tiết từ input (nếu có)
-            weather_condition = None
-            weather_condition_en = None
-            text_lower = text_input.lower()
+            # Lấy part_of_day từ claim (sáng, chiều, tối)
+            part_of_day = claim.get("part_of_day")
             
-            # Tìm điều kiện thời tiết trong input (ưu tiên cụm từ dài hơn trước)
-            weather_keywords = [
-                ("mưa rất lớn", "mưa rất lớn", "torrential rain"),
-                ("mưa to", "mưa to", "heavy rain"),
-                ("mưa lớn", "mưa lớn", "heavy rain"),
-                ("mưa nhẹ", "mưa nhẹ", "light rain"),
-                ("gió mạnh", "gió mạnh", "strong wind"),
-                ("nắng to", "nắng to", "sunny"),
-                ("thunderstorm", "thunderstorm", "thunderstorm"),
-                ("dông", "dông", "thunderstorm"),
-                ("bão", "bão", "storm"),
-                ("mưa", "mưa", "rain"),
-                ("nắng", "nắng", "sunny"),
-                ("gió", "gió", "wind"),
-            ]
+            # Tạo tool "weather" với OpenWeather API
+            weather_tool_params = {
+                "city": city_en,  # Dùng tên tiếng Anh cho OpenWeather
+                "days_ahead": days_ahead if days_ahead is not None else 0
+            }
+            if explicit_date:
+                weather_tool_params["date"] = explicit_date
+            if part_of_day:
+                weather_tool_params["part_of_day"] = part_of_day
             
-            # Tìm từ dài nhất trước (để tránh nhầm "mưa to" với "mưa")
-            for keyword, vn, en in weather_keywords:
-                if keyword in text_lower:
-                    weather_condition = vn
-                    weather_condition_en = en
-                    break
+            plan_struct["required_tools"].append({
+                "tool_name": "weather",
+                "parameters": weather_tool_params
+            })
             
-            # Format chính: "thời tiết của [location] [time/date]"
-            if relative_time:
-                # Có relative_time (ví dụ: "ngày mai", "hôm nay")
-                weather_queries.append(f"thời tiết của {city} {relative_time}")
-                weather_queries.append(f"dự báo thời tiết của {city} {relative_time}")
-                # Query tiếng Anh
-                weather_queries.append(f"{city_en} weather {relative_time}")
-                weather_queries.append(f"{city_en} weather forecast {relative_time}")
-                
-                # Nếu có điều kiện thời tiết cụ thể, thêm query chi tiết
-                if weather_condition:
-                    weather_queries.append(f"thời tiết {city} {relative_time} {weather_condition}")
-                    weather_queries.append(f"dự báo {weather_condition} {city} {relative_time}")
-                    if weather_condition_en:
-                        weather_queries.append(f"{weather_condition_en} forecast {city_en} {relative_time}")
-                        weather_queries.append(f"{city_en} {weather_condition_en} {relative_time}")
-            elif explicit_date:
-                # Có explicit_date (ví dụ: "2025-11-12")
-                weather_queries.append(f"thời tiết của {city} {explicit_date}")
-                weather_queries.append(f"dự báo thời tiết của {city} {explicit_date}")
-                weather_queries.append(f"{city_en} weather {explicit_date}")
-                
-                # Nếu có điều kiện thời tiết cụ thể
-                if weather_condition:
-                    weather_queries.append(f"thời tiết {city} {explicit_date} {weather_condition}")
-                    weather_queries.append(f"dự báo {weather_condition} {city} {explicit_date}")
-                    if weather_condition_en:
-                        weather_queries.append(f"{weather_condition_en} forecast {city_en} {explicit_date}")
-            else:
-                # Chỉ có location
-                weather_queries.append(f"thời tiết của {city}")
-                weather_queries.append(f"dự báo thời tiết của {city}")
-                weather_queries.append(f"{city_en} weather forecast")
-                
-                # Nếu có điều kiện thời tiết cụ thể
-                if weather_condition:
-                    weather_queries.append(f"thời tiết {city} {weather_condition}")
-                    weather_queries.append(f"dự báo {weather_condition} {city}")
-                    if weather_condition_en:
-                        weather_queries.append(f"{weather_condition_en} forecast {city_en}")
+            print(f"Weather claim: Chỉ sử dụng OpenWeather API cho '{city}' (EN: '{city_en}'), days_ahead={days_ahead}, date={explicit_date}")
         elif city:
-            # City không hợp lệ (từ đơn lẻ) → không tạo query, log cảnh báo
-            print(f"Cảnh báo: Địa danh '{city}' không hợp lệ (từ đơn lẻ), bỏ qua tạo query thời tiết.")
+            # City không hợp lệ (từ đơn lẻ) → không tạo tool, log cảnh báo
+            print(f"Cảnh báo: Địa danh '{city}' không hợp lệ (từ đơn lẻ), bỏ qua tạo weather tool.")
 
-    # Tạo bộ câu truy vấn search
-    has_search = any(m.get('tool_name') == 'search' for m in plan_struct["required_tools"])
-    if not has_search:
-        default_queries = [q for m in plan_struct.get("required_tools", []) if m.get("tool_name") == "search" for q in m.get("parameters", {}).get("queries", [])]
-        if not default_queries:
-            default_queries = [text_input]
-        final_queries = weather_queries + default_queries
-        if not flash_mode:
-            final_queries = list(dict.fromkeys(final_queries))[:3]
-        else:
-            final_queries = list(dict.fromkeys(final_queries))
-        plan_struct["required_tools"].append({
-            "tool_name": "search",
-            "parameters": {"queries": final_queries, "search_type": "broad"}
-        })
-
-    # Xóa bất kỳ tool "weather" nào nếu có và giới hạn queries khi cần
-    for tool in plan_struct["required_tools"]:
-        if tool.get("tool_name") == "search":
-            queries = tool.get("parameters", {}).get("queries", [])
+    # Tạo bộ câu truy vấn search (CHỈ cho các claim KHÔNG phải thời tiết)
+    # Nếu là claim thời tiết, đã có tool "weather" rồi, không cần search
+    is_weather = plan_struct.get("claim_type") == "Thời tiết"
+    
+    if not is_weather:
+        # Chỉ tạo search tool cho các claim không phải thời tiết
+        has_search = any(m.get('tool_name') == 'search' for m in plan_struct["required_tools"])
+        if not has_search:
+            default_queries = [q for m in plan_struct.get("required_tools", []) if m.get("tool_name") == "search" for q in m.get("parameters", {}).get("queries", [])]
+            if not default_queries:
+                default_queries = [text_input]
             if not flash_mode:
-                tool["parameters"]["queries"] = queries[:3]
+                default_queries = list(dict.fromkeys(default_queries))[:3]
             else:
-                tool["parameters"]["queries"] = list(dict.fromkeys(queries))
+                default_queries = list(dict.fromkeys(default_queries))
+            plan_struct["required_tools"].append({
+                "tool_name": "search",
+                "parameters": {"queries": default_queries, "search_type": "broad"}
+            })
 
-    plan_struct["required_tools"] = [t for t in plan_struct["required_tools"] if t.get("tool_name") == "search"]
+        # Giới hạn queries khi cần
+        for tool in plan_struct["required_tools"]:
+            if tool.get("tool_name") == "search":
+                queries = tool.get("parameters", {}).get("queries", [])
+                if not flash_mode:
+                    tool["parameters"]["queries"] = queries[:5]
+                else:
+                    tool["parameters"]["queries"] = list(dict.fromkeys(queries))
+    else:
+        print("Weather claim: Bỏ qua tạo search tool, chỉ dùng OpenWeather API")
 
     return plan_struct
 
