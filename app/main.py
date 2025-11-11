@@ -29,7 +29,7 @@ from app.agent_synthesizer import load_synthesis_prompt, execute_final_analysis
 # (SỬA ĐỔI) Chỉ import hàm phát hiện (detection)
 from app.weather import extract_weather_info
 
-app = FastAPI(title="ZeroFake V2.0 - Agent Architecture (Search-Only)")
+app = FastAPI(title="ZeroFake V2.0 - Agent Architecture (DDG Search-Only)")
 
 # CORS middleware (Giữ nguyên)
 app.add_middleware(
@@ -86,12 +86,13 @@ async def startup_event():
         logger.warning(f"Không thể tạo site query string: {e}")
         SITE_QUERY_STRING = ""  # Fallback
     
-    print(f"ZeroFake V2.0 (Agent, Search-Only) đã sẵn sàng! Site Query: '[{SITE_QUERY_STRING}]'")
+    print(f"ZeroFake V2.0 (Agent, DDG Search-Only) đã sẵn sàng! Site Query: '[{SITE_QUERY_STRING}]'")
 
 
 # Pydantic Models (Giữ nguyên)
 class CheckRequest(BaseModel):
     text: str
+    unlimit_mode: bool = False
 
 
 class CheckResponse(BaseModel):
@@ -141,9 +142,22 @@ async def extract_location_endpoint(request: ExtractLocationRequest):
 async def handle_check_news(request: CheckRequest, background_tasks: BackgroundTasks):
     """
     Endpoint chính (Agent Workflow):
-    Input -> Agent 1 (Flash) lập kế hoạch + (Nếu là thời tiết) tạo query search
-    -> Tool Executor (Chỉ Search) -> Agent 2 (Pro) tổng hợp.
+    Input -> Agent 1 (learnlm Planner) lập kế hoạch
+    -> Tool Executor (DuckDuckGo search) -> Agent 2 (learnlm Synthesizer) tổng hợp.
+    Timeout tổng thể: 100 giây (trừ khi bật chế độ unlimit).
     """
+    if request.unlimit_mode:
+        return await _handle_check_news_internal(request, background_tasks)
+    try:
+        return await asyncio.wait_for(_handle_check_news_internal(request, background_tasks), timeout=100.0)
+    except asyncio.TimeoutError:
+        logger.error("Timeout tổng thể khi xử lý check_news")
+        raise HTTPException(status_code=504, detail="Request timeout - hệ thống phản hồi quá chậm")
+
+
+async def _handle_check_news_internal(request: CheckRequest, background_tasks: BackgroundTasks):
+    """Internal handler cho check_news"""
+    unlimit = request.unlimit_mode
     try:
         # Bước 1: Kiểm tra KB Cache (Giữ nguyên)
         logger.info("Kiểm tra KB cache...")
@@ -154,22 +168,12 @@ async def handle_check_news(request: CheckRequest, background_tasks: BackgroundT
         
         # Bước 2: Agent 1 (Planner) tạo kế hoạch
         logger.info("Agent 1 (Planner) đang tạo kế hoạch...")
-        plan = await create_action_plan(request.text)
+        plan = await create_action_plan(request.text, unlimit_mode=unlimit)
         logger.info(f"Kế hoạch: {json.dumps(plan, ensure_ascii=False, indent=2)}")
-
-        # Bước 3: Thu thập bằng chứng
-        embedded = plan.get("embedded_evidence") if isinstance(plan, dict) else None
-        if embedded and isinstance(embedded, dict):
-            logger.info("Dùng embedded_evidence từ Planner (bỏ qua Executor search) để tiết kiệm quota.")
-            evidence_bundle = {
-                "layer_1_tools": [], # Lớp 1 rỗng
-                "layer_2_high_trust": embedded.get("layer_2_high_trust", []) or [],
-                "layer_3_general": embedded.get("layer_3_general", []) or [],
-                "layer_4_social_low": embedded.get("layer_4_social_low", []) or [],
-            }
-        else:
-            logger.info("Tool Executor đang thu thập bằng chứng (Search-Only)...")
-            evidence_bundle = await execute_tool_plan(plan, SITE_QUERY_STRING)
+        
+        # Bước 3: Thu thập bằng chứng (luôn chạy DDG search)
+        logger.info("Tool Executor (DDG Search) đang thu thập bằng chứng...")
+        evidence_bundle = await execute_tool_plan(plan, SITE_QUERY_STRING, unlimit_mode=unlimit)
 
         # Enrich kế hoạch với bằng chứng thu được
         enriched_plan = enrich_plan_with_evidence(plan, evidence_bundle)
@@ -178,7 +182,7 @@ async def handle_check_news(request: CheckRequest, background_tasks: BackgroundT
         # Bước 4: Agent 2 (Synthesizer) đưa ra phán quyết
         logger.info("Agent 2 (Synthesizer) đang tổng hợp...")
         current_date = datetime.datetime.now().strftime('%Y-%m-%d')
-        gemini_result = await execute_final_analysis(request.text, evidence_bundle, current_date)
+        gemini_result = await execute_final_analysis(request.text, evidence_bundle, current_date, unlimit_mode=unlimit)
         gemini_result = _sanitize_check_response(gemini_result)
         logger.info(f"Kết quả Agent 2: {gemini_result.get('conclusion', 'N/A')}")
         
@@ -225,6 +229,6 @@ async def root():
     """Health check endpoint"""
     return {
         "status": "running",
-        "version": "2.0-Agent (Search-Only)",
+        "version": "2.0-Agent (DDG Search-Only)",
         "name": "ZeroFake"
     }

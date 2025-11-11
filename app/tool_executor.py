@@ -2,59 +2,45 @@
 import asyncio
 import json
 from urllib.parse import urlparse
-from datetime import datetime
 
-# Import các tool thực thi
-from app.retriever import gemini_web_search
-from app.search import call_google_search  # CSE fallback
+from app.search import call_google_search
 from app.ranker import get_rank_from_url, _extract_date
 
 
 # --- SEARCH TOOL (Gemini Web Search với fallback CSE) ---
 
-async def _execute_search_tool(parameters: dict, site_query_string: str) -> dict:
-	"""
-	Thực thi mô-đun "search" bằng Gemini Flash web browsing; nếu rỗng → fallback Google CSE.
-	Phân loại kết quả vào các Lớp 2, 3, 4 theo ranker.
-    (site_query_string giờ đây có thể rỗng để tìm kiếm toàn web)
-	"""
+async def _execute_search_tool(parameters: dict, site_query_string: str, unlimit_mode: bool = False) -> dict:
+	"""Thực thi mô-đun "search" bằng DuckDuckGo (thông qua call_google_search)."""
 	queries = parameters.get("queries", [])
 	if not queries:
 		return {"tool_name": "search", "status": "no_queries", "layer_2": [], "layer_3": [], "layer_4": []}
 
+	if not unlimit_mode:
+		queries = queries[:3]
+	
 	all_items = []
 	seen_urls = set()
 
-	# Pass 1: Gemini web search
-	try:
-		# allowed_domains=None để tìm toàn web
-		results = await asyncio.to_thread(gemini_web_search, queries, allowed_domains=None)
-		for r in results:
-			url = r.get("url")
-			if url and url not in seen_urls:
-				item = {
-					"link": url,
-					"snippet": (r.get("snippet") or "").replace("\n", " "),
-					"pagemap": {"metatags": [{"article:published_time": r.get("date")}]}
-				}
-				all_items.append(item)
-				seen_urls.add(url)
-	except Exception as e:
-		print(f"Lỗi Gemini web search: {e}")
-
-	# Pass 2: Fallback CSE nếu không có kết quả
-	if not all_items:
-		for query in queries:
-			try:
-				# site_query_string có thể rỗng (tìm toàn web)
+	for query in queries:
+		try:
+			if unlimit_mode:
 				search_items = await asyncio.to_thread(call_google_search, query, site_query_string)
-				for item in search_items or []:
-					link = item.get('link')
-					if link and link not in seen_urls:
-						all_items.append(item)
-						seen_urls.add(link)
-			except Exception as e:
-				print(f"Lỗi khi thực thi CSE query '{query}': {e}")
+			else:
+				search_items = await asyncio.wait_for(
+					asyncio.to_thread(call_google_search, query, site_query_string),
+					timeout=15.0
+				)
+			for item in search_items or []:
+				link = item.get('link')
+				if link and link not in seen_urls:
+					all_items.append(item)
+					seen_urls.add(link)
+		except asyncio.TimeoutError:
+			print(f"Timeout khi thực thi DuckDuckGo query '{query}'")
+			continue
+		except Exception as e:
+			print(f"Lỗi khi thực thi DuckDuckGo query '{query}': {e}")
+			continue
 
 	# Phân loại kết quả vào các Lớp
 	layer_2 = []
@@ -71,9 +57,9 @@ async def _execute_search_tool(parameters: dict, site_query_string: str) -> dict
 			"rank_score": rank_score,
 			"date": _extract_date(item)
 		}
-		if rank_score > 0.9:
+		if rank_score >= 0.85:
 			layer_2.append(evidence_item)
-		elif rank_score > 0.5:
+		elif rank_score >= 0.4:
 			layer_3.append(evidence_item)
 		else:
 			layer_4.append(evidence_item)
@@ -114,7 +100,7 @@ def enrich_plan_with_evidence(plan: dict, evidence_bundle: dict) -> dict:
 
 # --- ORCHESTRATOR ---
 
-async def execute_tool_plan(plan: dict, site_query_string: str) -> dict:
+async def execute_tool_plan(plan: dict, site_query_string: str, unlimit_mode: bool = False) -> dict:
 	required_tools = plan.get("required_tools", [])
 	evidence_bundle = {
 		"layer_1_tools": [], # Lớp 1 sẽ luôn rỗng
@@ -130,7 +116,7 @@ async def execute_tool_plan(plan: dict, site_query_string: str) -> dict:
 		parameters = module.get("parameters", {})
 		if tool_name == "search":
 			# (Sửa đổi) Chỉ còn tool search
-			tasks.append(_execute_search_tool(parameters, site_query_string))
+			tasks.append(_execute_search_tool(parameters, site_query_string, unlimit_mode=unlimit_mode))
 		# (XÓA BỎ) elif tool_name == "weather":
 
 	if not tasks:
@@ -172,9 +158,9 @@ async def execute_tool_plan(plan: dict, site_query_string: str) -> dict:
 							"rank_score": rank_score,
 							"date": _extract_date(item)
 						}
-						if rank_score > 0.9:
+						if rank_score >= 0.85:
 							layer_2.append(mapped)
-						elif rank_score > 0.5:
+						elif rank_score >= 0.4:
 							layer_3.append(mapped)
 						else:
 							layer_4.append(mapped)

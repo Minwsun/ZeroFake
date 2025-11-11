@@ -28,15 +28,19 @@ class Worker(QObject):
     result_ready = pyqtSignal(dict)
     error = pyqtSignal(str)
     
-    def __init__(self, url, data):
+    def __init__(self, url, data, timeout: float | None = 120):
         super().__init__()
         self.url = url
         self.data = data
+        self.timeout = timeout
     
     def run(self):
         """Chạy request trong thread"""
         try:
-            response = requests.post(self.url, json=self.data, timeout=120)
+            kwargs = {"json": self.data}
+            if self.timeout is not None:
+                kwargs["timeout"] = self.timeout
+            response = requests.post(self.url, **kwargs)
             response.raise_for_status()
             result = response.json()
             self.result_ready.emit(result)
@@ -105,6 +109,7 @@ class MainWindow(QMainWindow):
         # Lưu trữ kết quả hiện tại
         self.current_result = None
         self.current_text_input = None
+        self.unlimit_mode = False
         
         # Tạo UI
         self.init_ui()
@@ -142,6 +147,13 @@ class MainWindow(QMainWindow):
         self.check_button.setMinimumHeight(40)
         self.check_button.clicked.connect(self.check_news)
         button_layout.addWidget(self.check_button)
+
+        self.unlimit_button = QPushButton("Unlimit: OFF")
+        self.unlimit_button.setCheckable(True)
+        self.unlimit_button.setMinimumHeight(40)
+        self.unlimit_button.setToolTip("Bật để sử dụng chế độ unlimit (learnlm, không timeout)")
+        self.unlimit_button.toggled.connect(self.toggle_unlimit_mode)
+        button_layout.addWidget(self.unlimit_button)
         
         # Feedback buttons (ẩn ban đầu)
         self.feedback_correct_button = QPushButton("Đúng")
@@ -188,7 +200,9 @@ class MainWindow(QMainWindow):
         
         # Tạo thread và worker
         self.thread = QThread()
-        self.worker = Worker(f"{API_URL}/check_news", {"text": text_input})
+        payload = {"text": text_input, "unlimit_mode": self.unlimit_mode}
+        timeout = None if self.unlimit_mode else 120
+        self.worker = Worker(f"{API_URL}/check_news", payload, timeout=timeout)
         self.worker.moveToThread(self.thread)
         
         # Kết nối signals
@@ -204,6 +218,15 @@ class MainWindow(QMainWindow):
         
         # Start thread
         self.thread.start()
+
+    def toggle_unlimit_mode(self, checked: bool):
+        self.unlimit_mode = checked
+        if checked:
+            self.unlimit_button.setText("Unlimit: ON")
+            self.status_bar.showMessage("Chế độ Unlimit (learnlm) đã bật - chờ vô hạn")
+        else:
+            self.unlimit_button.setText("Unlimit: OFF")
+            self.status_bar.showMessage("Chế độ Unlimit đã tắt")
     
     def update_ui(self, result: dict):
         """Cập nhật UI với kết quả"""

@@ -1,4 +1,5 @@
 # app/agent_synthesizer.py
+
 import os
 import json
 import google.generativeai as genai
@@ -7,11 +8,15 @@ import asyncio
 from dotenv import load_dotenv
 from typing import Dict, Any, List
 
+from app.weather import classify_claim
+
+
 load_dotenv()
 
+
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-GEMINI_SYNTH_MODEL = os.getenv("GEMINI_SYNTH_MODEL", "").strip()
 SYNTHESIS_PROMPT = ""
+
 
 # Cài đặt an toàn
 SAFETY_SETTINGS = [
@@ -20,6 +25,29 @@ SAFETY_SETTINGS = [
     {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
     {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
 ]
+
+
+WEATHER_SOURCE_KEYWORDS = [
+    "weather",
+    "forecast",
+    "accuweather",
+    "windy",
+    "meteoblue",
+    "ventusky",
+    "nchmf",
+    "thoitiet",
+    "openweathermap",
+    "wunderground",
+    "metoffice",
+    "bom.gov",
+]
+
+
+def _is_weather_source(item: Dict[str, Any]) -> bool:
+    source = (item.get("source") or item.get("url") or "").lower()
+    if not source:
+        return False
+    return any(keyword in source for keyword in WEATHER_SOURCE_KEYWORDS)
 
 
 def load_synthesis_prompt(prompt_path="synthesis_prompt.txt"):
@@ -32,6 +60,7 @@ def load_synthesis_prompt(prompt_path="synthesis_prompt.txt"):
     except Exception as e:
         print(f"LỖI: không thể tải {prompt_path}: {e}")
         raise
+
 
 
 def _parse_json_from_text(text: str) -> dict:
@@ -47,6 +76,7 @@ def _parse_json_from_text(text: str) -> dict:
     return {}
 
 
+
 def _trim_snippet(s: str, max_len: int = 280) -> str:
     if not s:
         return ""
@@ -54,26 +84,20 @@ def _trim_snippet(s: str, max_len: int = 280) -> str:
     return s[:max_len]
 
 
+
 def _trim_evidence_bundle(bundle: Dict[str, Any], cap_l2: int = 5, cap_l3: int = 5, cap_l4: int = 2) -> Dict[str, Any]:
     """Cắt gọn gói bằng chứng để giảm kích thước prompt gửi sang LLM"""
     if not bundle:
         return {"layer_1_tools": [], "layer_2_high_trust": [], "layer_3_general": [], "layer_4_social_low": []}
     out = {
-        "layer_1_tools": [],
+        "layer_1_tools": [], # Sẽ luôn rỗng
         "layer_2_high_trust": [],
         "layer_3_general": [],
         "layer_4_social_low": []
     }
-    # Lớp 1: giữ nguyên status/data ngắn gọn
-    for it in (bundle.get("layer_1_tools") or [])[:3]:
-        if not isinstance(it, dict):
-            continue
-        short = dict(it)
-        data = short.get("data") or {}
-        if isinstance(data, dict) and isinstance(data.get("description"), str):
-            data["description"] = _trim_snippet(data.get("description"))
-            short["data"] = data
-        out["layer_1_tools"].append(short)
+    
+    # (XÓA BỎ) Lớp 1: không còn dùng
+    
     # Lớp 2
     for it in (bundle.get("layer_2_high_trust") or [])[:cap_l2]:
         out["layer_2_high_trust"].append({
@@ -104,6 +128,7 @@ def _trim_evidence_bundle(bundle: Dict[str, Any], cap_l2: int = 5, cap_l3: int =
     return out
 
 
+
 def _as_str(x: Any) -> str:
     try:
         return x if isinstance(x, str) else ("" if x is None else str(x))
@@ -111,9 +136,21 @@ def _as_str(x: Any) -> str:
         return ""
 
 
+
 def _heuristic_summarize(text_input: str, bundle: Dict[str, Any], current_date: str) -> Dict[str, Any]:
+    """
+    (ĐÃ SỬA ĐỔI)
+    Logic dự phòng khi LLM thất bại, đã loại bỏ Lớp 1 (weather).
+    """
     l2 = bundle.get("layer_2_high_trust") or []
-    l1 = bundle.get("layer_1_tools") or []
+    # (XÓA BỎ) l1 = bundle.get("layer_1_tools") or []
+
+    try:
+        claim = classify_claim(text_input)
+    except Exception:
+        claim = {"is_weather": False}
+
+    is_weather_claim = claim.get("is_weather", False)
 
     # Yêu cầu chặt chẽ: cần >=2 nguồn Lớp 2 đồng thuận để kết luận TIN THẬT
     if len(l2) >= 2:
@@ -127,25 +164,37 @@ def _heuristic_summarize(text_input: str, bundle: Dict[str, Any], current_date: 
             "cached": False
         }
 
-    # Cho phép dùng weather cho claim thời tiết khi L1 thành công
-    for it in l1:
-        if it.get("tool_name") == "weather" and it.get("status") == "success":
-            data = it.get("data") or {}
-            src = data.get("city") or "openweather"
-            desc = data.get("description") or ""
+    if is_weather_claim and l2:
+        weather_sources = [item for item in l2 if _is_weather_source(item)]
+        if weather_sources:
+            top = weather_sources[0]
             return {
                 "conclusion": "TIN THẬT",
-                "reason": _as_str("Heuristic: Dữ liệu thời tiết (LỚP 1) khớp thời điểm/địa điểm đã nêu."),
+                "reason": _as_str(f"Heuristic (weather): Dựa trên nguồn dự báo thời tiết {top.get('source')} ({top.get('date') or 'N/A'})."),
                 "style_analysis": "",
-                "key_evidence_snippet": _as_str(desc),
-                "key_evidence_source": _as_str(src),
+                "key_evidence_snippet": _as_str(top.get("snippet")),
+                "key_evidence_source": _as_str(top.get("source")),
+                "cached": False
+            }
+
+    if is_weather_claim:
+        layer3 = bundle.get("layer_3_general") or []
+        weather_layer3 = [item for item in layer3 if _is_weather_source(item)]
+        if weather_layer3:
+            top = weather_layer3[0]
+            return {
+                "conclusion": "TIN THẬT",
+                "reason": _as_str(f"Heuristic (weather): Dựa trên trang dự báo {top.get('source')} cho địa điểm được nêu."),
+                "style_analysis": "",
+                "key_evidence_snippet": _as_str(top.get("snippet")),
+                "key_evidence_source": _as_str(top.get("source")),
                 "cached": False
             }
 
     # Không đủ điều kiện → CHƯA XÁC THỰC
     return {
         "conclusion": "TIN CHƯA XÁC THỰC",
-        "reason": _as_str("Heuristic fallback: Không có đủ nguồn LỚP 2/3 và không có tool thời tiết thành công."),
+        "reason": _as_str("Heuristic fallback: Không tìm thấy đủ nguồn LỚP 2 hoặc LỚP 3 (Search-Only)."),
         "style_analysis": "",
         "key_evidence_snippet": "",
         "key_evidence_source": "",
@@ -153,12 +202,15 @@ def _heuristic_summarize(text_input: str, bundle: Dict[str, Any], current_date: 
     }
 
 
-def _pick_models() -> List[str]:
-    """Bắt buộc dùng gemini-2.5-pro"""
+
+def _pick_models(unlimit_mode: bool) -> List[str]:
+    """Chọn danh sách model cho Synthesizer dựa trên chế độ unlimit"""
+    if unlimit_mode:
+        return ['models/learnlm-2.0-flash-experimental']
     return ['models/gemini-2.5-pro']
 
 
-async def execute_final_analysis(text_input: str, evidence_bundle: dict, current_date: str) -> dict:
+async def execute_final_analysis(text_input: str, evidence_bundle: dict, current_date: str, unlimit_mode: bool = False) -> dict:
     """
     Gọi Agent 2 để tổng hợp bằng chứng; cắt gọn evidence; dynamic model picking; retry nhẹ; heuristic fallback.
     """
@@ -169,7 +221,7 @@ async def execute_final_analysis(text_input: str, evidence_bundle: dict, current
 
     genai.configure(api_key=GEMINI_API_KEY)
 
-    model_names = _pick_models()
+    model_names = _pick_models(unlimit_mode)
 
     # Trim evidence before sending
     trimmed_bundle = _trim_evidence_bundle(evidence_bundle)
@@ -182,12 +234,18 @@ async def execute_final_analysis(text_input: str, evidence_bundle: dict, current
     prompt = prompt.replace("{current_date}", current_date)
 
     last_err = None
-    # Try each model once
+    # Try each model once với timeout (nếu không unlimit)
     for model_name in model_names:
         try:
             print(f"Synthesizer: thử model '{model_name}'")
             model = genai.GenerativeModel(model_name)
-            response = await asyncio.to_thread(model.generate_content, prompt, safety_settings=SAFETY_SETTINGS)
+            if unlimit_mode:
+                response = await asyncio.to_thread(model.generate_content, prompt, safety_settings=SAFETY_SETTINGS)
+            else:
+                response = await asyncio.wait_for(
+                    asyncio.to_thread(model.generate_content, prompt, safety_settings=SAFETY_SETTINGS),
+                    timeout=45.0
+                )
             text = getattr(response, 'text', None)
             if text is None and hasattr(response, 'candidates') and response.candidates:
                 text = str(response.candidates[0].content)
@@ -195,13 +253,19 @@ async def execute_final_analysis(text_input: str, evidence_bundle: dict, current
             if result_json:
                 result_json["cached"] = False
                 return result_json
+        except asyncio.TimeoutError:
+            print(f"Synthesizer: Timeout khi gọi model '{model_name}'")
+            last_err = "Timeout"
+            continue
         except Exception as e:
             last_err = e
             # 429/quota → fallback ngay
             msg = str(e)
             if '429' in msg or 'quota' in msg.lower():
                 break
+            print(f"Synthesizer: Lỗi với model '{model_name}': {e}")
             continue
 
     print(f"Lỗi khi gọi Agent 2 (Synthesizer): {last_err}")
+    # (SỬA ĐỔI) Gọi hàm fallback đã được cập nhật
     return _heuristic_summarize(text_input, trimmed_bundle, current_date)

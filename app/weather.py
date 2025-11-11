@@ -1,17 +1,13 @@
-"""
-Module: Weather Verification & Classification
-(ĐÃ SỬA ĐỔI - Chỉ còn chức năng phát hiện, không gọi API)
-"""
-import os
+# Module: Weather Verification & Classification
+# (ĐÃ SỬA ĐỔI - Chỉ còn chức năng phát hiện, không gọi API)
+
 import re
 from typing import Optional, Dict
 from dotenv import load_dotenv
 
+
 load_dotenv()
 
-# --------------------
-# Helpers (Giữ lại)
-# --------------------
 
 def _norm(s: Optional[str]) -> str:
     if not s:
@@ -25,15 +21,12 @@ def _norm(s: Optional[str]) -> str:
     s = re.sub(r"[\s\-_.]+", " ", s).strip()
     return s
 
-# Time-related stopwords to avoid mis-detection as cities
+
 TIME_STOPWORDS = {
     "ngay", "hom", "qua", "mai", "sang", "chieu", "toi", "dem", "tuan", "nam", "thang",
     "today", "tomorrow", "yesterday", "morning", "afternoon", "evening", "night"
 }
 
-# --------------------
-# Claim extraction & classification (Giữ lại)
-# --------------------
 
 def extract_weather_info(text: str) -> Optional[Dict]:
     """
@@ -49,7 +42,6 @@ def extract_weather_info(text: str) -> Optional[Dict]:
     if not any(kw in _norm(text_lower) for kw in weather_keywords):
         return None
 
-    # Helper: validate candidate not time word/abbr
     def valid_candidate(s: str) -> bool:
         ns = _norm(s)
         if not ns:
@@ -58,40 +50,76 @@ def extract_weather_info(text: str) -> Optional[Dict]:
             return False
         if ns in TIME_STOPWORDS:
             return False
-        # reject all-uppercase short abbr like "CM"
         if len(s) <= 3 and s.isupper():
             return False
-        # must contain alphabetic
         return any(c.isalpha() for c in s)
 
     location_name = None
-    patterns = [r"(?:tại|ở|in|at)\s+([A-Za-zÀ-ỹà-ỹ\-\'\.\s]+?)(?:[,\.;:!\?\)\]\}]|\s|$)"]
-    for p in patterns:
-        m = re.search(p, text, flags=re.IGNORECASE)
-        if m:
-            candidate = m.group(1).strip().strip('\"\'')
-            candidate_clean = re.sub(r"\b(trong|vào|lúc|ngày|tháng|năm|buổi|sáng|chiều|tối)\b", "", candidate, flags=re.IGNORECASE).strip()
-            if valid_candidate(candidate_clean):
-                location_name = candidate_clean
+    
+    # Danh sách địa danh phổ biến (chỉ dùng làm fallback, không giới hạn)
+    COMMON_CITIES = [
+        "Thành phố Hồ Chí Minh", "Hồ Chí Minh", "Ho Chi Minh City",
+        "Hà Nội", "Hanoi",
+        "Đà Nẵng", "Da Nang",
+        "Hải Phòng", "Hai Phong",
+        "Cần Thơ", "Can Tho",
+        "New York", "New York City", "Los Angeles", "San Francisco",
+        "London", "Paris", "Tokyo", "Seoul", "Beijing", "Shanghai"
+    ]
+    
+    # Từ khóa địa điểm toàn cầu
+    LOCATION_KEYWORDS = {
+        "city", "province", "state", "county", "district", "region", "town", "village",
+        "thành phố", "tỉnh", "quận", "huyện", "thị xã", "xã", "phường",
+        "ville", "ciudad", "stadt", "shi", "ken", "市", "省", "시", "도"
+    }
+    
+    # Ưu tiên tìm các địa danh phổ biến trước (nếu có)
+    text_lower_norm = _norm(text.lower())
+    for city in COMMON_CITIES:
+        city_norm = _norm(city.lower())
+        if city_norm in text_lower_norm:
+            location_name = city
+            break
+    
+    # Nếu chưa tìm thấy, dùng pattern matching mở rộng
+    if not location_name:
+        # Pattern 1: "tại/ở/in/at/city of/ville de + location" (hỗ trợ đa ngôn ngữ)
+        patterns = [
+            r"(?:tại|ở|in|at|thành phố|city of|ville de|ciudad de|stadt)\s+([A-ZÀ-ÝÁÉÍÓÚÝĂÂÊÔƠƯĐ][A-Za-zÀ-ỹáéíóúýăâêôơưđ\-'\.\s]+?)(?:[,\.;:!\?\)\]\}]|\s|$)",
+            r"([A-ZÀ-ÝÁÉÍÓÚÝĂÂÊÔƠƯĐ][A-Za-zÀ-ỹáéíóúýăâêôơưđ\-'\.\s]+?)\s+(?:city|province|state|county|prefecture|shi|ken|市|省)",
+        ]
+        for p in patterns:
+            m = re.search(p, text, flags=re.IGNORECASE)
+            if m:
+                candidate = m.group(1).strip().strip('"\'')
+                candidate_clean = re.sub(r"\b(trong|vào|lúc|ngày|tháng|năm|buổi|sáng|chiều|tối)\b", "", candidate, flags=re.IGNORECASE).strip()
+                if valid_candidate(candidate_clean) and len(candidate_clean.split()) >= 2:
+                    location_name = candidate_clean
+                    break
+    
+    # Pattern 2: Tìm các cụm từ viết hoa đa từ (ưu tiên cụm dài, hỗ trợ Unicode)
+    if not location_name:
+        # Pattern mở rộng hỗ trợ nhiều ký tự Unicode
+        tokens = re.findall(r"\b([A-ZÀ-ÝÁÉÍÓÚÝĂÂÊÔƠƯĐ][A-Za-zÀ-ỹáéíóúýăâêôơưđ\-']+(?:\s+[A-ZÀ-ÝÁÉÍÓÚÝĂÂÊÔƠƯĐ][A-Za-zÀ-ỹáéíóúýăâêôơưđ\-']+)+)\b", text)
+        tokens_sorted = sorted(tokens, key=lambda x: len(x.split()), reverse=True)
+        for t in tokens_sorted:
+            if not valid_candidate(t):
+                continue
+            # Ưu tiên cụm có 2+ từ hoặc có từ khóa địa điểm
+            t_lower = t.lower()
+            if len(t.split()) >= 2 or any(kw in t_lower for kw in LOCATION_KEYWORDS):
+                location_name = t
                 break
 
     if not location_name:
-        tokens = re.findall(r"\b([A-ZÀ-Ý][A-Za-zÀ-ỹ\-']+(?:\s+[A-ZÀ-Ý][A-Za-zÀ-ỹ\-']+)*)\b", text)
-        for t in tokens:
-            if not valid_candidate(t):
-                continue
-            # Chỉ cần tên, không cần geocode
-            location_name = t
-            break
-
-    if not location_name:
-        return {"city": None, "original_text": text}
+        return {"city": None, "original_text": text, "is_weather_keyword": True}
 
     return {
-        "city": location_name, # Trả về tên (string)
-        "original_text": text
+        "city": location_name,
+        "original_text": text,
+        "is_weather_keyword": True
     }
-
 
 
 def classify_claim(text: str) -> Dict:
@@ -112,14 +140,14 @@ def classify_claim(text: str) -> Dict:
     if any(k in text_lower for k in historical_keywords):
         time_scope = 'historical'
         if "hom qua" in text_lower or "yesterday" in text_lower:
-             relative_time_str = "hôm qua"
+            relative_time_str = "hôm qua"
     elif any(k in text_lower for k in present_keywords):
         time_scope = 'present_future'
         days_ahead = 0
         relative_time_str = "hôm nay"
     elif any(k in text_lower for k in future_keywords):
         time_scope = 'present_future'
-        relative_time_str = "ngày mai" # Mặc định
+        relative_time_str = "ngày mai"
         if "week" in text_lower or "tuan" in text_lower:
             days_ahead = 7
             relative_time_str = "tuần tới"
@@ -128,8 +156,7 @@ def classify_claim(text: str) -> Dict:
             relative_time_str = "ngày mai"
         else:
             days_ahead = 3
-            
-    # Trích xuất chi tiết (sáng/chiều/tối)
+
     part_of_day = None
     if any(k in text_lower for k in ["sáng", "morning"]):
         part_of_day = "sáng"
@@ -137,14 +164,14 @@ def classify_claim(text: str) -> Dict:
         part_of_day = "chiều"
     elif any(k in text_lower for k in ["tối", "đêm", "evening", "night"]):
         part_of_day = "tối"
-        
+
     if relative_time_str and part_of_day:
         relative_time_str = f"{part_of_day} {relative_time_str}"
 
     return {
-        "is_weather": is_weather, 
-        "city": city, # Trả về tên thành phố
-        "time_scope": time_scope, 
+        "is_weather": is_weather,
+        "city": city,
+        "time_scope": time_scope,
         "days_ahead": days_ahead,
-        "relative_time": relative_time_str # Trả về chuỗi thời gian tương đối
+        "relative_time": relative_time_str
     }

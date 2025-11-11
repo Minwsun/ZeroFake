@@ -29,7 +29,7 @@ Bạn cực kỳ giỏi suy luận và tổng hợp bằng chứng theo 4 lớp.
 
 
 
-**2. ÁP DỤNG THỨ TỰ ƯU TIÊN (CHỈ DÙNG NGUỒN BÁO CHÍ):**
+**2. ÁP DỤNG THỨ TỰ ƯU TIÊN (CHỈ DÙNG NGUỒN BÁO CHÍ/WEB):**
 
 
 
@@ -113,6 +113,6 @@ Chỉ trả về JSON với schema:
 
   "key_evidence_snippet": "Snippet quan trọng nhất (ưu tiên LỚP 2; nếu không có thì LỚP 3; cuối cùng mới đến LỚP 4)",
 
-  "key_evidence_source": "Nguồn bằng chứng"
+  "key_evidence_source": "Nguồn bằng chứng (ví dụ: 'Lớp 2: vnexpress.net')"
 
 }

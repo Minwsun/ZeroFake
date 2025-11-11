@@ -2,13 +2,46 @@
 """
 Module 2b: Source Ranker 
 """
-import json
 from typing import Optional, Dict
 from urllib.parse import urlparse
 from datetime import datetime
 
 
-SOURCE_RANKER_CONFIG: Dict[str, float] = {}
+SOURCE_RANKER_CONFIG: Dict[str, float] = {"default": 0.6}
+
+WEATHER_DOMAINS = {
+    "weather.com",
+    "accuweather.com",
+    "windy.com",
+    "windy.app",
+    "ventusky.com",
+    "meteoblue.com",
+    "yr.no",
+    "nchmf.gov.vn",
+    "bom.gov.au",
+    "metoffice.gov.uk",
+    "open-meteo.com",
+    "openweathermap.org",
+    "thoitiet.vn",
+    "dubaothoitiet.info",
+    "wunderground.com",
+    "weather.gov",
+    "weatherchannel.com",
+}
+
+WEATHER_KEYWORDS = [
+    "weather",
+    "forecast",
+    "accuweather",
+    "windy",
+    "meteoblue",
+    "ventusky",
+    "yr.no",
+    "thoitiet",
+    "nchmf",
+    "metoffice",
+    "bom.gov",
+]
 
 
 def _flatten_config(nested_dict: dict) -> dict:
@@ -34,31 +67,10 @@ def _flatten_config(nested_dict: dict) -> dict:
 
 
 def load_ranker_config(config_path="config.json"):
-    """
-    Đọc config.json (lồng nhau) và tải vào SOURCE_RANKER_CONFIG (phẳng).
-    """
+    """Không còn phụ thuộc vào config.json. Sử dụng heuristic toàn cục."""
     global SOURCE_RANKER_CONFIG
-    try:
-        with open(config_path, 'r', encoding='utf-8') as f:
-            nested_config = json.load(f)
-
-        # Làm phẳng cấu trúc
-        SOURCE_RANKER_CONFIG = _flatten_config(nested_config)
-
-        if "default" not in SOURCE_RANKER_CONFIG:
-            SOURCE_RANKER_CONFIG["default"] = 0.5
-
-        print(f"Ranker: Đã tải và làm phẳng {len(SOURCE_RANKER_CONFIG)} nguồn tin.")
-
-    except FileNotFoundError:
-        print(f"LỖI: Không tìm thấy tệp {config_path}. Sử dụng danh sách mặc định.")
-        SOURCE_RANKER_CONFIG = {"default": 0.5, "vnexpress.net": 1.0, "chinhphu.vn": 1.0}
-    except json.JSONDecodeError:
-        print(f"LỖI: Tệp {config_path} không phải là JSON hợp lệ.")
-        raise
-    except Exception as e:
-        print(f"LỖI không xác định khi tải ranker config: {e}")
-        raise
+    SOURCE_RANKER_CONFIG = {"default": 0.6}
+    print("Ranker: Sử dụng heuristic toàn cục (config.json bị bỏ qua).")
 
 
 def get_rank_from_url(url: str) -> float:
@@ -76,27 +88,47 @@ def get_rank_from_url(url: str) -> float:
         if domain.startswith('www.'):
             domain = domain[4:]
 
-        # 1. Thử tìm exact match
-        if domain in SOURCE_RANKER_CONFIG:
-            return SOURCE_RANKER_CONFIG[domain]
+        # Ưu tiên các trang dự báo thời tiết chuyên dụng
+        if any(domain == d or domain.endswith('.' + d) for d in WEATHER_DOMAINS) or any(k in domain for k in WEATHER_KEYWORDS):
+            return 0.95
 
-        # 2. Thử tìm với subdomain
+        # Domain heuristics
+        score = None
+
+        if domain.endswith(('.gov', '.gov.vn', '.gob', '.go.jp', '.mil', '.mil.vn')):
+            score = 0.92
+        elif domain.endswith(('.edu', '.edu.vn', '.ac.uk', '.ac.jp', '.ac')):
+            score = 0.87
+        elif domain.endswith(('.int', '.org')):
+            score = 0.8
+
+        HIGH_TRUST_KEYWORDS = ['news', 'press', 'post', 'times', 'guardian', 'telegraph', 'tribune', 'herald']
+        if score is None and any(keyword in domain for keyword in HIGH_TRUST_KEYWORDS):
+            score = 0.78
+
+        SOCIAL_DOMAINS = ['facebook.com', 'twitter.com', 'x.com', 'instagram.com', 'tiktok.com', 'youtube.com', 'reddit.com', 'weibo.com', 'telegram.org', 't.me']
+        if any(domain.endswith(soc) or soc in domain for soc in SOCIAL_DOMAINS):
+            return 0.15
+
+        LOW_TRUST_KEYWORDS = ['blogspot', 'wordpress', 'medium.com', 'tumblr', 'substack', 'forum']
+        if any(keyword in domain for keyword in LOW_TRUST_KEYWORDS):
+            score = 0.3
+
+        if score is not None:
+            return score
+
+        # Nếu là subdomain của các domain được đánh giá cao theo heuristic
         parts = domain.split('.')
         if len(parts) > 2:
-            # Thử b.c.com
             base_domain_1 = '.'.join(parts[-2:])
-            if base_domain_1 in SOURCE_RANKER_CONFIG:
-                return SOURCE_RANKER_CONFIG[base_domain_1]
+            if any(base_domain_1 == d for d in WEATHER_DOMAINS):
+                return 0.95
+            if base_domain_1.endswith(('.gov', '.edu', '.int')):
+                return 0.85
 
-           
-            base_domain_2 = '.'.join(parts[-3:])
-            if base_domain_2 in SOURCE_RANKER_CONFIG:
-                return SOURCE_RANKER_CONFIG[base_domain_2]
-
-        # 3. Trả về default
-        return SOURCE_RANKER_CONFIG.get("default", 0.5)
+        return SOURCE_RANKER_CONFIG.get("default", 0.6)
     except Exception:
-        return SOURCE_RANKER_CONFIG.get("default", 0.5)
+        return SOURCE_RANKER_CONFIG.get("default", 0.6)
 
 
 def _extract_date(item: dict) -> Optional[str]:
