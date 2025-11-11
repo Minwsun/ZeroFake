@@ -187,8 +187,8 @@ def call_gemini_analysis(text_input: str, evidence_json_string: str, current_dat
                 }
     except Exception as e:
         return {
-            "conclusion": "TIN CHƯA XÁC THỰC",
-            "reason": f"Lỗi khi gọi Gemini API: {str(e)}",
+            "conclusion": "TIN GIẢ",
+            "reason": f"Error calling AI API: {str(e)}",
             "style_analysis": "",
             "key_evidence_snippet": "",
             "key_evidence_source": "",

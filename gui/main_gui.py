@@ -68,8 +68,7 @@ class FeedbackDialog(QDialog):
         self.correction_combo.addItems([
             "TIN THẬT",
             "TIN GIẢ",
-            "GÂY HIỂU LẦM",
-            "TIN CHƯA XÁC THỰC"
+            "GÂY HIỂU LẦM"
         ])
         layout.addWidget(QLabel("Correct result:"))
         layout.addWidget(self.correction_combo)
@@ -244,8 +243,7 @@ class MainWindow(QMainWindow):
         color_map = {
             "TIN THẬT": "#28a745",
             "TIN GIẢ": "#dc3545",
-            "GÂY HIỂU LẦM": "#ffc107",
-            "TIN CHƯA XÁC THỰC": "#17a2b8"
+            "GÂY HIỂU LẦM": "#ffc107"
         }
         color = color_map.get(conclusion, "#6c757d")
         

@@ -5,7 +5,7 @@ Real-time fake news detection and verification system, prioritizing trusted sour
 ---
 
 ## 1) Objective
-ZeroFake helps quickly verify whether a news article/post is: "TIN THẬT" (TRUE NEWS) | "TIN GIẢ" (FAKE NEWS) | "GÂY HIỂU LẦM" (MISLEADING) | "TIN CHƯA XÁC THỰC" (UNVERIFIED). The system operates fully API-Native, requiring no local training.
+ZeroFake helps quickly verify whether a news article/post is: "TIN THẬT" (TRUE NEWS) | "TIN GIẢ" (FAKE NEWS) | "GÂY HIỂU LẦM" (MISLEADING). The system operates fully API-Native, requiring no local training.
 
 ## 2) Architecture Overview
 - **Frontend**: PyQt6 GUI (Dark Mode), non-blocking with QThread

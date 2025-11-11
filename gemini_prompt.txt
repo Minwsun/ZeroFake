@@ -71,7 +71,7 @@ Nhiệm vụ của bạn là phân tích TOÀN DIỆN một [TIN GỐC CẦN KI�
 
 * **QUY TẮC 3: TÍN HIỆU IM LẶNG (SILENCE SIGNAL)**
     * Nếu (sau 3-pass search) [KẾT QUẢ TÌM KIẾM] vẫn rỗng (`[]`) và không phải tin thời tiết
-    * => Đây là dấu hiệu mạnh của "TIN CHƯA XÁC THỰC".
+    * => Đây là dấu hiệu mạnh của "TIN GIẢ" (không có bằng chứng xác nhận từ nguồn uy tín).
 
 * **QUY TẮC 4: TÍN HIỆU SAI LỆCH (MISLEADING SIGNAL)**
     * Dán nhãn "GÂY HIỂU LẦM" nếu là satire hoặc dùng sai bối cảnh (ảnh/video cũ).
@@ -88,7 +88,7 @@ Nhiệm vụ của bạn là phân tích TOÀN DIỆN một [TIN GỐC CẦN KI�
 Hãy trả lời bằng một đối tượng JSON duy nhất có cấu trúc sau:
 
 {{
-  "conclusion": "TIN THẬT" | "TIN GIẢ" | "GÂY HIỂU LẦM" | "TIN CHƯA XÁC THỰC",
+  "conclusion": "TIN THẬT" | "TIN GIẢ" | "GÂY HIỂU LẦM",
   "reason": "Giải thích ngắn gọn (tối đa 3 câu) logic suy luận của bạn, trích dẫn các Quy tắc (ví dụ: 'Kết luận TIN THẬT dựa trên Quy tắc 2.1, được nhiều nguồn uy tín như VnExpress xác nhận.') mà bạn đã dùng.",
   "style_analysis": "Nhận xét ngắn gọn về văn phong (kết quả từ BƯỚC 2).",
   "key_evidence_snippet": "Trích dẫn snippet của bằng chứng quan trọng nhất (ưu tiên API thời tiết nếu có, sau đó là báo chí uy tín/mới nhất) đã giúp bạn ra quyết định.",
