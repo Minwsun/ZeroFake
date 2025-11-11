@@ -7,7 +7,7 @@ import asyncio
 from dotenv import load_dotenv
 from typing import List, Optional
 
-from app.weather import extract_weather_info, classify_claim, geocode_city
+from app.weather import extract_weather_info, classify_claim
 
 load_dotenv()
 
@@ -41,8 +41,10 @@ def _parse_json_from_text(text: str) -> dict:
 
 
 def _normalize_plan(plan: dict, text_input: str) -> dict:
-    """Đảm bảo plan đủ schema, điền đúng mục thông tin, và tạo search/weather module phù hợp.
-    (Cập nhật) Xuất tên địa danh chuẩn để tra cứu toàn cầu: "City, CC" nếu có country code.
+    """
+    (ĐÃ SỬA ĐỔI)
+    Đảm bảo plan đủ schema.
+    Nếu là tin thời tiết -> tạo search query, KHÔNG gọi weather tool.
     """
     import re
     plan = plan or {}
@@ -67,54 +69,11 @@ def _normalize_plan(plan: dict, text_input: str) -> dict:
         "required_tools": plan.get("required_tools") if isinstance(plan.get("required_tools"), list) else []
     }
 
-    # Helper: trích relative_time (sáng/chiều/tối + hôm nay/mai)
-    tl = text_input.lower()
-    part_of_day = None
-    if any(k in tl for k in ["sáng", "morning"]):
-        part_of_day = "sáng"
-    elif any(k in tl for k in ["chiều", "afternoon"]):
-        part_of_day = "chiều"
-    elif any(k in tl for k in ["tối", "đêm", "evening", "night"]):
-        part_of_day = "tối"
-    base_rel = None
-    if "hôm nay" in tl or "today" in tl:
-        base_rel = "hôm nay"
-        plan_struct["time_references"]["time_scope"] = "present"
-    elif "ngày mai" in tl or "mai" in tl or "tomorrow" in tl:
-        base_rel = "ngày mai"
-        plan_struct["time_references"]["time_scope"] = "future"
-    elif any(k in tl for k in ["hôm qua", "yesterday", "năm trước", "tuần trước"]):
-        base_rel = "hôm qua"
-        plan_struct["time_references"]["time_scope"] = "historical"
-    # Kết hợp relative_time chi tiết
-    if base_rel and part_of_day:
-        plan_struct["time_references"]["relative_time"] = f"{part_of_day} {base_rel}"
-    elif base_rel:
-        plan_struct["time_references"]["relative_time"] = base_rel
-
     # Trích data_points (ví dụ 40°C, mm mưa, %)
     data_points = set(plan_struct["entities_and_values"]["data_points"] or [])
     for m in re.findall(r"\b\d{1,3}\s?(?:°C|mm|%)\b", text_input):
         data_points.add(m.strip())
     plan_struct["entities_and_values"]["data_points"] = list(data_points)
-
-    # Luôn cố gắng trích xuất địa danh và CHUẨN HOÁ 'City, CC'
-    canonical_location = None
-    try:
-        info = extract_weather_info(text_input)
-        if info and info.get("city"):
-            raw_city = info.get("city")
-            country = info.get("country")
-            if not country:
-                # Thử geocoding để bổ sung CC
-                geo = geocode_city(raw_city)
-                if geo and geo.get("country"):
-                    country = geo.get("country")
-            canonical_location = f"{raw_city}, {country}" if (raw_city and country) else (raw_city or None)
-            if canonical_location and canonical_location not in (plan_struct["entities_and_values"].get("locations") or []):
-                plan_struct["entities_and_values"].setdefault("locations", []).append(canonical_location)
-    except Exception:
-        pass
 
     # Phát hiện claim thời tiết
     try:
@@ -122,43 +81,37 @@ def _normalize_plan(plan: dict, text_input: str) -> dict:
     except Exception:
         claim = {"is_weather": False}
 
+    weather_queries = []
     if claim.get("is_weather"):
         plan_struct["claim_type"] = "Thời tiết"
         plan_struct["volatility"] = "high"
+        city = claim.get("city")
+        relative_time = claim.get("relative_time")
+        # Lưu city thô vào entities
+        if city and city not in (plan_struct["entities_and_values"].get("locations") or []):
+            plan_struct["entities_and_values"].setdefault("locations", []).append(city)
+        # Tạo query ngôn ngữ tự nhiên
+        if city and relative_time:
+            weather_queries.append(f"thời tiết {city} {relative_time}")
+            weather_queries.append(f"dự báo thời tiết {city} {relative_time}")
+            plan_struct["time_references"]["relative_time"] = relative_time
+        elif city:
+            weather_queries.append(f"thời tiết {city}")
 
-        time_scope_norm = plan_struct["time_references"]["time_scope"]
-        weather_module = {
-            "tool_name": "weather",
-            "parameters": {
-                "location": canonical_location or "",
-                "time_scope": time_scope_norm,
-                "relative_time": plan_struct["time_references"].get("relative_time"),
-                "explicit_date": plan_struct["time_references"].get("explicit_date"),
-                "original_text": text_input,
-                "fallback_locations": plan_struct["entities_and_values"].get("locations", [])
-            }
-        }
-        plan_struct["required_tools"].append(weather_module)
-
-    # Tạo bộ câu truy vấn search tốt hơn
+    # Tạo bộ câu truy vấn search
     has_search = any(m.get('tool_name') == 'search' for m in plan_struct["required_tools"])
     if not has_search:
-        queries = [text_input]
-        canonical = None
-        if plan_struct["entities_and_values"]["locations"]:
-            canonical = plan_struct["entities_and_values"]["locations"][0]
-        rel = plan_struct["time_references"].get("relative_time")
-        if canonical:
-            base_kw = ["dự báo thời tiết", "mưa", "nhiệt độ", "cảnh báo"]
-            for kw in base_kw:
-                q = f"{kw} {canonical}"
-                if rel:
-                    q = f"{q} {rel}"
-                queries.append(q)
+        default_queries = [q for m in plan_struct.get("required_tools", []) if m.get("tool_name") == "search" for q in m.get("parameters", {}).get("queries", [])]
+        if not default_queries:
+            default_queries = [text_input]
+        final_queries = weather_queries + default_queries
         plan_struct["required_tools"].append({
             "tool_name": "search",
-            "parameters": {"queries": list(dict.fromkeys(queries)), "search_type": "precise_data" if canonical else "broad"}
+            "parameters": {"queries": list(dict.fromkeys(final_queries)), "search_type": "broad"}
         })
+
+    # Xóa bất kỳ tool "weather" nào nếu có
+    plan_struct["required_tools"] = [t for t in plan_struct["required_tools"] if t.get("tool_name") == "search"]
 
     return plan_struct
 
@@ -203,6 +156,6 @@ async def create_action_plan(text_input: str) -> dict:
             continue
 
     print(f"Lỗi khi gọi Agent 1 (Planner): {last_err}")
-    # Trả về kế hoạch dự phòng: có search + auto suy luận weather nếu có thể
+    # Trả về kế hoạch dự phòng: tạo search + weather queries nếu có thể
     fallback = _normalize_plan({}, text_input)
     return fallback
