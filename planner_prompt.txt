@@ -30,7 +30,7 @@ Hãy phân tích và trả về một cấu trúc JSON duy nhất với các tr�
 
    - "time_scope": "historical" | "present" | "future"
 
-   - (QUAN TRỌNG: Hãy phân tích kỹ "{text_input}" để điền các trường này. Nếu input KHÔNG HỀ nhắc đến thời gian (ví dụ: "Paris là thủ đô của Pháp"), hãy để "explicit_date" và "relative_time" là null, và "time_scope" là "present" (ngụ ý là hiện tại).)
+   - (QUAN TRỌNG: Nếu input KHÔNG HỀ nhắc đến thời gian (ví dụ: "Paris là thủ đô của Pháp"), hãy để "explicit_date" và "relative_time" là null, và "time_scope" là "present".)
 
 
 6. "required_tools" (KẾ HOẠCH MÔ-ĐUN):
@@ -39,7 +39,15 @@ Hãy phân tích và trả về một cấu trúc JSON duy nhất với các tr�
 
    - Luôn auto-thêm:
 
-     - {"tool_name": "search", "parameters": {"queries": [các câu truy vấn VN/EN], "search_type": "current_data"}}
+     - {"tool_name": "search", "parameters": {"queries": [
+
+         "{text_input}",
+
+         "tin tức mới nhất về [chủ đề chính của input]",
+
+         "(ví dụ nếu input là 'Apple ra mắt iPhone 15', hãy thêm: 'iPhone mới nhất 2024 2025' hoặc 'Apple ra mắt iPhone 17')"
+
+       ], "search_type": "current_data"}}
 
    - Nếu claim là thời tiết (hoặc có đề cập dự báo/thời tiết): thêm
 
@@ -85,17 +93,19 @@ Hãy phân tích và trả về một cấu trúc JSON duy nhất với các tr�
 
    - [QUY TẮC TÌM KIẾM MỚI (THEO THỜI GIAN INPUT)]:
 
-     - Dựa vào "time_references" (Mục 5) mà bạn đã xác định.
+     - **TRƯỜNG HỢP 1: Input CÓ THỜI GIAN** (e.g., "hôm qua", "năm 2020"):
 
-     - **TRƯỜNG HỢP 1: Input CÓ THỜI GIAN** (Nếu "explicit_date" hoặc "relative_time" KHÔNG rỗng):
+       - Hãy TẬP TRUNG TÌM KIẾM các bài viết được xuất bản GẦN VỚI thời gian đó nhất.
 
-       - Hãy TẬP TRUNG TÌM KIẾM các bài viết được xuất bản GẦN VỚI thời gian đó nhất. (Ví dụ: input nói "hôm qua", hãy tìm tin từ 1-2 ngày trước. Input nói "năm 2020", hãy tìm tin từ 2020).
+     - **TRƯỜNG HỢP 2: Input KHÔNG CÓ THỜI GIAN** (e.g., "Apple ra mắt iPhone 15"):
 
-     - **TRƯỜNG HỢP 2: Input KHÔNG CÓ THỜI GIAN** (Nếu "explicit_date" và "relative_time" ĐỀU rỗng):
+       - **Tìm 2 loại bằng chứng:**
 
-       - Đây là một tuyên bố "vượt thời gian" (timeless claim), ví dụ "Sóng thần là gì".
+         - (1) Bằng chứng (Lớp 2) xác nhận hoặc bác bỏ chính [main_claim] (ví dụ: tin iPhone 15 2023).
 
-       - Hãy TÌM BÀI UY TÍN NHẤT (Lớp 2) xác nhận hoặc bác bỏ "main_claim", BẤT KỂ bài đó được xuất bản khi nào (có thể là 1 tháng, 1 năm, hoặc 10 năm trước).
+         - (2) Bằng chứng (Lớp 2) về TÌNH TRẠNG MỚI NHẤT của chủ đề (ví dụ: tin iPhone 17 2025).
+
+       - (Nếu [claim_type] là 'static' như "Paris là thủ đô Pháp", chỉ cần tìm bằng chứng loại 1).
 
    - Tuyệt đối KHÔNG bịa đặt tiêu đề/URL.
 
@@ -103,7 +113,7 @@ Hãy phân tích và trả về một cấu trúc JSON duy nhất với các tr�
 
 [QUY TẮC CHUẨN HOÁ ĐỊA DANH (RẤT QUAN TRỌNG - DÙNG CHO API)]:
 
-
+(Giữ nguyên các BƯỚC 1-4 như cũ)
 
 - **BƯỚC 1: TRÍCH XUẤT (EXTRACTION)**
 
@@ -113,8 +123,6 @@ Hãy phân tích và trả về một cấu trúc JSON duy nhất với các tr�
 
   - Ví dụ: Nếu input là "Hà Nội mai mưa rất to", địa điểm được trích xuất phải là "Hà Nội". Nếu input là "Thời tiết Paris", địa điểm là "Paris". Đừng bỏ qua địa danh chỉ vì nó không đi kèm giới từ "tại", "ở".
 
-
-
 - **BƯỚC 2: CHUẨN HOÁ (STANDARDIZATION)**
 
   - Sau khi trích xuất được tên (ví dụ: "Hà Nội"), BẮT BUỘC chuẩn hoá nó về dạng "City, CC" (Tên thành phố, Mã quốc gia) để OpenWeather API có thể sử dụng.
@@ -122,8 +130,6 @@ Hãy phân tích và trả về một cấu trúc JSON duy nhất với các tr�
   - Hãy dùng kiến thức của bạn để tra cứu mã quốc gia (CC) phổ biến nhất cho thành phố đó.
 
   - Ví dụ: "Hà Nội" -> "Hanoi, VN". "Paris" -> "Paris, FR". "London" -> "London, GB".
-
-
 
 - **BƯỚC 3: ĐIỀN VÀO JSON**
 
@@ -134,8 +140,6 @@ Hãy phân tích và trả về một cấu trúc JSON duy nhất với các tr�
     2. Trường `parameters.location` của `tool_name: "weather"` (nếu có tool weather).
 
   - Nếu trích xuất được nhiều địa danh, hãy ưu tiên địa danh chính và điền vào `parameters.location`, các địa danh còn lại điền vào `fallback_locations`.
-
-
 
 - **BƯỚC 4: LỌC LỖI**
 
