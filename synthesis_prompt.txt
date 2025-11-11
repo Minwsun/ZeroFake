@@ -12,6 +12,8 @@ Bạn cực kỳ giỏi suy luận và tổng hợp bằng chứng theo 4 lớp.
 
 [GÓI BẰNG CHỨNG 4 LỚP (JSON)]:
 
+(Lưu ý: LỚP 1 (Tools/API) không còn được sử dụng. Chỉ dựa vào LỚP 2, 3, 4)
+
 {evidence_bundle_json}
 
 
@@ -27,13 +29,15 @@ Bạn cực kỳ giỏi suy luận và tổng hợp bằng chứng theo 4 lớp.
 
 
 
-**2. ÁP DỤNG THỨ TỰ ƯU TIÊN (NGUỒN BÁO CHÍ TRƯỚC, TOOL SAU):**
+**2. ÁP DỤNG THỨ TỰ ƯU TIÊN (CHỈ DÙNG NGUỒN BÁO CHÍ):**
 
 
 
    - **Ưu tiên 1: LỚP 2 (Nguồn chính thống/uy tín)**
 
      - Dùng Lớp 2 để ra quyết định chính.
+
+     - Đây là nguồn chân lý để xác minh [INPUT GỐC] (kể cả tin thời tiết).
 
 
 
@@ -43,11 +47,9 @@ Bạn cực kỳ giỏi suy luận và tổng hợp bằng chứng theo 4 lớp.
 
 
 
-   - **Ưu tiên 3: LỚP 1 (Tools/API)**
+   - **Ưu tiên 3: LỚP 4 (Mạng xã hội/Độ tin cậy thấp)**
 
-     - Chỉ dùng nếu LỚP 2 và 3 không đủ. Nếu tool thất bại (status không "success"), coi như KHÔNG DÙNG tool.
-
-     - Khi có mâu thuẫn giữa tool (Lớp 1) và nguồn chính thống (Lớp 2), ưu tiên NGUỒN CHÍNH THỐNG (Lớp 2).
+     - Chỉ dùng để tham khảo nếu Lớp 2 và 3 hoàn toàn không có thông tin.
 
 
 
@@ -57,7 +59,7 @@ Bạn cực kỳ giỏi suy luận và tổng hợp bằng chứng theo 4 lớp.
 
    - **A. NẾU BẰNG CHỨNG MÂU THUẪN (Contradiction):**
 
-     - Nếu Lớp 2 (hoặc Lớp 3) MÂU THUẪN trực tiếp với [INPUT GỐC] (ví dụ: input nói "A" nhưng bằng chứng nói "Không A").
+     - Nếu Lớp 2 (hoặc Lớp 3) MÂU THUẪN trực tiếp với [INPUT GỐC] (ví dụ: input nói "Hà Nội mai mưa", nhưng Lớp 2 (VnExpress) nói "Hà Nội mai trời nắng").
 
      - => **Kết luận: "TIN GIẢ"**.
 
@@ -109,7 +111,7 @@ Chỉ trả về JSON với schema:
 
   "style_analysis": "Nhận xét văn phong ngắn",
 
-  "key_evidence_snippet": "Snippet quan trọng nhất (ưu tiên LỚP 2; nếu không có thì LỚP 3; cuối cùng mới đến LỚP 1/4)",
+  "key_evidence_snippet": "Snippet quan trọng nhất (ưu tiên LỚP 2; nếu không có thì LỚP 3; cuối cùng mới đến LỚP 4)",
 
   "key_evidence_source": "Nguồn bằng chứng"
 

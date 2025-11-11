@@ -18,7 +18,7 @@ Hãy phân tích và trả về một cấu trúc JSON duy nhất với các tr�
 
 4. "entities_and_values":
 
-   - "locations": ["Địa điểm CHUẨN HOÁ dạng 'City, CC'"].
+   - "locations": ["Địa điểm được nhắc đến (ví dụ: 'Hà Nội')"].
 
    - "persons": [], "organizations": [], "events": [], "data_points": []
 
@@ -30,54 +30,62 @@ Hãy phân tích và trả về một cấu trúc JSON duy nhất với các tr�
 
    - "time_scope": "historical" | "present" | "future"
 
-   - (QUAN TRỌNG: Nếu input KHÔNG HỀ nhắc đến thời gian (ví dụ: "Paris là thủ đô của Pháp"), hãy để "explicit_date" và "relative_time" là null, và "time_scope" là "present".)
+   - (QUAN TRỌNG: Nếu input KHÔNG HỀ nhắc đến thời gian, hãy để "explicit_date" và "relative_time" là null, và "time_scope" là "present".)
 
 
 6. "required_tools" (KẾ HOẠCH MÔ-ĐUN):
 
    - Mảng các object: {"tool_name": "...", "parameters": {...}}
 
-   - Luôn auto-thêm:
+   - **QUY TẮC TẠO TOOL (RẤT QUAN TRỌNG):**
 
-     - {"tool_name": "search", "parameters": {"queries": [
+     - **CHỈ SỬ DỤNG `tool_name: "search"`.**
 
-         "{text_input}",
+     - **KHÔNG** sử dụng `tool_name: "weather"`.
 
-         "(Nếu input là sự kiện không có ngày tháng, hãy thêm query): 'tin tức mới nhất về [chủ đề chính của input]'",
+     - Hãy tạo ra các câu "queries" (truy vấn tìm kiếm) thông minh dựa trên "claim_type" và "time_references".
 
-         "(Ví dụ: nếu input là 'Apple ra mắt iPhone 15', hãy thêm query: 'iPhone mới nhất 2024 2025' hoặc 'Apple ra mắt iPhone 17')"
 
-       ], "search_type": "current_data"}}
+     - **Nếu "claim_type" là "Thời tiết" (ví dụ: "Hà Nội ngày mai mưa"):**
 
-   - Nếu claim là thời tiết (hoặc có đề cập dự báo/thời tiết): thêm
+       - Tạo query ngôn ngữ tự nhiên: ví dụ: "thời tiết Hà Nội ngày mai", "dự báo thời tiết Hà Nội ngày mai".
+
+       - Thêm query về tin tức mới nhất: ví dụ: "iPhone mới nhất 2024 2025" (nếu input là "Apple ra mắt iPhone 15").
+     
+     - **Nếu "claim_type" KHÔNG phải "Thời tiết":**
+
+       - Tạo query dựa trên "{text_input}" và các thực thể.
+
+       - Nếu input là sự kiện không có ngày tháng (ví dụ: "Apple ra mắt iPhone 15"), hãy thêm query: "tin tức mới nhất về iPhone" hoặc "Apple ra mắt iPhone 17".
+   
+   - **VÍ DỤ KẾT QUẢ MỤC 6 (Chỉ có search):**
 
      {
 
-       "tool_name": "weather",
+       "tool_name": "search",
 
        "parameters": {
 
-         "location": "City, CC",  
+         "queries": [
 
-         "time_scope": ..., 
+           "hà nội ngày mai mưa", 
 
-         "relative_time": ..., 
+           "thời tiết hà nội ngày mai",
 
-         "explicit_date": null | "YYYY-MM-DD",
+           "dự báo thời tiết hà nội ngày mai"
 
-         "original_text": "{text_input}",
+         ],
 
-         "fallback_locations": [cùng danh sách "locations" bên trên]
+         "search_type": "current_data"
 
        }
 
      }
 
 
-
 7. "embedded_evidence" (THU THẬP BẰNG CHỨNG, TỪ 1-5 NGUỒN TỐT NHẤT):
 
-   - Hãy duyệt web và trả về đúng JSON (không thêm chữ thừa).
+   - Hãy duyệt web (sử dụng các "queries" bạn vừa tạo ở Mục 6) và trả về đúng JSON (không thêm chữ thừa).
 
    - Cố gắng tìm từ 1-5 nguồn uy tín (ưu tiên Lớp 2) và 1-3 nguồn phổ thông (Lớp 3) liên quan nhất.
 
@@ -111,40 +119,6 @@ Hãy phân tích và trả về một cấu trúc JSON duy nhất với các tr�
 
 
 
-[QUY TẮC CHUẨN HOÁ ĐỊA DANH (RẤT QUAN TRỌNG - DÙNG CHO API)]:
-
-- **BƯỚC 1: TRÍCH XUẤT (EXTRACTION)**
-
-  - Đọc thật kỹ "{text_input}" để tìm BẤT KỲ danh từ riêng nào có thể là tên một địa điểm (thành phố, tỉnh, khu vực, quốc gia).
-
-  - **QUAN TRỌNG**: Nếu "claim_type" là "Thời tiết", bạn PHẢI tìm ra địa điểm. 
-
-  - Ví dụ: Nếu input là "Hà Nội mai mưa rất to", địa điểm được trích xuất phải là "Hà Nội". Nếu input là "Thời tiết Paris", địa điểm là "Paris". Đừng bỏ qua địa danh chỉ vì nó không đi kèm giới từ "tại", "ở".
-
-- **BƯỚC 2: CHUẨN HOÁ (STANDARDIZATION)**
-
-  - Sau khi trích xuất được tên (ví dụ: "Hà Nội"), BẮT BUỘC chuẩn hoá nó về dạng "City, CC" (Tên thành phố, Mã quốc gia) để OpenWeather API có thể sử dụng.
-
-  - Hãy dùng kiến thức của bạn để tra cứu mã quốc gia (CC) phổ biến nhất cho thành phố đó.
-
-  - Ví dụ: "Hà Nội" -> "Hanoi, VN". "Paris" -> "Paris, FR". "London" -> "London, GB".
-
-- **BƯỚC 3: ĐIỀN VÀO JSON**
-
-  - Điền địa danh đã chuẩn hoá ("City, CC") vào cả hai nơi:
-
-    1. Mảng `entities_and_values.locations`
-
-    2. Trường `parameters.location` của `tool_name: "weather"` (nếu có tool weather).
-
-  - Nếu trích xuất được nhiều địa danh, hãy ưu tiên địa danh chính và điền vào `parameters.location`, các địa danh còn lại điền vào `fallback_locations`.
-
-- **BƯỚC 4: LỌC LỖI**
-
-  - Không tạo địa danh giả. Nếu bạn tìm một cái tên nhưng không thể chuẩn hoá (ví dụ: tên một người), hãy bỏ qua nó.
-
-
-
 [YÊU CẦU ĐẦU RA (CHỈ TRẢ VỀ JSON)]:
 
 {
@@ -159,7 +133,7 @@ Hãy phân tích và trả về một cấu trúc JSON duy nhất với các tr�
 
   "time_references": {"explicit_date": null, "relative_time": null, "time_scope": "..."},
 
-  "required_tools": [ {"tool_name": "...", "parameters": {...}} ],
+  "required_tools": [ {"tool_name": "search", "parameters": {...}} ],
 
   "embedded_evidence": {
 
