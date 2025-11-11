@@ -37,12 +37,13 @@ def call_google_search(text_input: str, site_query_string: str) -> list:
     try:
         # Thêm timeout cho DuckDuckGo search
         with DDGS() as ddgs:
+            # Tăng max_results để lấy nhiều kết quả hơn (đặc biệt cho thời tiết)
             results = ddgs.text(
                 keywords=text_input,
                 region='vi-vn',
                 safesearch='off',
                 timelimit=None,
-                max_results=5
+                max_results=10  # Tăng từ 5 lên 10 để có nhiều snippet hơn
             )
 
             if not results:
@@ -50,10 +51,15 @@ def call_google_search(text_input: str, site_query_string: str) -> list:
                 return []
 
             for r in results:
+                snippet = r.get('body', '')
+                # Nếu snippet quá ngắn, thử lấy thêm thông tin từ title
+                if len(snippet) < 50 and r.get('title'):
+                    snippet = f"{r.get('title')}. {snippet}".strip()
+                
                 all_items.append({
                     'title': r.get('title'),
                     'link': r.get('href'),
-                    'snippet': r.get('body'),
+                    'snippet': snippet,  # Snippet đã được cải thiện
                     'pagemap': {}
                 })
 

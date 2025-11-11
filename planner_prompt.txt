@@ -68,12 +68,19 @@ Hãy phân tích và trả về một cấu trúc JSON duy nhất với các tr�
            - Ví dụ: "thời tiết của Thành phố Hồ Chí Minh 2025-11-12"
          * Nếu chỉ có location: "thời tiết của [location]"
            - Ví dụ: "thời tiết của Thành phố Hồ Chí Minh"
-       - **Bước 3: Tạo các biến thể bổ sung:**
-         * "dự báo thời tiết của [location] [time/date]" (nếu có time/date)
-         * "dự báo thời tiết của [location]" (nếu không có time/date)
-         * "[location] weather [time/date]" (tiếng Anh, chuyển đổi location sang tiếng Anh nếu cần)
-           - Ví dụ: "Ho Chi Minh City weather tomorrow" (cho "Thành phố Hồ Chí Minh")
-           - Ví dụ: "Hanoi weather tomorrow" (cho "Hà Nội")
+       - **Bước 3: Tạo các biến thể bổ sung CHI TIẾT:**
+         * **QUAN TRỌNG:** Nếu [INPUT GỐC] có điều kiện thời tiết cụ thể (ví dụ: "mưa to", "mưa lớn", "nắng", "bão"), hãy thêm điều kiện đó vào query:
+           - Ví dụ: Input "Hà Nội ngày mai mưa to" → Query: "thời tiết Hà Nội ngày mai mưa to", "dự báo mưa to Hà Nội ngày mai"
+           - Ví dụ: Input "Hà Nội ngày mai mưa lớn" → Query: "thời tiết Hà Nội ngày mai mưa lớn", "heavy rain forecast Hanoi tomorrow"
+           - Ví dụ: Input "Hà Nội ngày mai nắng" → Query: "thời tiết Hà Nội ngày mai nắng", "sunny weather Hanoi tomorrow"
+         * Các biến thể cơ bản:
+           * "dự báo thời tiết của [location] [time/date]" (nếu có time/date)
+           * "dự báo thời tiết của [location]" (nếu không có time/date)
+           * "[location] weather [time/date]" (tiếng Anh, chuyển đổi location sang tiếng Anh nếu cần)
+           * "[location] weather forecast [time/date]" (tiếng Anh, chi tiết hơn)
+         * Nếu có điều kiện thời tiết cụ thể, thêm:
+           * "[điều kiện] [location] [time/date]" (ví dụ: "mưa to Hà Nội ngày mai")
+           * "[điều kiện] forecast [location] [time/date]" (tiếng Anh, ví dụ: "heavy rain forecast Hanoi tomorrow")
        - **QUY TẮC NGHIÊM NGẶT:**
          * LUÔN dùng cụm "thời tiết của" hoặc "dự báo thời tiết của" để tránh nhầm lẫn
          * KHÔNG BAO GIỜ dùng từ đơn lẻ như "Hồ", "Hà" làm location

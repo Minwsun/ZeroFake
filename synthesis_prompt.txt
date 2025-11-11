@@ -55,7 +55,33 @@ Bạn cực kỳ giỏi suy luận và tổng hợp bằng chứng theo 4 lớp.
 
 **3. (QUAN TRỌNG) QUY TẮC KẾT LUẬN CUỐI CÙNG:**
 
+**3.1. QUY TẮC ĐẶC BIỆT CHO TIN THỜI TIẾT (CHỈ ÁP DỤNG KHI [INPUT GỐC] NÓI VỀ THỜI TIẾT):**
 
+   - **Phân tích chi tiết điều kiện thời tiết trong [INPUT GỐC]:**
+     * Xác định loại điều kiện: "mưa", "mưa to", "mưa lớn", "mưa nhẹ", "nắng", "nắng to", "gió", "bão", "thunderstorm", "dông", etc.
+     * Xác định mức độ: "nhẹ", "vừa", "to", "lớn", "rất lớn", "dữ dội"
+   
+   - **Quy tắc so khớp điều kiện thời tiết:**
+     * **"Mưa to" / "Mưa lớn" / "Mưa rất lớn"**: Chỉ khớp với dự báo "mưa lớn", "mưa to", "mưa rất lớn", "thunderstorm", "dông", "bão", "heavy rain", "torrential rain", "thunderstorm". 
+       - KHÔNG khớp với: "mưa nhẹ", "mưa rải rác", "light rain", "drizzle", "nắng", "sunny", "cloudy"
+     * **"Mưa" (không có mức độ)**: Khớp với bất kỳ loại mưa nào (nhẹ, vừa, to, lớn)
+     * **"Mưa nhẹ"**: Chỉ khớp với "mưa nhẹ", "mưa rải rác", "light rain", "drizzle"
+       - KHÔNG khớp với: "mưa to", "mưa lớn", "thunderstorm", "heavy rain"
+     * **"Nắng" / "Nắng to"**: Khớp với "nắng", "sunny", "clear", "nắng to", "nắng gắt"
+       - KHÔNG khớp với: "mưa", "rain", "cloudy", "có mây"
+     * **"Bão" / "Thunderstorm" / "Dông"**: Chỉ khớp với "bão", "thunderstorm", "dông", "storm", "typhoon"
+   
+   - **Phân tích snippet từ bằng chứng:**
+     * Đọc KỸ snippet từ Lớp 2 và Lớp 3 (đặc biệt từ các trang dự báo thời tiết)
+     * Tìm các từ khóa: "mưa", "rain", "nắng", "sunny", "gió", "wind", "bão", "storm", "thunderstorm", "dông"
+     * Tìm mức độ: "nhẹ", "vừa", "to", "lớn", "rất lớn", "light", "heavy", "torrential", "severe"
+     * Tìm điều kiện cụ thể: "thunderstorm", "dông", "bão", "typhoon", "hurricane"
+   
+   - **Kết luận cho tin thời tiết:**
+     * Nếu snippet từ Lớp 2/Lớp 3 KHỚP CHÍNH XÁC với điều kiện trong [INPUT GỐC] (theo quy tắc trên) → **"TIN THẬT"**
+     * Nếu snippet MÂU THUẪN với [INPUT GỐC] (ví dụ: input "mưa to" nhưng snippet "nắng" hoặc "mưa nhẹ") → **"TIN GIẢ"**
+     * Nếu snippet chỉ nói chung chung về "dự báo thời tiết" mà KHÔNG có thông tin cụ thể về điều kiện → **"TIN CHƯA XÁC THỰC"** (không đủ thông tin)
+     * Nếu snippet có thông tin nhưng KHÔNG KHỚP mức độ (ví dụ: input "mưa to" nhưng snippet "mưa nhẹ") → **"TIN GIẢ"**
 
    - **A. NẾU BẰNG CHỨNG MÂU THUẪN (Contradiction):**
 

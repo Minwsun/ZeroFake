@@ -352,6 +352,34 @@ def _normalize_plan(plan: dict, text_input: str, unlimit_mode: bool = False) -> 
             # Lấy tên tiếng Anh sử dụng hàm helper (có geopy)
             city_en = _get_english_location_name(city)
             
+            # Trích xuất điều kiện thời tiết từ input (nếu có)
+            weather_condition = None
+            weather_condition_en = None
+            text_lower = text_input.lower()
+            
+            # Tìm điều kiện thời tiết trong input (ưu tiên cụm từ dài hơn trước)
+            weather_keywords = [
+                ("mưa rất lớn", "mưa rất lớn", "torrential rain"),
+                ("mưa to", "mưa to", "heavy rain"),
+                ("mưa lớn", "mưa lớn", "heavy rain"),
+                ("mưa nhẹ", "mưa nhẹ", "light rain"),
+                ("gió mạnh", "gió mạnh", "strong wind"),
+                ("nắng to", "nắng to", "sunny"),
+                ("thunderstorm", "thunderstorm", "thunderstorm"),
+                ("dông", "dông", "thunderstorm"),
+                ("bão", "bão", "storm"),
+                ("mưa", "mưa", "rain"),
+                ("nắng", "nắng", "sunny"),
+                ("gió", "gió", "wind"),
+            ]
+            
+            # Tìm từ dài nhất trước (để tránh nhầm "mưa to" với "mưa")
+            for keyword, vn, en in weather_keywords:
+                if keyword in text_lower:
+                    weather_condition = vn
+                    weather_condition_en = en
+                    break
+            
             # Format chính: "thời tiết của [location] [time/date]"
             if relative_time:
                 # Có relative_time (ví dụ: "ngày mai", "hôm nay")
@@ -359,16 +387,39 @@ def _normalize_plan(plan: dict, text_input: str, unlimit_mode: bool = False) -> 
                 weather_queries.append(f"dự báo thời tiết của {city} {relative_time}")
                 # Query tiếng Anh
                 weather_queries.append(f"{city_en} weather {relative_time}")
+                weather_queries.append(f"{city_en} weather forecast {relative_time}")
+                
+                # Nếu có điều kiện thời tiết cụ thể, thêm query chi tiết
+                if weather_condition:
+                    weather_queries.append(f"thời tiết {city} {relative_time} {weather_condition}")
+                    weather_queries.append(f"dự báo {weather_condition} {city} {relative_time}")
+                    if weather_condition_en:
+                        weather_queries.append(f"{weather_condition_en} forecast {city_en} {relative_time}")
+                        weather_queries.append(f"{city_en} {weather_condition_en} {relative_time}")
             elif explicit_date:
                 # Có explicit_date (ví dụ: "2025-11-12")
                 weather_queries.append(f"thời tiết của {city} {explicit_date}")
                 weather_queries.append(f"dự báo thời tiết của {city} {explicit_date}")
                 weather_queries.append(f"{city_en} weather {explicit_date}")
+                
+                # Nếu có điều kiện thời tiết cụ thể
+                if weather_condition:
+                    weather_queries.append(f"thời tiết {city} {explicit_date} {weather_condition}")
+                    weather_queries.append(f"dự báo {weather_condition} {city} {explicit_date}")
+                    if weather_condition_en:
+                        weather_queries.append(f"{weather_condition_en} forecast {city_en} {explicit_date}")
             else:
                 # Chỉ có location
                 weather_queries.append(f"thời tiết của {city}")
                 weather_queries.append(f"dự báo thời tiết của {city}")
                 weather_queries.append(f"{city_en} weather forecast")
+                
+                # Nếu có điều kiện thời tiết cụ thể
+                if weather_condition:
+                    weather_queries.append(f"thời tiết {city} {weather_condition}")
+                    weather_queries.append(f"dự báo {weather_condition} {city}")
+                    if weather_condition_en:
+                        weather_queries.append(f"{weather_condition_en} forecast {city_en}")
         elif city:
             # City không hợp lệ (từ đơn lẻ) → không tạo query, log cảnh báo
             print(f"Cảnh báo: Địa danh '{city}' không hợp lệ (từ đơn lẻ), bỏ qua tạo query thời tiết.")
