@@ -1,0 +1,195 @@
+{
+  "comment": "Đây là tệp xếp hạng nguồn tin (Source Ranker). Các giá trị được xếp hạng từ 0.0 (Không đáng tin) đến 1.0 (Đáng tin cậy/Nguồn sơ cấp).",
+  "__CẤP_1_0_ĐÁNG_TIN_CẬY__": {
+    "comment": "Các nguồn sơ cấp, chính phủ, tổ chức quốc tế, thông tấn xã lớn, viện hàn lâm khoa học.",
+    "__GOV_VN_TRUNG_UONG__": {
+      "chinhphu.vn": 1.0,
+      "dangcongsan.vn": 1.0,
+      "quochoi.vn": 1.0,
+      "bocongan.gov.vn": 1.0,
+      "mod.gov.vn": 1.0,
+      "moh.gov.vn": 1.0,
+      "mofa.gov.vn": 1.0,
+      "moet.gov.vn": 1.0,
+      "mof.gov.vn": 1.0,
+      "mpi.gov.vn": 1.0,
+      "sbv.gov.vn": 1.0,
+      "moit.gov.vn": 1.0,
+      "monre.gov.vn": 1.0,
+      "mt.gov.vn": 1.0,
+      "vksndtc.gov.vn": 1.0,
+      "toaan.gov.vn": 1.0,
+      "gdt.gov.vn": 1.0,
+      "customs.gov.vn": 1.0,
+      "chinhphu.vanphongdientu.vn": 1.0
+    },
+    "__BAO_CHI_TRUNG_UONG_VN__": {
+      "nhandan.vn": 1.0,
+      "qdnd.vn": 1.0,
+      "cand.com.vn": 1.0,
+      "ttxvn.vn": 1.0,
+      "vnanet.vn": 1.0,
+      "baotintuc.vn": 1.0
+    },
+    "__HANG_THONG_TAN_QUOC_TE_LON__": {
+      "reuters.com": 1.0,
+      "apnews.com": 1.0,
+      "afp.com": 1.0,
+      "bloomberg.com": 1.0
+    },
+    "__KHOA_HOC_Y_TE_HANG_DAU__": {
+      "nature.com": 1.0,
+      "science.org": 1.0,
+      "thelancet.com": 1.0,
+      "nejm.org": 1.0,
+      "nasa.gov": 1.0,
+      "cdc.gov": 1.0
+    },
+    "__TO_CHUC_QUOC_TE_LON__": {
+      "who.int": 1.0,
+      "un.org": 1.0,
+      "worldbank.org": 1.0,
+      "imf.org": 1.0,
+      "wto.org": 1.0,
+      "unesco.org": 1.0,
+      "unicef.org": 1.0
+    },
+    "__TAI_CHINH_QUOC_TE_LON__": {
+      "federalreserve.gov": 1.0,
+      "ecb.europa.eu": 1.0
+    }
+  },
+  "__CẤP_0_95_UY_TÍN_CỰC_CAO__": {
+    "comment": "Báo chí quốc tế hàng đầu, báo chí/đài truyền hình quốc gia VN.",
+    "__BAO_CHI_QUOC_TE_HANG_DAU__": {
+      "bbc.com": 0.95,
+      "nytimes.com": 0.95,
+      "wsj.com": 0.95,
+      "ft.com": 0.95,
+      "economist.com": 0.95
+    },
+    "__BAO_CHI_LON_VIET_NAM__": {
+      "vnexpress.net": 0.95,
+      "dantri.com.vn": 0.95,
+      "tuoitre.vn": 0.95,
+      "thanhnien.vn": 0.95,
+      "vietnamnet.vn": 0.95,
+      "vtv.vn": 0.95,
+      "vov.vn": 0.95
+    },
+    "__GOV_VN_DIA_PHUONG_LON__": {
+      "hochiminhcity.gov.vn": 0.95,
+      "hanoi.gov.vn": 0.95,
+      "danang.gov.vn": 0.95
+    }
+  },
+  "__CẤP_0_90_UY_TÍN_CAO__": {
+    "comment": "Báo chí quốc tế uy tín khác, báo chí VN cấp 2.",
+    "__BAO_CHI_QUOC_TE_KHAC__": {
+      "theguardian.com": 0.9,
+      "washingtonpost.com": 0.9,
+      "cnn.com": 0.9,
+      "aljazeera.com": 0.9,
+      "time.com": 0.9,
+      "forbes.com": 0.9,
+      "lemonde.fr": 0.9,
+      "spiegel.de": 0.9,
+      "dw.com": 0.9,
+      "asahi.com": 0.9,
+      "japantimes.co.jp": 0.9,
+      "nhk.or.jp": 0.9,
+      "koreaherald.com": 0.9,
+      "yna.co.kr": 0.9,
+      "straitstimes.com": 0.9,
+      "channelnewsasia.com": 0.9,
+      "timesofindia.indiatimes.com": 0.9,
+      "thehindu.com": 0.9,
+      "abc.net.au": 0.9,
+      "smh.com.au": 0.9,
+      "theglobeandmail.com": 0.9,
+      "cbc.ca": 0.9,
+      "xinhuanet.com": 0.9,
+      "chinadaily.com.cn": 0.9
+    },
+    "__BAO_CHI_VN_CAP_2__": {
+      "laodong.vn": 0.9,
+      "tienphong.vn": 0.9,
+      "znews.vn": 0.9,
+      "sggp.org.vn": 0.9,
+      "hanoimoi.com.vn": 0.9
+    }
+  },
+  "__CẤP_0_85_0_80_UY_TÍN_TỐT__": {
+    "comment": "Báo chuyên ngành, trang tin công nghệ/kinh tế uy tín.",
+    "__BAO_CHI_CHUYEN_NGANH_VN__": {
+      "phapluattp.vn": 0.85,
+      "baophapluat.vn": 0.85,
+      "vneconomy.vn": 0.85,
+      "baodautu.vn": 0.85,
+      "tapchitaichinh.vn": 0.85,
+      "tapchicongsan.org.vn": 0.85,
+      "suckhoedoisong.vn": 0.85
+    },
+    "__KINH_TE_TAI_CHINH_VN__": {
+      "cafef.vn": 0.8,
+      "thesaigontimes.vn": 0.8
+    },
+    "__CONG_NGHE_QUOC_TE__": {
+      "theverge.com": 0.85,
+      "wired.com": 0.85,
+      "techcrunch.com": 0.85,
+      "arstechnica.com": 0.85
+    },
+    "__Y_TE_QUOC_TE__": {
+      "webmd.com": 0.8,
+      "mayoclinic.org": 0.8
+    },
+    "__THE_THAO_QUOC_TE_LON__": {
+      "espn.com": 0.8,
+      "goal.com": 0.8,
+      "skysports.com": 0.8
+    }
+  },
+  "__CẤP_0_7_TIN_PHỔ_THÔNG__": {
+    "comment": "Trang tin phổ thông, giải trí, xã hội có lượng truy cập lớn, có biên tập.",
+    "kenh14.vn": 0.7,
+    "soha.vn": 0.7,
+    "genk.vn": 0.7,
+    "afamily.vn": 0.7,
+    "cafebiz.vn": 0.7,
+    "tinhte.vn": 0.7,
+    "thanhnien.vn": 0.95,
+    "tuoitre.vn": 0.95
+  },
+  "__CẤP_0_5_TIN_TỔNG_HỢP__": {
+    "comment": "Các trang tự động tổng hợp tin tức, không có biên tập gốc.",
+    "baomoi.com": 0.5,
+    "24h.com.vn": 0.5,
+    "eva.vn": 0.5
+  },
+  "__CẤP_0_3_DIỄN_ĐÀN_WIKI__": {
+    "comment": "Nội dung do người dùng tạo nhưng có kiểm duyệt/dẫn nguồn.",
+    "wikipedia.org": 0.3,
+    "webtretho.com": 0.3,
+    "voz.vn": 0.2
+  },
+  "__CẤP_0_1__": {
+    "comment": "Nội dung do người dùng tự đăng, không kiểm chứng, độ tin cậy thấp nhất.",
+    "facebook.com": 0.1,
+    "youtube.com": 0.1,
+    "tiktok.com": 0.1,
+    "twitter.com": 0.1,
+    "x.com": 0.1,
+    "instagram.com": 0.1,
+    "reddit.com": 0.1,
+    "medium.com": 0.1,
+    "blogspot.com": 0.1,
+    "wordpress.com": 0.1,
+    "t.me": 0.1,
+    "zalo.me": 0.1
+  },
+  "__DEFAULT__": {
+    "comment": "Điểm mặc định cho bất kỳ trang nào không có trong danh sách.",
+    "default": 0.5
+  }
+}
