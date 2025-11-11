@@ -1,98 +1,97 @@
-# ZeroFake V1.0
+# ZeroFake v1.1
 
-Hệ thống phát hiện và kiểm chứng tin giả theo thời gian thực, ưu tiên nguồn uy tín và dữ liệu API thời tiết toàn cầu.
+Real-time fake news detection and verification system, prioritizing trusted sources and global weather API data.
 
 ---
 
-## 1) Mục tiêu
-ZeroFake giúp kiểm tra nhanh một tin/bài viết là: "TIN THẬT" | "TIN GIẢ" | "GÂY HIỂU LẦM" | "TIN CHƯA XÁC THỰC". Hệ thống vận hành hoàn toàn API-Native, không yêu cầu huấn luyện cục bộ.
+## 1) Objective
+ZeroFake helps quickly verify whether a news article/post is: "TIN THẬT" (TRUE NEWS) | "TIN GIẢ" (FAKE NEWS) | "GÂY HIỂU LẦM" (MISLEADING) | "TIN CHƯA XÁC THỰC" (UNVERIFIED). The system operates fully API-Native, requiring no local training.
 
-## 2) Kiến trúc tổng quan
-- Frontend: GUI PyQt6 (Dark Mode), không bị đơ nhờ QThread.
-- Backend: FastAPI (Python), pipeline bất đồng bộ.
-- Các dịch vụ tích hợp:
-  - Google Custom Search API (lấy bài báo theo thời gian, 3-pass thông minh v3.8)
-  - Gemini API (phân tích với prompt động)
-  - OpenWeatherMap API (thời tiết toàn cầu: current + forecast 5 ngày, có geocoding toàn cầu)
-- Lưu trữ/Learning:
-  - KB Cache: SQLite + FAISS (nhớ các kết quả đã kiểm chứng)
-  - Feedback loop: SQLite + FAISS (Relevant Retrieval: tự động lôi ví dụ lỗi tương tự đưa vào prompt)
+## 2) Architecture Overview
+- **Frontend**: PyQt6 GUI (Dark Mode), non-blocking with QThread
+- **Backend**: FastAPI (Python), asynchronous pipeline
+- **Integrated Services**:
+  - DuckDuckGo Search (web search for news articles)
+  - AI Agent System (multi-agent architecture for planning and synthesis)
+  - OpenWeatherMap API (global weather: current + forecast, with global geocoding)
+- **Storage/Learning**:
+  - KB Cache: SQLite + FAISS (remembers verified results)
+  - Feedback loop: SQLite + FAISS (Relevant Retrieval: automatically retrieves similar error examples for prompts)
 
-## 3) Luồng hoạt động
-1. GUI gửi đoạn tin cần kiểm tra lên FastAPI.
-2. Backend kiểm tra KB Cache (FAISS) – nếu có, trả ngay.
-3. Phân loại sơ bộ (classify_claim) – nếu là tin thời tiết, tiền xử lý thời gian (present/future/historical) và gọi OpenWeather:
-   - present/future (trong ≤5 ngày): gọi forecast/current → tạo weather_api_data {status, data}
-   - quá xa hoặc quá khứ: {status: forecast_not_available/historical_not_available}
-4. Google Search 3-pass (v3.8):
-   - Pass 1: "precise" trên nguồn uy tín
-   - Pass 2: "broad" toàn web
-   - Pass 3: "keyword" rút gọn + nguồn uy tín (fallback)
-5. Ranker xử lý và xếp hạng nguồn theo config.json (hỗ trợ cấu trúc lồng nhau), trích xuất ngày đăng (đa định dạng).
-6. Prompt động gửi Gemini:
-   - current_date, weather_api_data, evidence_json_string (báo chí), dynamic few-shots từ feedback.
-   - Quy tắc:
-     - Quy tắc 0 (Thời tiết): ưu tiên API thời tiết khi status=success; fallback báo chí nếu forecast_not_available.
-     - Quy tắc 1 (Trạng thái): ưu tiên nguồn uy tín, bài mới nhất.
-     - Quy tắc 2.1 (Entailment): nhiều nguồn uy tín xác nhận → TIN THẬT.
-     - Quy tắc 2.2 (Contradiction): mâu thuẫn bởi nguồn cấp 1, mới → TIN GIẢ.
-     - Quy tắc 3 (Silence): sau 3-pass vẫn rỗng → TIN CHƯA XÁC THỰC.
-     - Quy tắc 4 (Misleading): satire/sai bối cảnh… → GÂY HIỂU LẦM.
-7. Lưu kết quả vào KB Cache (nền) và trả về GUI.
-8. Người dùng có thể gửi feedback ; hệ thống ghi log và học từ lỗi.
+## 3) Workflow
+1. GUI sends news text to FastAPI for verification
+2. Backend checks KB Cache (FAISS) – if found, returns immediately
+3. **Agent 1 (Planner)**: Analyzes input and creates execution plan:
+   - Classifies claim type (Politics, Economy, Health, Weather, Sports, etc.)
+   - Identifies entities (locations, persons, organizations)
+   - Determines time scope (present/future/historical)
+   - Selects appropriate tools (weather API, web search)
+4. **Tool Executor**: Executes planned tools:
+   - Weather claims: Calls OpenWeather API for current/forecast data
+   - Other claims: Performs DuckDuckGo web search
+5. **Agent 2 (Synthesizer)**: Analyzes evidence and generates final conclusion:
+   - Compares input with collected evidence
+   - Applies verification rules
+   - Returns conclusion with reasoning
+6. Results are saved to KB Cache (background) and returned to GUI
+7. Users can provide feedback; system logs and learns from errors
 
-## 4) Cài đặt & Chạy
-### Yêu cầu
-- Python 3.10+ (khuyến nghị 3.11/3.12/3.13)
+## 4) Installation & Running
+### Requirements
+- Python 3.10+ (recommended 3.11/3.12/3.13)
 
-### Cài đặt
+### Installation
 ```bash
 pip install -r requirements.txt
 ```
 
-### Cấu hình API Keys (.env)
-Tạo file `.env` ở thư mục gốc:
+### API Keys Configuration (.env)
+Create a `.env` file in the root directory:
 ```
-GOOGLE_API_KEY=...            # Google Custom Search API Key
-GOOGLE_CSE_ID=...             # Custom Search Engine ID
-GEMINI_API_KEY=...            # Google AI Studio (Gemini) API Key
+GEMINI_API_KEY=...            # AI API Key (for agents)
 OPENWEATHER_API_KEY=...       # OpenWeather API Key
 ```
 
-### Chạy Backend
-- Windows: double-click `run_server.bat`
-- Hoặc:
-```bash
-python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
-```
-- Health check: http://127.0.0.1:8000/
-- API docs: http://127.0.0.1:8000/docs
+### Running the Application
+- **Windows**: Double-click `run_app.bat` (launches both server and GUI)
+- **Or manually**:
+  ```bash
+  # Terminal 1: Start server
+  python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+  
+  # Terminal 2: Start GUI
+  python gui/main_gui.py
+  ```
+- **Health check**: http://127.0.0.1:8000/
+- **API docs**: http://127.0.0.1:8000/docs
 
-### Chạy GUI
-- Windows: double-click `run_gui.bat`
-- Hoặc:
-```bash
-python gui/main_gui.py
-```
-
-## 5) Cấu trúc thư mục (rút gọn)
+## 5) Directory Structure (simplified)
 ```
 app/
   __init__.py
-  main.py          # FastAPI orchestrator (ZeroFake V1.0)
-  kb.py            # KB Cache (SQLite + FAISS)
-  search.py        # Google Search 3-pass
-  ranker.py        # Ranker (flatten config, date extractor pro)
-  gemini.py        # Gemini API + safe prompt formatter
-  feedback.py      # Feedback loop (Relevant Retrieval)
-  weather.py       # Geocoding + weather current/forecast (global)
-config.json        # Source ranker (lồng nhau)
- gemini_prompt.txt # Prompt (Rule 0/1/2.1/2.2/3/4)
- gui/main_gui.py   # PyQt6 (Dark Mode)
+  main.py              # FastAPI orchestrator
+  agent_planner.py     # Agent 1: Planning agent
+  agent_synthesizer.py # Agent 2: Synthesis agent
+  tool_executor.py     # Tool execution engine
+  kb.py                # KB Cache (SQLite + FAISS)
+  search.py            # DuckDuckGo search
+  ranker.py            # Source ranker
+  weather.py           # Geocoding + weather current/forecast (global)
+  feedback.py          # Feedback loop (Relevant Retrieval)
+planner_prompt.txt     # Prompt for Agent 1
+synthesis_prompt.txt   # Prompt for Agent 2
+config.json            # Source ranker configuration
+gui/main_gui.py        # PyQt6 GUI (Dark Mode)
 ```
 
+## 6) Key Features
+- **Multi-Agent Architecture**: Two-agent system for planning and synthesis
+- **Global Weather Support**: OpenWeatherMap API with geocoding for worldwide locations
+- **Intelligent Caching**: FAISS-based knowledge base for fast retrieval
+- **Feedback Learning**: System learns from user corrections
+- **Comprehensive Claim Types**: Supports 11+ news categories (Politics, Economy, Health, Weather, Sports, etc.)
+- **Bilingual Input**: Supports both English and Vietnamese input
 
 ---
 
-Tác giả: Nguyễn Nhật Minh
-
+Author: Nguyễn Nhật Minh

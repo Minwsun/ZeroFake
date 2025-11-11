@@ -16,7 +16,7 @@ try:
     GEOPY_AVAILABLE = True
 except ImportError:
     GEOPY_AVAILABLE = False
-    print("WARNING: geopy không được cài đặt. Chạy: pip install geopy")
+    print("WARNING: geopy is not installed. Run: pip install geopy")
 
 load_dotenv()
 
@@ -106,7 +106,7 @@ def _geocode_location_online(location_name: str) -> Optional[Tuple[str, str]]:
         try:
             location = geolocator.geocode(location_name, timeout=10, language='en', exactly_one=True)
         except Exception as e:
-            print(f"Geopy: Lỗi khi geocode '{location_name}': {e}")
+            print(f"Geopy: Error geocoding '{location_name}': {e}")
         
         # Cách 2: Nếu không tìm thấy, thử thêm "city" hoặc "thành phố" vào cuối
         if not location:
@@ -153,23 +153,23 @@ def _geocode_location_online(location_name: str) -> Optional[Tuple[str, str]]:
                 # Lưu vào cache
                 result = (normalized_name, english_name)
                 _location_cache[location_key] = result
-                print(f"Geopy: Tìm thấy '{normalized_name}' (EN: '{english_name}') tại [{location.latitude}, {location.longitude}]")
+                print(f"Geopy: Found '{normalized_name}' (EN: '{english_name}') at [{location.latitude}, {location.longitude}]")
                 return result
             else:
-                print(f"Geopy: Tìm thấy '{normalized_name}' nhưng không có tọa độ hợp lệ")
+                print(f"Geopy: Found '{normalized_name}' but no valid coordinates")
                 return None
         else:
-            print(f"Geopy: Không tìm thấy địa danh '{location_name}'")
+            print(f"Geopy: Location '{location_name}' not found")
             return None
             
     except GeocoderTimedOut:
-        print(f"Geopy: Timeout khi tìm kiếm '{location_name}'")
+        print(f"Geopy: Timeout searching for '{location_name}'")
         return None
     except GeocoderServiceError as e:
-        print(f"Geopy: Service error khi tìm kiếm '{location_name}': {e}")
+        print(f"Geopy: Service error searching for '{location_name}': {e}")
         return None
     except Exception as e:
-        print(f"Geopy: Unexpected error khi tìm kiếm '{location_name}': {type(e).__name__}: {e}")
+        print(f"Geopy: Unexpected error searching for '{location_name}': {type(e).__name__}: {e}")
         return None
     
     return None
@@ -403,27 +403,27 @@ def _refine_city_name(candidate: str | None, text_input: str) -> str | None:
 
 
 def load_planner_prompt(prompt_path="planner_prompt.txt"):
-    """Tải prompt cho Agent 1 (Planner)"""
+    """Load prompt for Agent 1 (Planner)"""
     global PLANNER_PROMPT
     try:
         with open(prompt_path, 'r', encoding='utf-8') as f:
             PLANNER_PROMPT = f.read()
-        print("INFO: Tải Planner Prompt thành công.")
+        print("INFO: Planner Prompt loaded successfully.")
     except Exception as e:
-        print(f"LỖI: không thể tải {prompt_path}: {e}")
+        print(f"ERROR: Could not load {prompt_path}: {e}")
         raise
 
 
 def _parse_json_from_text(text: str) -> dict:
-    """Trích xuất JSON an toàn từ text trả về của LLM"""
+    """Safely extract JSON from LLM response text"""
     match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', text, re.DOTALL)
     if match:
         try:
             return json.loads(match.group(0))
         except json.JSONDecodeError:
-            print(f"LỖI: Agent 1 (Planner) trả về JSON không hợp lệ. Text: {text}")
+            print(f"ERROR: Agent 1 (Planner) returned invalid JSON. Text: {text}")
             return {}
-    print(f"LỖI: Agent 1 (Planner) không tìm thấy JSON. Text: {text}")
+    print(f"ERROR: Agent 1 (Planner) did not find JSON. Text: {text}")
     return {}
 
 
@@ -474,7 +474,7 @@ def _normalize_plan(plan: dict, text_input: str, flash_mode: bool = False) -> di
     
     if is_historical:
         plan_struct["volatility"] = "low"
-        print(f"Agent Planner: Hiệu chỉnh volatility = 'low' cho tin lịch sử (time_scope={time_scope}, claim_type={claim_type})")
+        print(f"Agent Planner: Adjusted volatility = 'low' for historical news (time_scope={time_scope}, claim_type={claim_type})")
 
     # Trích data_points (ví dụ 40°C, mm mưa, %)
     data_points = set(plan_struct["entities_and_values"]["data_points"] or [])
@@ -513,7 +513,7 @@ def _normalize_plan(plan: dict, text_input: str, flash_mode: bool = False) -> di
                 num_days = int(days_match.group(1))
                 parsed_days_ahead = num_days
                 parsed_date = (today + timedelta(days=num_days)).strftime('%Y-%m-%d')
-                print(f"Agent Planner: Parse trực tiếp từ input - '{num_days} ngày nữa' → days_ahead={parsed_days_ahead}, date={parsed_date}")
+                print(f"Agent Planner: Direct parse from input - '{num_days} ngày nữa' → days_ahead={parsed_days_ahead}, date={parsed_date}")
             except ValueError:
                 pass
         
@@ -525,7 +525,7 @@ def _normalize_plan(plan: dict, text_input: str, flash_mode: bool = False) -> di
                     num_days = int(days_match2.group(1))
                     parsed_days_ahead = num_days
                     parsed_date = (today + timedelta(days=num_days)).strftime('%Y-%m-%d')
-                    print(f"Agent Planner: Parse trực tiếp từ input - 'trong {num_days} ngày tới' → days_ahead={parsed_days_ahead}, date={parsed_date}")
+                    print(f"Agent Planner: Direct parse from input - 'trong {num_days} ngày tới' → days_ahead={parsed_days_ahead}, date={parsed_date}")
                 except ValueError:
                     pass
         
@@ -534,21 +534,21 @@ def _normalize_plan(plan: dict, text_input: str, flash_mode: bool = False) -> di
             if "ngày mai" in text_lower or "tomorrow" in text_lower:
                 parsed_days_ahead = 1
                 parsed_date = (today + timedelta(days=1)).strftime('%Y-%m-%d')
-                print(f"Agent Planner: Parse trực tiếp từ input - 'ngày mai' → days_ahead={parsed_days_ahead}, date={parsed_date}")
+                print(f"Agent Planner: Direct parse from input - 'ngày mai' → days_ahead={parsed_days_ahead}, date={parsed_date}")
         
         # Pattern 4: "hôm nay", "today"
         if not parsed_days_ahead:
             if "hôm nay" in text_lower or "today" in text_lower:
                 parsed_days_ahead = 0
                 parsed_date = today.strftime('%Y-%m-%d')
-                print(f"Agent Planner: Parse trực tiếp từ input - 'hôm nay' → days_ahead={parsed_days_ahead}, date={parsed_date}")
+                print(f"Agent Planner: Direct parse from input - 'hôm nay' → days_ahead={parsed_days_ahead}, date={parsed_date}")
         
         # Pattern 5: "tuần tới", "next week"
         if not parsed_days_ahead:
             if "tuần tới" in text_lower or "next week" in text_lower:
                 parsed_days_ahead = 7
                 parsed_date = (today + timedelta(days=7)).strftime('%Y-%m-%d')
-                print(f"Agent Planner: Parse trực tiếp từ input - 'tuần tới' → days_ahead={parsed_days_ahead}, date={parsed_date}")
+                print(f"Agent Planner: Direct parse from input - 'tuần tới' → days_ahead={parsed_days_ahead}, date={parsed_date}")
         
         # Lưu city thô vào entities
         if city and city not in (plan_struct["entities_and_values"].get("locations") or []):
@@ -570,7 +570,7 @@ def _normalize_plan(plan: dict, text_input: str, flash_mode: bool = False) -> di
             if parsed_days_ahead is not None:
                 calculated_days_ahead = parsed_days_ahead
                 final_date = parsed_date
-                print(f"Agent Planner: ƯU TIÊN - Sử dụng parse trực tiếp: days_ahead={calculated_days_ahead}, date={final_date}")
+                print(f"Agent Planner: PRIORITY - Using direct parse: days_ahead={calculated_days_ahead}, date={final_date}")
             
             # Ưu tiên 2: Date từ Agent 1
             if calculated_days_ahead is None:
@@ -587,9 +587,9 @@ def _normalize_plan(plan: dict, text_input: str, flash_mode: bool = False) -> di
                         target_date = datetime.strptime(agent1_date, '%Y-%m-%d').date()
                         calculated_days_ahead = (target_date - today).days
                         final_date = agent1_date
-                        print(f"Agent Planner: Sử dụng date từ Agent 1: {agent1_date} → days_ahead={calculated_days_ahead}")
+                        print(f"Agent Planner: Using date from Agent 1: {agent1_date} → days_ahead={calculated_days_ahead}")
                     except Exception as e:
-                        print(f"Agent Planner: WARNING - Không thể parse date từ Agent 1: {agent1_date}, lỗi: {e}")
+                        print(f"Agent Planner: WARNING - Could not parse date from Agent 1: {agent1_date}, error: {e}")
             
             # Ưu tiên 3: explicit_date từ plan
             if calculated_days_ahead is None and explicit_date:
@@ -597,22 +597,22 @@ def _normalize_plan(plan: dict, text_input: str, flash_mode: bool = False) -> di
                     target_date = datetime.strptime(explicit_date, '%Y-%m-%d').date()
                     calculated_days_ahead = (target_date - today).days
                     final_date = explicit_date
-                    print(f"Agent Planner: Sử dụng explicit_date={explicit_date} → days_ahead={calculated_days_ahead}")
+                    print(f"Agent Planner: Using explicit_date={explicit_date} → days_ahead={calculated_days_ahead}")
                 except Exception as e:
-                    print(f"Agent Planner: WARNING - Không thể parse explicit_date: {explicit_date}, lỗi: {e}")
+                    print(f"Agent Planner: WARNING - Could not parse explicit_date: {explicit_date}, error: {e}")
             
             # Ưu tiên 4: days_ahead từ classify_claim
             if calculated_days_ahead is None and days_ahead is not None:
                 calculated_days_ahead = days_ahead
                 if not final_date:
                     final_date = (today + timedelta(days=days_ahead)).strftime('%Y-%m-%d')
-                print(f"Agent Planner: Sử dụng days_ahead={days_ahead} từ classify_claim")
+                print(f"Agent Planner: Using days_ahead={days_ahead} from classify_claim")
             
-            # Fallback: mặc định = 0 (hôm nay)
+            # Fallback: default = 0 (today)
             if calculated_days_ahead is None:
                 calculated_days_ahead = 0
                 final_date = today.strftime('%Y-%m-%d')
-                print(f"Agent Planner: WARNING - Không có thông tin thời gian, sử dụng days_ahead=0 (hôm nay)")
+                print(f"Agent Planner: WARNING - No time information, using days_ahead=0 (today)")
             
             final_days_ahead = calculated_days_ahead
             print(f"Agent Planner: Weather tool params - city={city_en}, days_ahead={final_days_ahead}, part_of_day={part_of_day}")
@@ -638,10 +638,10 @@ def _normalize_plan(plan: dict, text_input: str, flash_mode: bool = False) -> di
                 "parameters": weather_tool_params
             })
             
-            print(f"Weather claim: Chỉ sử dụng OpenWeather API cho '{city}' (EN: '{city_en}'), days_ahead={days_ahead}, date={explicit_date}")
+            print(f"Weather claim: Only using OpenWeather API for '{city}' (EN: '{city_en}'), days_ahead={days_ahead}, date={explicit_date}")
         elif city:
             # City không hợp lệ (từ đơn lẻ) → không tạo tool, log cảnh báo
-            print(f"Cảnh báo: Địa danh '{city}' không hợp lệ (từ đơn lẻ), bỏ qua tạo weather tool.")
+            print(f"WARNING: Location '{city}' is invalid (single word), skipping weather tool creation.")
 
     # Tạo bộ câu truy vấn search (CHỈ cho các claim KHÔNG phải thời tiết)
     # Nếu là claim thời tiết, đã có tool "weather" rồi, không cần search
@@ -672,7 +672,7 @@ def _normalize_plan(plan: dict, text_input: str, flash_mode: bool = False) -> di
                 else:
                     tool["parameters"]["queries"] = list(dict.fromkeys(queries))
     else:
-        print("Weather claim: Bỏ qua tạo search tool, chỉ dùng OpenWeather API")
+        print("Weather claim: Skipping search tool creation, only using OpenWeather API")
 
     return plan_struct
 
@@ -703,7 +703,7 @@ async def create_action_plan(text_input: str, flash_mode: bool = False) -> dict:
     last_err = None
     for model_name in model_names:
         try:
-            print(f"Planner: thử model '{model_name}'")
+            print(f"Planner: trying model '{model_name}'")
             model = genai.GenerativeModel(model_name)
             if flash_mode:
                 # Flash mode: không timeout
@@ -725,15 +725,15 @@ async def create_action_plan(text_input: str, flash_mode: bool = False) -> dict:
             if plan_json:
                 return plan_json
         except asyncio.TimeoutError:
-            print(f"Planner: Timeout khi gọi model '{model_name}'")
+            print(f"Planner: Timeout calling model '{model_name}'")
             last_err = "Timeout"
             continue
         except Exception as e:
             last_err = e
-            print(f"Planner: Lỗi với model '{model_name}': {e}")
+            print(f"Planner: Error with model '{model_name}': {e}")
             continue
 
-    print(f"Lỗi khi gọi Agent 1 (Planner): {last_err}")
+    print(f"Error calling Agent 1 (Planner): {last_err}")
     # Trả về kế hoạch dự phòng: tạo search + weather queries nếu có thể
     fallback = _normalize_plan({}, text_input, flash_mode)
     return fallback
