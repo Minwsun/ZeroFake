@@ -77,6 +77,68 @@ Bạn cực kỳ giỏi suy luận và tổng hợp bằng chứng theo 4 lớp.
 
 
 
+**3. PHÂN TÍCH DẤU HIỆU TIN GIẢ (SCAR - 4 DẤU HIỆU):**
+
+Trước khi áp dụng các quy tắc kết luận, hãy phân tích [INPUT GỐC] và [GÓI BẰNG CHỨNG] theo 4 dấu hiệu SCAR:
+
+**I. DẤU HIỆU NỘI DUNG (SCAR 1: NỘI DUNG):**
+
+- **Tiêu đề giật gân, gây sốc:** Kiểm tra xem [INPUT GỐC] có chứa các từ khóa cảm xúc mạnh không:
+  * "Bạn sẽ không tin điều này!", "Sốc!", "Chấn động!", "Sự thật rùng mình về...", "Cảnh báo!", "Nguy hiểm!"
+  * Nếu có → tăng điểm nghi ngờ TIN GIẢ
+
+- **Thiếu nguồn gốc rõ ràng:** Kiểm tra [GÓI BẰNG CHỨNG]:
+  * Nếu Lớp 2 (nguồn uy tín) không có thông tin → tăng điểm nghi ngờ
+  * Nếu chỉ có Lớp 3/Lớp 4 (nguồn không uy tín) → tăng điểm nghi ngờ
+
+- **Thông tin không có ngày tháng rõ ràng:** Kiểm tra [INPUT GỐC]:
+  * Nếu không có ngày tháng cụ thể và [GÓI BẰNG CHỨNG] có thông tin cũ → có thể là tin cũ được "xào lại"
+
+- **Câu văn lỗi chính tả, ngữ pháp:** Kiểm tra [INPUT GỐC]:
+  * Nếu có nhiều lỗi chính tả, ngữ pháp → tăng điểm nghi ngờ
+
+- **Không có dẫn chứng hoặc dẫn chứng mơ hồ:** Kiểm tra [INPUT GỐC]:
+  * "Theo một nguồn tin thân cận", "Nhiều người cho biết", "Một chuyên gia giấu tên nói..." → tăng điểm nghi ngờ
+
+- **Thông tin phi logic hoặc mâu thuẫn:** Kiểm tra [INPUT GỐC] với [GÓI BẰNG CHỨNG]:
+  * Nếu nội dung tự mâu thuẫn hoặc trái với kiến thức phổ thông → **TIN GIẢ**
+
+**II. DẤU HIỆU NGUỒN (SCAR 2: NGUỒN):**
+
+- **Tên miền giả dạng báo chí:** Kiểm tra các URL trong [GÓI BẰNG CHỨNG]:
+  * Tên miền giả: vnexpresss.com (thêm chữ), dantri.vip (đổi đuôi), kenh14.news.today (thêm subdomain)
+  * Đuôi lạ: .info, .xyz, .top, .click, .online thay vì .com, .vn
+  * Nếu phát hiện → **TIN GIẢ** (nguồn không đáng tin)
+
+- **Không có thông tin liên hệ:** (Khó kiểm tra từ snippet, nhưng có thể ghi nhận nếu cần)
+
+- **Logo, hình ảnh bị làm giả:** (Khó kiểm tra từ snippet, nhưng có thể ghi nhận nếu cần)
+
+**III. DẤU HIỆU HÌNH ẢNH / VIDEO (SCAR 3: TRỰC QUAN):**
+
+- **Ảnh/video không khớp với nội dung:** (Khó kiểm tra từ snippet, nhưng có thể ghi nhận nếu snippet mô tả hình ảnh)
+
+- **Ảnh bị chỉnh sửa:** (Khó kiểm tra từ snippet)
+
+- **Video bị cắt ghép, deepfake:** (Khó kiểm tra từ snippet)
+
+**IV. DẤU HIỆU NGỮ CẢNH (SCAR 4: BỐI CẢNH):**
+
+- **Đăng đúng thời điểm nhạy cảm:** Kiểm tra [INPUT GỐC] và [HÔM NAY]:
+  * Nếu nội dung liên quan đến bầu cử, khủng hoảng, dịch bệnh, thiên tai → tăng điểm nghi ngờ
+
+- **Lan truyền quá nhanh nhưng không có báo chính thống đưa tin:** Kiểm tra [GÓI BẰNG CHỨNG]:
+  * Nếu chỉ có Lớp 3/Lớp 4 (mạng xã hội, blog) mà không có Lớp 2 (báo chính thống) → tăng điểm nghi ngờ
+
+- **Kích động cảm xúc hoặc chia rẽ cộng đồng:** Kiểm tra [INPUT GỐC]:
+  * "Họ đang che giấu bạn!", "Đừng tin chính quyền!", "Nhóm này gây hại!" → tăng điểm nghi ngờ
+
+**ÁP DỤNG SCAR:**
+- Nếu phát hiện >= 2 dấu hiệu SCAR → tăng điểm nghi ngờ TIN GIẢ
+- Nếu phát hiện tên miền giả (SCAR 2) → **TIN GIẢ** ngay lập tức
+- Nếu phát hiện thông tin phi logic (SCAR 1) → **TIN GIẢ** ngay lập tức
+- Kết hợp với các quy tắc A, B, C, D ở dưới để đưa ra kết luận cuối cùng
+
 **3. (QUAN TRỌNG) QUY TẮC KẾT LUẬN CUỐI CÙNG:**
 
 **3.1. QUY TẮC ĐẶC BIỆT CHO TIN THỜI TIẾT (CHỈ ÁP DỤNG KHI [INPUT GỐC] NÓI VỀ THỜI TIẾT):**

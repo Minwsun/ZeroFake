@@ -91,9 +91,65 @@ def load_ranker_config(config_path="config.json"):
         print(f"Ranker: Lỗi khi tải config.json: {e}, sử dụng heuristic toàn cục.")
 
 
+# Danh sách các domain báo chí uy tín (để phát hiện domain giả)
+TRUSTED_NEWS_DOMAINS = {
+    "vnexpress.net", "dantri.com.vn", "tuoitre.vn", "thanhnien.vn", "vietnamnet.vn",
+    "vtv.vn", "vov.vn", "nhandan.vn", "qdnd.vn", "cand.com.vn", "ttxvn.vn",
+    "znews.vn", "laodong.vn", "tienphong.vn", "sggp.org.vn", "hanoimoi.com.vn",
+    "kenh14.vn", "vietnamplus.vn", "baotintuc.vn", "vnanet.vn",
+    "bbc.com", "nytimes.com", "reuters.com", "apnews.com", "afp.com",
+    "cnn.com", "theguardian.com", "washingtonpost.com", "wsj.com"
+}
+
+# Đuôi domain đáng ngờ (thường dùng cho domain giả)
+SUSPICIOUS_TLDS = {'.info', '.xyz', '.top', '.click', '.online', '.site', '.website', '.space', '.store', '.shop'}
+
+def _is_fake_domain(domain: str) -> bool:
+    """
+    Phát hiện domain giả dạng báo chí.
+    Trả về True nếu domain có vẻ là giả (thêm chữ, đổi đuôi, subdomain lạ).
+    """
+    domain_lower = domain.lower()
+    
+    # Kiểm tra đuôi đáng ngờ
+    for tld in SUSPICIOUS_TLDS:
+        if domain_lower.endswith(tld):
+            # Nếu domain có tên giống báo chí nhưng dùng đuôi lạ → có thể là giả
+            for trusted in TRUSTED_NEWS_DOMAINS:
+                trusted_base = trusted.split('.')[0]  # Lấy phần đầu (ví dụ: "vnexpress" từ "vnexpress.net")
+                if trusted_base in domain_lower and domain_lower != trusted:
+                    print(f"Ranker: Phát hiện domain giả (đuôi lạ): {domain} (giống {trusted})")
+                    return True
+    
+    # Kiểm tra domain giả bằng cách thêm chữ (ví dụ: vnexpresss.com)
+    for trusted in TRUSTED_NEWS_DOMAINS:
+        trusted_parts = trusted.split('.')
+        if len(trusted_parts) >= 2:
+            trusted_base = trusted_parts[0]  # "vnexpress"
+            trusted_tld = '.' + '.'.join(trusted_parts[1:])  # ".net"
+            
+            # Kiểm tra nếu domain có tên giống nhưng thêm chữ hoặc đổi đuôi
+            if trusted_base in domain_lower:
+                # Nếu domain khác với domain uy tín → có thể là giả
+                if domain_lower != trusted and domain_lower != f"www.{trusted}":
+                    # Kiểm tra xem có phải là subdomain hợp lệ không
+                    if not domain_lower.endswith('.' + trusted):
+                        # Có thể là domain giả (thêm chữ hoặc đổi đuôi)
+                        # Ví dụ: vnexpresss.com, vnexpress.vip, vnexpress.news.today
+                        if len(domain_lower) > len(trusted) + 2:  # Thêm chữ
+                            print(f"Ranker: Phát hiện domain giả (thêm chữ): {domain} (giống {trusted})")
+                            return True
+                        elif not domain_lower.endswith(trusted_tld):  # Đổi đuôi
+                            print(f"Ranker: Phát hiện domain giả (đổi đuôi): {domain} (giống {trusted})")
+                            return True
+    
+    return False
+
+
 def get_rank_from_url(url: str) -> float:
     """
     Phân tích domain và subdomain để lấy score từ SOURCE_RANKER_CONFIG (đã được làm phẳng).
+    Có logic phát hiện domain giả dạng báo chí.
     """
     if not SOURCE_RANKER_CONFIG:
         load_ranker_config()
@@ -105,6 +161,11 @@ def get_rank_from_url(url: str) -> float:
         # Loại bỏ www.
         if domain.startswith('www.'):
             domain = domain[4:]
+        
+        # Phát hiện domain giả (SCAR 2: NGUỒN)
+        if _is_fake_domain(domain):
+            print(f"Ranker: Domain giả được phát hiện: {domain} → rank = 0.1 (rất thấp)")
+            return 0.1  # Rank rất thấp cho domain giả
 
         # Ưu tiên các trang dự báo thời tiết chuyên dụng (accuweather.com được ưu tiên cao nhất)
         if 'accuweather.com' in domain:

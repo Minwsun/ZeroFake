@@ -490,10 +490,17 @@ def _normalize_plan(plan: dict, text_input: str, flash_mode: bool = False) -> di
             # Lấy part_of_day từ claim (sáng, chiều, tối)
             part_of_day = claim.get("part_of_day")
             
+            # Đảm bảo days_ahead không None
+            if days_ahead is None:
+                days_ahead = 0
+                print(f"Agent Planner: WARNING - days_ahead là None, sử dụng 0 (hôm nay)")
+            
+            print(f"Agent Planner: Weather tool params - city={city_en}, days_ahead={days_ahead}, part_of_day={part_of_day}")
+            
             # Tạo tool "weather" với OpenWeather API
             weather_tool_params = {
                 "city": city_en,  # Dùng tên tiếng Anh cho OpenWeather
-                "days_ahead": days_ahead if days_ahead is not None else 0
+                "days_ahead": days_ahead  # Đã đảm bảo không None ở trên
             }
             if explicit_date:
                 weather_tool_params["date"] = explicit_date
