@@ -48,7 +48,7 @@ def _sanitize_check_response(obj: dict) -> dict:
     """Đảm bảo các trường CheckResponse là string, tránh None gây lỗi Pydantic."""
     if obj is None:
         obj = {}
-    for k in ["conclusion", "reason", "style_analysis", "key_evidence_snippet", "key_evidence_source"]:
+    for k in ["conclusion", "reason", "style_analysis", "key_evidence_snippet", "key_evidence_source", "debug_canonical_location"]:
         v = obj.get(k)
         if v is None:
             obj[k] = ""
@@ -101,6 +101,7 @@ class CheckResponse(BaseModel):
     key_evidence_snippet: str
     key_evidence_source: str
     cached: bool = False
+    debug_canonical_location: str = ""
 
 
 class FeedbackRequest(BaseModel):
@@ -185,11 +186,36 @@ async def handle_check_news(request: CheckRequest, background_tasks: BackgroundT
         # Enrich kế hoạch với bằng chứng thu được
         enriched_plan = enrich_plan_with_evidence(plan, evidence_bundle)
         logger.info(f"Kế hoạch (đã làm giàu): {json.dumps(enriched_plan, ensure_ascii=False, indent=2)}")
+
+        # Xác định canonical location để debug (City, CC) nếu có
+        debug_canonical_location = ""
+        try:
+            # Ưu tiên từ weather module parameters.location
+            wm = next((m for m in (plan.get("required_tools") or []) if (m or {}).get("tool_name") == "weather"), None)
+            if wm:
+                loc = ((wm.get("parameters") or {}).get("location") or "").strip()
+                if loc:
+                    debug_canonical_location = loc
+            # Nếu trống, lấy từ enriched entities.locations
+            if not debug_canonical_location:
+                locs = ((enriched_plan.get("entities_and_values") or {}).get("locations") or [])
+                if isinstance(locs, list) and locs:
+                    debug_canonical_location = str(locs[0]).strip()
+            # Nếu vẫn trống, thử trích trực tiếp từ input
+            if not debug_canonical_location:
+                info = await asyncio.to_thread(extract_weather_info, request.text)
+                if info and info.get("city"):
+                    c = info.get("city")
+                    cc = info.get("country")
+                    debug_canonical_location = f"{c}, {cc}" if cc else c
+        except Exception:
+            pass
         
         # Bước 4: Agent 2 (Synthesizer) đưa ra phán quyết
         logger.info("Agent 2 (Synthesizer) đang tổng hợp...")
         current_date = datetime.datetime.now().strftime('%Y-%m-%d')
         gemini_result = await execute_final_analysis(request.text, evidence_bundle, current_date)
+        gemini_result["debug_canonical_location"] = debug_canonical_location
         gemini_result = _sanitize_check_response(gemini_result)
         logger.info(f"Kết quả Agent 2: {gemini_result.get('conclusion', 'N/A')}")
         
