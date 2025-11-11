@@ -1,6 +1,7 @@
 # 22520876-NguyenNhatMinh
 """
 Module 2a: Google Search API
+(Đã sửa đổi để tìm kiếm toàn bộ web theo yêu cầu)
 """
 import os
 import json
@@ -15,19 +16,16 @@ GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 GOOGLE_CSE_ID = os.getenv("GOOGLE_CSE_ID")
 
 
+
 def get_site_query(config_path="config.json") -> str:
     """
-    Đọc config.json và tạo chuỗi query cho các site có rank >= 0.9.
-    Trả về chuỗi rỗng nếu không có site nào để tránh sinh "()" trong query.
+    (ĐÃ SỬA ĐỔI)
+    Trả về chuỗi rỗng để tìm kiếm trên toàn bộ web,
+    bỏ qua các giới hạn 'site:' trong config.json theo yêu cầu.
     """
-    with open(config_path, 'r', encoding='utf-8') as f:
-        config = json.load(f)
-    high_rank_sites = [site for site, rank in config.items() if isinstance(rank, (int, float)) and rank >= 0.9]
-    if not high_rank_sites:
-        return ""
-    site_query_parts = [f"site:{site}" for site in high_rank_sites]
-    site_query_string = " OR ".join(site_query_parts)
-    return f"({site_query_string})"
+    # Luôn trả về rỗng để tìm kiếm toàn bộ web
+    return ""
+
 
 
 def call_google_search(text_input: str, site_query_string: str) -> list:
@@ -56,10 +54,12 @@ def call_google_search(text_input: str, site_query_string: str) -> list:
 
     # Single-pass precise query with num=1
     try:
+        # site_query_string bây giờ sẽ là "" (rỗng)
         if site_query_string:
             precise_query = f'"{text_input}" {site_query_string}'
         else:
             precise_query = f'"{text_input}"'
+        
         result_precise = service.cse().list(q=precise_query, cx=GOOGLE_CSE_ID, num=1, sort='date').execute()
         add_items(result_precise)
     except HttpError as e:
@@ -70,6 +70,6 @@ def call_google_search(text_input: str, site_query_string: str) -> list:
     except Exception as e:
         print(f"Lỗi trong single-pass query: {e}")
 
-    print(f"Google Search (single-pass): Tìm thấy {len(all_items)} bằng chứng.")
+    print(f"Google Search (single-pass, all web): Tìm thấy {len(all_items)} bằng chứng.")
     return all_items
 

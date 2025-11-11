@@ -26,10 +26,10 @@ from app.tool_executor import execute_tool_plan, enrich_plan_with_evidence
 from app.agent_synthesizer import load_synthesis_prompt, execute_final_analysis
 # ------------------------------
 
-# Weather extraction for GUI
+# (SỬA ĐỔI) Chỉ import hàm phát hiện (detection)
 from app.weather import extract_weather_info
 
-app = FastAPI(title="ZeroFake V2.0 - Agent Architecture")
+app = FastAPI(title="ZeroFake V2.0 - Agent Architecture (Search-Only)")
 
 # CORS middleware (Giữ nguyên)
 app.add_middleware(
@@ -41,14 +41,14 @@ app.add_middleware(
 )
 
 # Biến toàn cục
-SITE_QUERY_STRING = ""
+SITE_QUERY_STRING = "" # (Sửa đổi) Sẽ được set thành "" (rỗng)
 
 
 def _sanitize_check_response(obj: dict) -> dict:
     """Đảm bảo các trường CheckResponse là string, tránh None gây lỗi Pydantic."""
     if obj is None:
         obj = {}
-    for k in ["conclusion", "reason", "style_analysis", "key_evidence_snippet", "key_evidence_source", "debug_canonical_location"]:
+    for k in ["conclusion", "reason", "style_analysis", "key_evidence_snippet", "key_evidence_source"]:
         v = obj.get(k)
         if v is None:
             obj[k] = ""
@@ -80,13 +80,13 @@ async def startup_event():
     # ---------------------------------
     
     try:
-        # Lấy site query từ config
+        # (SỬA ĐỔI) Lấy site query (sẽ là rỗng để tìm kiếm toàn web)
         SITE_QUERY_STRING = get_site_query("config.json")
     except Exception as e:
         logger.warning(f"Không thể tạo site query string: {e}")
         SITE_QUERY_STRING = ""  # Fallback
     
-    print("ZeroFake V2.0 (Agent) đã sẵn sàng!")
+    print(f"ZeroFake V2.0 (Agent, Search-Only) đã sẵn sàng! Site Query: '[{SITE_QUERY_STRING}]'")
 
 
 # Pydantic Models (Giữ nguyên)
@@ -101,7 +101,6 @@ class CheckResponse(BaseModel):
     key_evidence_snippet: str
     key_evidence_source: str
     cached: bool = False
-    debug_canonical_location: str = ""
 
 
 class FeedbackRequest(BaseModel):
@@ -112,40 +111,38 @@ class FeedbackRequest(BaseModel):
     notes: str = ""
 
 
-# GUI helper: extract location from text for OpenWeather usage
+# (SỬA ĐỔI) GUI helper: Chỉ trích xuất tên địa danh
 class ExtractLocationRequest(BaseModel):
     text: str
 
 class ExtractLocationResponse(BaseModel):
     city: str | None
-    country: str | None
-    lat: float | None
-    lon: float | None
-    canonical: str | None
+    # (Xóa) country, lat, lon, canonical
     success: bool
 
 
 @app.post("/extract_location", response_model=ExtractLocationResponse)
 async def extract_location_endpoint(request: ExtractLocationRequest):
+    """
+    (SỬA ĐỔI) Endpoint này chỉ còn trả về TÊN địa danh (nếu phát hiện)
+    """
     try:
         info = await asyncio.to_thread(extract_weather_info, request.text)
         if not info or not info.get("city"):
-            return ExtractLocationResponse(city=None, country=None, lat=None, lon=None, canonical=None, success=False)
+            return ExtractLocationResponse(city=None, success=False)
         city = info.get("city")
-        country = info.get("country")
-        canonical = f"{city}, {country}" if country else city
-        return ExtractLocationResponse(city=city, country=country, lat=info.get("lat"), lon=info.get("lon"), canonical=canonical, success=True)
+        return ExtractLocationResponse(city=city, success=True)
     except Exception as e:
         logger.warning(f"extract_location error: {e}")
-        return ExtractLocationResponse(city=None, country=None, lat=None, lon=None, canonical=None, success=False)
+        return ExtractLocationResponse(city=None, success=False)
 
 
 @app.post("/check_news", response_model=CheckResponse)
 async def handle_check_news(request: CheckRequest, background_tasks: BackgroundTasks):
     """
     Endpoint chính (Agent Workflow):
-    Input -> Agent 1 (Flash) lập kế hoạch + thu thập search (embedded) ->
-    (Nếu claim là thời tiết) gọi OpenWeather theo metadata -> Agent 2 (Pro) tổng hợp.
+    Input -> Agent 1 (Flash) lập kế hoạch + (Nếu là thời tiết) tạo query search
+    -> Tool Executor (Chỉ Search) -> Agent 2 (Pro) tổng hợp.
     """
     try:
         # Bước 1: Kiểm tra KB Cache (Giữ nguyên)
@@ -155,7 +152,7 @@ async def handle_check_news(request: CheckRequest, background_tasks: BackgroundT
             logger.info("Tìm thấy trong cache!")
             return CheckResponse(**_sanitize_check_response(cached_result))
         
-        # Bước 2: Agent 1 (Planner) tạo kế hoạch (có thể kèm embedded evidence để tiết kiệm request)
+        # Bước 2: Agent 1 (Planner) tạo kế hoạch
         logger.info("Agent 1 (Planner) đang tạo kế hoạch...")
         plan = await create_action_plan(request.text)
         logger.info(f"Kế hoạch: {json.dumps(plan, ensure_ascii=False, indent=2)}")
@@ -165,61 +162,27 @@ async def handle_check_news(request: CheckRequest, background_tasks: BackgroundT
         if embedded and isinstance(embedded, dict):
             logger.info("Dùng embedded_evidence từ Planner (bỏ qua Executor search) để tiết kiệm quota.")
             evidence_bundle = {
-                "layer_1_tools": [],
+                "layer_1_tools": [], # Lớp 1 rỗng
                 "layer_2_high_trust": embedded.get("layer_2_high_trust", []) or [],
                 "layer_3_general": embedded.get("layer_3_general", []) or [],
                 "layer_4_social_low": embedded.get("layer_4_social_low", []) or [],
             }
-            # Nếu kế hoạch có module weather, chạy riêng weather và hợp nhất Layer 1
-            weather_modules = [m for m in (plan.get("required_tools") or []) if (m or {}).get("tool_name") == "weather"]
-            if weather_modules:
-                weather_only_plan = {"required_tools": weather_modules}
-                logger.info("Thực thi weather theo metadata từ Planner...")
-                weather_bundle = await execute_tool_plan(weather_only_plan, SITE_QUERY_STRING)
-                if isinstance(weather_bundle, dict):
-                    for it in (weather_bundle.get("layer_1_tools") or []):
-                        evidence_bundle["layer_1_tools"].append(it)
         else:
-            logger.info("Tool Executor đang thu thập bằng chứng...")
+            logger.info("Tool Executor đang thu thập bằng chứng (Search-Only)...")
             evidence_bundle = await execute_tool_plan(plan, SITE_QUERY_STRING)
 
         # Enrich kế hoạch với bằng chứng thu được
         enriched_plan = enrich_plan_with_evidence(plan, evidence_bundle)
         logger.info(f"Kế hoạch (đã làm giàu): {json.dumps(enriched_plan, ensure_ascii=False, indent=2)}")
-
-        # Xác định canonical location để debug (City, CC) nếu có
-        debug_canonical_location = ""
-        try:
-            # Ưu tiên từ weather module parameters.location
-            wm = next((m for m in (plan.get("required_tools") or []) if (m or {}).get("tool_name") == "weather"), None)
-            if wm:
-                loc = ((wm.get("parameters") or {}).get("location") or "").strip()
-                if loc:
-                    debug_canonical_location = loc
-            # Nếu trống, lấy từ enriched entities.locations
-            if not debug_canonical_location:
-                locs = ((enriched_plan.get("entities_and_values") or {}).get("locations") or [])
-                if isinstance(locs, list) and locs:
-                    debug_canonical_location = str(locs[0]).strip()
-            # Nếu vẫn trống, thử trích trực tiếp từ input
-            if not debug_canonical_location:
-                info = await asyncio.to_thread(extract_weather_info, request.text)
-                if info and info.get("city"):
-                    c = info.get("city")
-                    cc = info.get("country")
-                    debug_canonical_location = f"{c}, {cc}" if cc else c
-        except Exception:
-            pass
         
         # Bước 4: Agent 2 (Synthesizer) đưa ra phán quyết
         logger.info("Agent 2 (Synthesizer) đang tổng hợp...")
         current_date = datetime.datetime.now().strftime('%Y-%m-%d')
         gemini_result = await execute_final_analysis(request.text, evidence_bundle, current_date)
-        gemini_result["debug_canonical_location"] = debug_canonical_location
         gemini_result = _sanitize_check_response(gemini_result)
         logger.info(f"Kết quả Agent 2: {gemini_result.get('conclusion', 'N/A')}")
         
-        # Bước 5: Cập nhật KB có điều kiện
+        # Bước 5: Cập nhật KB có điều kiện (Giữ nguyên)
         plan_volatility = plan.get('volatility', 'medium')
         if gemini_result.get("conclusion") and plan_volatility in ['static', 'low']:
             logger.info(f"Đang lưu kết quả (Volatility: {plan_volatility}) vào KB...")
@@ -254,7 +217,7 @@ async def handle_feedback(request: FeedbackRequest):
         request.human_correction,
         request.notes
     )
-    return {"status": "success", "message": "Đã ghi nhận phảnhaal"}
+    return {"status": "success", "message": "Đã ghi nhận phản hồi"}
 
 
 @app.get("/")
@@ -262,6 +225,6 @@ async def root():
     """Health check endpoint"""
     return {
         "status": "running",
-        "version": "2.0-Agent",
+        "version": "2.0-Agent (Search-Only)",
         "name": "ZeroFake"
     }
