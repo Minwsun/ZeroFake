@@ -9,13 +9,13 @@ from app.ranker import get_rank_from_url, _extract_date
 
 # --- SEARCH TOOL (Gemini Web Search với fallback CSE) ---
 
-async def _execute_search_tool(parameters: dict, site_query_string: str, unlimit_mode: bool = False) -> dict:
+async def _execute_search_tool(parameters: dict, site_query_string: str, flash_mode: bool = False) -> dict:
 	"""Thực thi mô-đun "search" bằng DuckDuckGo (thông qua call_google_search)."""
 	queries = parameters.get("queries", [])
 	if not queries:
 		return {"tool_name": "search", "status": "no_queries", "layer_2": [], "layer_3": [], "layer_4": []}
 
-	if not unlimit_mode:
+	if not flash_mode:
 		queries = queries[:3]
 	
 	all_items = []
@@ -23,7 +23,7 @@ async def _execute_search_tool(parameters: dict, site_query_string: str, unlimit
 
 	for query in queries:
 		try:
-			if unlimit_mode:
+			if flash_mode:
 				search_items = await asyncio.to_thread(call_google_search, query, site_query_string)
 			else:
 				search_items = await asyncio.wait_for(
@@ -100,7 +100,7 @@ def enrich_plan_with_evidence(plan: dict, evidence_bundle: dict) -> dict:
 
 # --- ORCHESTRATOR ---
 
-async def execute_tool_plan(plan: dict, site_query_string: str, unlimit_mode: bool = False) -> dict:
+async def execute_tool_plan(plan: dict, site_query_string: str, flash_mode: bool = False) -> dict:
 	required_tools = plan.get("required_tools", [])
 	evidence_bundle = {
 		"layer_1_tools": [], # Lớp 1 sẽ luôn rỗng
@@ -116,7 +116,7 @@ async def execute_tool_plan(plan: dict, site_query_string: str, unlimit_mode: bo
 		parameters = module.get("parameters", {})
 		if tool_name == "search":
 			# (Sửa đổi) Chỉ còn tool search
-			tasks.append(_execute_search_tool(parameters, site_query_string, unlimit_mode=unlimit_mode))
+				tasks.append(_execute_search_tool(parameters, site_query_string, flash_mode=flash_mode))
 		# (XÓA BỎ) elif tool_name == "weather":
 
 	if not tasks:

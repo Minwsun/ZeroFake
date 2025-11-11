@@ -92,7 +92,7 @@ async def startup_event():
 # Pydantic Models (Giữ nguyên)
 class CheckRequest(BaseModel):
     text: str
-    unlimit_mode: bool = False
+    flash_mode: bool = False
 
 
 class CheckResponse(BaseModel):
@@ -144,9 +144,9 @@ async def handle_check_news(request: CheckRequest, background_tasks: BackgroundT
     Endpoint chính (Agent Workflow):
     Input -> Agent 1 (learnlm Planner) lập kế hoạch
     -> Tool Executor (DuckDuckGo search) -> Agent 2 (learnlm Synthesizer) tổng hợp.
-    Timeout tổng thể: 100 giây (trừ khi bật chế độ unlimit).
+    Timeout tổng thể: 100 giây (trừ khi bật chế độ flash).
     """
-    if request.unlimit_mode:
+    if request.flash_mode:
         return await _handle_check_news_internal(request, background_tasks)
     try:
         return await asyncio.wait_for(_handle_check_news_internal(request, background_tasks), timeout=100.0)
@@ -157,7 +157,7 @@ async def handle_check_news(request: CheckRequest, background_tasks: BackgroundT
 
 async def _handle_check_news_internal(request: CheckRequest, background_tasks: BackgroundTasks):
     """Internal handler cho check_news"""
-    unlimit = request.unlimit_mode
+    flash = request.flash_mode
     try:
         # Bước 1: Kiểm tra KB Cache (Giữ nguyên)
         logger.info("Kiểm tra KB cache...")
@@ -168,12 +168,12 @@ async def _handle_check_news_internal(request: CheckRequest, background_tasks: B
         
         # Bước 2: Agent 1 (Planner) tạo kế hoạch
         logger.info("Agent 1 (Planner) đang tạo kế hoạch...")
-        plan = await create_action_plan(request.text, unlimit_mode=unlimit)
+        plan = await create_action_plan(request.text, flash_mode=flash)
         logger.info(f"Kế hoạch: {json.dumps(plan, ensure_ascii=False, indent=2)}")
         
         # Bước 3: Thu thập bằng chứng (luôn chạy DDG search)
         logger.info("Tool Executor (DDG Search) đang thu thập bằng chứng...")
-        evidence_bundle = await execute_tool_plan(plan, SITE_QUERY_STRING, unlimit_mode=unlimit)
+        evidence_bundle = await execute_tool_plan(plan, SITE_QUERY_STRING, flash_mode=flash)
 
         # Enrich kế hoạch với bằng chứng thu được
         enriched_plan = enrich_plan_with_evidence(plan, evidence_bundle)
@@ -182,7 +182,7 @@ async def _handle_check_news_internal(request: CheckRequest, background_tasks: B
         # Bước 4: Agent 2 (Synthesizer) đưa ra phán quyết
         logger.info("Agent 2 (Synthesizer) đang tổng hợp...")
         current_date = datetime.datetime.now().strftime('%Y-%m-%d')
-        gemini_result = await execute_final_analysis(request.text, evidence_bundle, current_date, unlimit_mode=unlimit)
+        gemini_result = await execute_final_analysis(request.text, evidence_bundle, current_date, flash_mode=flash)
         gemini_result = _sanitize_check_response(gemini_result)
         logger.info(f"Kết quả Agent 2: {gemini_result.get('conclusion', 'N/A')}")
         

@@ -292,7 +292,7 @@ def _parse_json_from_text(text: str) -> dict:
     return {}
 
 
-def _normalize_plan(plan: dict, text_input: str, unlimit_mode: bool = False) -> dict:
+def _normalize_plan(plan: dict, text_input: str, flash_mode: bool = False) -> dict:
     """
     (ĐÃ SỬA ĐỔI)
     Đảm bảo plan đủ schema.
@@ -431,7 +431,7 @@ def _normalize_plan(plan: dict, text_input: str, unlimit_mode: bool = False) -> 
         if not default_queries:
             default_queries = [text_input]
         final_queries = weather_queries + default_queries
-        if not unlimit_mode:
+        if not flash_mode:
             final_queries = list(dict.fromkeys(final_queries))[:3]
         else:
             final_queries = list(dict.fromkeys(final_queries))
@@ -444,7 +444,7 @@ def _normalize_plan(plan: dict, text_input: str, unlimit_mode: bool = False) -> 
     for tool in plan_struct["required_tools"]:
         if tool.get("tool_name") == "search":
             queries = tool.get("parameters", {}).get("queries", [])
-            if not unlimit_mode:
+            if not flash_mode:
                 tool["parameters"]["queries"] = queries[:3]
             else:
                 tool["parameters"]["queries"] = list(dict.fromkeys(queries))
@@ -454,7 +454,7 @@ def _normalize_plan(plan: dict, text_input: str, unlimit_mode: bool = False) -> 
     return plan_struct
 
 
-async def create_action_plan(text_input: str, unlimit_mode: bool = False) -> dict:
+async def create_action_plan(text_input: str, flash_mode: bool = False) -> dict:
     """
     Gọi Agent 1 (Gemini Flash) để phân tích tin và tạo Kế hoạch thực thi chi tiết.
     """
@@ -469,20 +469,19 @@ async def create_action_plan(text_input: str, unlimit_mode: bool = False) -> dic
     # Tránh lỗi KeyError do dấu ngoặc nhọn trong prompt ví dụ JSON
     prompt = PLANNER_PROMPT.replace("{text_input}", text_input)
 
-    # Unlimit: chỉ dùng learnlm. Normal: chỉ dùng gemini-2.5-flash
-    if unlimit_mode:
-        model_names = ['models/learnlm-2.0-flash-experimental']
-    else:
-        model_names = ['models/gemini-2.5-flash']
+    # Flash mode: dùng gemini-2.5-flash. Normal: cũng dùng gemini-2.5-flash
+    model_names = ['models/gemini-2.5-flash']
 
     last_err = None
     for model_name in model_names:
         try:
             print(f"Planner: thử model '{model_name}'")
             model = genai.GenerativeModel(model_name)
-            if unlimit_mode:
+            if flash_mode:
+                # Flash mode: không timeout
                 response = await asyncio.to_thread(model.generate_content, prompt)
             else:
+                # Normal mode: có timeout 30s
                 response = await asyncio.wait_for(
                     asyncio.to_thread(model.generate_content, prompt),
                     timeout=30.0
@@ -494,7 +493,7 @@ async def create_action_plan(text_input: str, unlimit_mode: bool = False) -> dic
             if not text:
                 raise RuntimeError("LLM trả về rỗng")
             plan_json = _parse_json_from_text(text)
-            plan_json = _normalize_plan(plan_json, text_input, unlimit_mode)
+            plan_json = _normalize_plan(plan_json, text_input, flash_mode)
             if plan_json:
                 return plan_json
         except asyncio.TimeoutError:
@@ -508,5 +507,5 @@ async def create_action_plan(text_input: str, unlimit_mode: bool = False) -> dic
 
     print(f"Lỗi khi gọi Agent 1 (Planner): {last_err}")
     # Trả về kế hoạch dự phòng: tạo search + weather queries nếu có thể
-    fallback = _normalize_plan({}, text_input, unlimit_mode)
+    fallback = _normalize_plan({}, text_input, flash_mode)
     return fallback

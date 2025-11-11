@@ -203,14 +203,14 @@ def _heuristic_summarize(text_input: str, bundle: Dict[str, Any], current_date: 
 
 
 
-def _pick_models(unlimit_mode: bool) -> List[str]:
-    """Chọn danh sách model cho Synthesizer dựa trên chế độ unlimit"""
-    if unlimit_mode:
-        return ['models/learnlm-2.0-flash-experimental']
-    return ['models/gemini-2.5-pro']
+def _pick_models(flash_mode: bool) -> List[str]:
+    """Chọn danh sách model cho Synthesizer dựa trên chế độ flash"""
+    if flash_mode:
+        return ['models/gemini-2.5-flash']  # Flash mode: dùng gemini-2.5-flash
+    return ['models/gemini-2.5-pro']  # Normal mode: dùng gemini-2.5-pro
 
 
-async def execute_final_analysis(text_input: str, evidence_bundle: dict, current_date: str, unlimit_mode: bool = False) -> dict:
+async def execute_final_analysis(text_input: str, evidence_bundle: dict, current_date: str, flash_mode: bool = False) -> dict:
     """
     Gọi Agent 2 để tổng hợp bằng chứng; cắt gọn evidence; dynamic model picking; retry nhẹ; heuristic fallback.
     """
@@ -221,7 +221,7 @@ async def execute_final_analysis(text_input: str, evidence_bundle: dict, current
 
     genai.configure(api_key=GEMINI_API_KEY)
 
-    model_names = _pick_models(unlimit_mode)
+    model_names = _pick_models(flash_mode)
 
     # Trim evidence before sending
     trimmed_bundle = _trim_evidence_bundle(evidence_bundle)
@@ -239,7 +239,7 @@ async def execute_final_analysis(text_input: str, evidence_bundle: dict, current
         try:
             print(f"Synthesizer: thử model '{model_name}'")
             model = genai.GenerativeModel(model_name)
-            if unlimit_mode:
+            if flash_mode:
                 response = await asyncio.to_thread(model.generate_content, prompt, safety_settings=SAFETY_SETTINGS)
             else:
                 response = await asyncio.wait_for(
