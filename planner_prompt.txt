@@ -43,9 +43,9 @@ Hãy phân tích và trả về một cấu trúc JSON duy nhất với các tr�
 
          "{text_input}",
 
-         "tin tức mới nhất về [chủ đề chính của input]",
+         "(Nếu input là sự kiện không có ngày tháng, hãy thêm query): 'tin tức mới nhất về [chủ đề chính của input]'",
 
-         "(ví dụ nếu input là 'Apple ra mắt iPhone 15', hãy thêm: 'iPhone mới nhất 2024 2025' hoặc 'Apple ra mắt iPhone 17')"
+         "(Ví dụ: nếu input là 'Apple ra mắt iPhone 15', hãy thêm query: 'iPhone mới nhất 2024 2025' hoặc 'Apple ra mắt iPhone 17')"
 
        ], "search_type": "current_data"}}
 
@@ -103,17 +103,15 @@ Hãy phân tích và trả về một cấu trúc JSON duy nhất với các tr�
 
          - (1) Bằng chứng (Lớp 2) xác nhận hoặc bác bỏ chính [main_claim] (ví dụ: tin iPhone 15 2023).
 
-         - (2) Bằng chứng (Lớp 2) về TÌNH TRẠNG MỚI NHẤT của chủ đề (ví dụ: tin iPhone 17 2025).
+         - (2) Bằng chứng (Lớp 2) về **TÌNH TRẠNG MỚI NHẤT** của chủ đề (ví dụ: tin iPhone 17 2025).
 
-       - (Nếu [claim_type] là 'static' như "Paris là thủ đô Pháp", chỉ cần tìm bằng chứng loại 1).
+       - (Nếu [claim_type] là 'static' (ví dụ: "Paris là thủ đô Pháp"), chỉ cần tìm bằng chứng loại 1).
 
    - Tuyệt đối KHÔNG bịa đặt tiêu đề/URL.
 
 
 
 [QUY TẮC CHUẨN HOÁ ĐỊA DANH (RẤT QUAN TRỌNG - DÙNG CHO API)]:
-
-(Giữ nguyên các BƯỚC 1-4 như cũ)
 
 - **BƯỚC 1: TRÍCH XUẤT (EXTRACTION)**
 
