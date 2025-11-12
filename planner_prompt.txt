@@ -87,6 +87,13 @@ Hãy phân tích và trả về một cấu trúc JSON duy nhất với các tr�
 3. "volatility" (ĐỘ BIẾN ĐỘNG / MỨC ĐỘ):
    - "static" | "low" | "medium" | "high"
    - **QUY TẮC QUAN TRỌNG:**
+     * **ƯU TIÊN CAO NHẤT: Nếu [TIN GỐC] là sự thật hiển nhiên (common knowledge) → volatility PHẢI = "low" hoặc "static"**
+       - Sự thật hiển nhiên bao gồm:
+         + Kiến thức khoa học cơ bản: "Mặt trời mọc phía đông", "Nước sôi ở 100 độ C", "Trái Đất quay quanh Mặt Trời", v.v.
+         + Kiến thức địa lý cơ bản: "Paris là thủ đô Pháp", "Hà Nội là thủ đô Việt Nam", v.v.
+         + Kiến thức toán học cơ bản: "2 + 2 = 4", v.v.
+         + Kiến thức lịch sử cơ bản đã được công nhận: "Thế chiến 2 kết thúc năm 1945", v.v.
+       - Các sự thật hiển nhiên KHÔNG BAO GIỜ thay đổi → volatility = "low" hoặc "static"
      * Nếu "time_scope" = "historical" (tin lịch sử, quá khứ) → volatility PHẢI = "low" (không thể thay đổi)
      * Nếu "claim_type" thuộc "Lịch sử & Địa lý" (ví dụ: "Sự kiện lịch sử", "Phân tích lịch sử") → volatility PHẢI = "low"
      * Nếu "claim_type" = "Thời tiết" → volatility = "high" (thay đổi nhanh)

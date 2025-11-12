@@ -427,6 +427,56 @@ def _parse_json_from_text(text: str) -> dict:
     return {}
 
 
+def _is_common_knowledge(text_input: str) -> bool:
+    """
+    Check if the input is common knowledge (sự thật hiển nhiên).
+    Common knowledge facts have volatility = "low" or "static".
+    """
+    text_lower = text_input.lower()
+    
+    # Common knowledge patterns
+    common_knowledge_patterns = [
+        # Scientific facts
+        r"mặt trời mọc phía đông",
+        r"sun rises in the east",
+        r"nước sôi ở 100 độ",
+        r"water boils at 100",
+        r"trái đất quay quanh mặt trời",
+        r"earth revolves around the sun",
+        r"nước đóng băng ở 0 độ",
+        r"water freezes at 0",
+        r"trọng lực",
+        r"gravity",
+        r"oxy cần thiết",
+        r"oxygen is necessary",
+        # Geographic facts
+        r"paris là thủ đô pháp",
+        r"paris is the capital of france",
+        r"london là thủ đô anh",
+        r"london is the capital of england",
+        r"hà nội là thủ đô việt nam",
+        r"hanoi is the capital of vietnam",
+        r"việt nam nằm ở đông nam á",
+        r"vietnam is in southeast asia",
+        r"sông nile là sông dài nhất",
+        r"nile is the longest river",
+        # Mathematical facts
+        r"2\s*\+\s*2\s*=\s*4",
+        r"1\s*\+\s*1\s*=\s*2",
+        # Historical facts (well-established)
+        r"thế chiến 2 kết thúc năm 1945",
+        r"world war 2 ended in 1945",
+        r"việt nam độc lập năm 1945",
+        r"vietnam gained independence in 1945",
+    ]
+    
+    for pattern in common_knowledge_patterns:
+        if re.search(pattern, text_lower):
+            return True
+    
+    return False
+
+
 def _normalize_plan(plan: dict, text_input: str, flash_mode: bool = False) -> dict:
     """
     (ĐÃ SỬA ĐỔI)
@@ -455,6 +505,11 @@ def _normalize_plan(plan: dict, text_input: str, flash_mode: bool = False) -> di
         },
         "required_tools": plan.get("required_tools") if isinstance(plan.get("required_tools"), list) else []
     }
+    
+    # QUAN TRỌNG: Hiệu chỉnh volatility cho sự thật hiển nhiên (common knowledge) - ƯU TIÊN CAO NHẤT
+    if _is_common_knowledge(text_input):
+        plan_struct["volatility"] = "low"  # or "static" - using "low" for consistency
+        print(f"Agent Planner: Adjusted volatility = 'low' for common knowledge fact: {text_input[:100]}")
     
     # QUAN TRỌNG: Hiệu chỉnh volatility cho tin lịch sử
     time_scope = plan_struct.get("time_references", {}).get("time_scope", "present")
