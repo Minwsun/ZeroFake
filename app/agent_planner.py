@@ -427,6 +427,37 @@ def _parse_json_from_text(text: str) -> dict:
     return {}
 
 
+def _optimize_search_query(query: str, text_input: str) -> str:
+    """
+    Tối ưu hóa query để truy vấn DuckDuckGo tốt hơn, đảm bảo ra đúng kết quả.
+    Ưu tiên các trang báo mới nhất.
+    """
+    query = query.strip()
+    if not query:
+        return text_input
+    
+    query_lower = query.lower()
+    
+    # 1. Thêm từ khóa "tin tức" hoặc "news" nếu chưa có (ưu tiên các trang báo)
+    if not any(kw in query_lower for kw in ['tin tức', 'news', 'thông tin', 'báo', 'article', 'report']):
+        # Thêm "tin tức" vào cuối query
+        query = f"{query} tin tức"
+    
+    # 2. Thêm năm hiện tại nếu query có vẻ là về sự kiện (không có năm)
+    # Nhưng chỉ thêm nếu query không có năm nào
+    if not re.search(r'\b(19|20)\d{2}\b', query):
+        from datetime import datetime
+        current_year = datetime.now().year
+        # Chỉ thêm năm nếu query có vẻ là về sự kiện cụ thể
+        if any(kw in query_lower for kw in ['ra mắt', 'launch', 'release', 'xảy ra', 'happened', 'đã', 'was']):
+            query = f"{query} {current_year}"
+    
+    # 3. Loại bỏ các từ không cần thiết hoặc làm giảm độ chính xác
+    # Giữ nguyên query vì có thể chứa thông tin quan trọng
+    
+    return query.strip()
+
+
 def _is_common_knowledge(text_input: str) -> bool:
     """
     Check if the input is common knowledge (sự thật hiển nhiên).
@@ -718,14 +749,17 @@ def _normalize_plan(plan: dict, text_input: str, flash_mode: bool = False) -> di
                 "parameters": {"queries": default_queries, "search_type": "broad"}
             })
 
-        # Giới hạn queries khi cần
+        # Tối ưu hóa queries và giới hạn khi cần
         for tool in plan_struct["required_tools"]:
             if tool.get("tool_name") == "search":
                 queries = tool.get("parameters", {}).get("queries", [])
+                # Tối ưu hóa từng query để đảm bảo ra đúng kết quả
+                optimized_queries = [_optimize_search_query(q, text_input) for q in queries]
                 if not flash_mode:
-                    tool["parameters"]["queries"] = queries[:5]
+                    tool["parameters"]["queries"] = optimized_queries[:5]
                 else:
-                    tool["parameters"]["queries"] = list(dict.fromkeys(queries))
+                    tool["parameters"]["queries"] = list(dict.fromkeys(optimized_queries))
+                print(f"Agent Planner: Đã tối ưu hóa {len(queries)} queries thành {len(tool['parameters']['queries'])} queries")
     else:
         print("Weather claim: Skipping search tool creation, only using OpenWeather API")
 

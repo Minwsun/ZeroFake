@@ -175,15 +175,28 @@ Hãy phân tích và trả về một cấu trúc JSON duy nhất với các tr�
     
      - **Nếu "claim_type" KHÔNG phải "Thời tiết":**
        - Sử dụng `tool_name: "search"` với các câu "queries" (truy vấn tìm kiếm) thông minh dựa trên "{text_input}" và các thực thể.
-       - **QUY TẮC TẠO QUERIES CHO SỰ KIỆN ĐÃ XẢY RA (RẤT QUAN TRỌNG):**
-         * Nếu input mô tả một sự kiện có vẻ đã xảy ra (ví dụ: "bão số 13 đổ bộ", "Apple ra mắt iPhone 15", "World Cup 2022"), hãy tạo NHIỀU queries với các biến thể:
-           - Query gốc: Giữ nguyên thông tin chính từ input (ví dụ: "bão số 13 đổ bộ Việt Nam")
-           - Query với năm: Thêm năm hiện tại hoặc năm gần đây (ví dụ: "bão số 13 Việt Nam 2024", "bão số 13 Việt Nam 2023")
-           - Query với từ khóa tin tức: Thêm "tin tức", "news", "thông tin" (ví dụ: "tin tức bão số 13 Việt Nam")
-           - Query tiếng Anh: Dịch sang tiếng Anh nếu có thể (ví dụ: "typhoon number 13 Vietnam", "storm number 13 Vietnam")
-           - Query với từ khóa xác nhận: Thêm "đã xảy ra", "đã đổ bộ", "confirmed", "happened" (ví dụ: "bão số 13 đã đổ bộ Việt Nam")
-         * **Mục tiêu:** Tìm kiếm thông tin về sự kiện đã xảy ra trong quá khứ, không chỉ tìm kiếm thông tin hiện tại.
-       - **(Logic iPhone 15 vs 17)** Nếu input là sự kiện không có ngày tháng (ví dụ: "Apple ra mắt iPhone 15"), hãy thêm query: "tin tức mới nhất về [chủ đề]" (ví dụ: "iPhone mới nhất 2024 2025" hoặc "Apple ra mắt iPhone 17").
+       - **QUY TẮC TẠO QUERIES - ƯU TIÊN CÁC TRANG BÁO MỚI NHẤT (RẤT QUAN TRỌNG):**
+         * **BẮT BUỘC:** Mỗi query PHẢI chứa từ khóa "tin tức" hoặc "news" để ưu tiên các trang báo mới nhất.
+           - Ví dụ: "Faker có 6 chức vô địch" → "Faker có 6 chức vô địch tin tức"
+           - Ví dụ: "Apple ra mắt iPhone 15" → "Apple ra mắt iPhone 15 tin tức"
+         * **QUY TẮC TẠO QUERIES CHO SỰ KIỆN ĐÃ XẢY RA:**
+           - Nếu input mô tả một sự kiện có vẻ đã xảy ra (ví dụ: "bão số 13 đổ bộ", "Apple ra mắt iPhone 15", "World Cup 2022"), hãy tạo NHIỀU queries với các biến thể:
+             + Query gốc với "tin tức": "bão số 13 đổ bộ Việt Nam tin tức"
+             + Query với năm: "bão số 13 Việt Nam 2024 tin tức", "bão số 13 Việt Nam 2023 tin tức"
+             + Query với từ khóa xác nhận: "bão số 13 đã đổ bộ Việt Nam tin tức"
+             + Query tiếng Anh: "typhoon number 13 Vietnam news" (nếu có thể dịch)
+           - **Mục tiêu:** Tìm kiếm thông tin về sự kiện đã xảy ra trong quá khứ từ các trang báo mới nhất, không chỉ tìm kiếm thông tin hiện tại.
+         * **QUY TẮC TẠO QUERIES CHO SỰ KIỆN MỚI:**
+           - Nếu input là sự kiện không có ngày tháng (ví dụ: "Apple ra mắt iPhone 15"), hãy tạo queries:
+             + "Apple ra mắt iPhone 15 tin tức"
+             + "iPhone mới nhất 2024 2025 tin tức" (để tìm thông tin mới hơn)
+             + "Apple ra mắt iPhone 17 tin tức" (để kiểm tra xem có sự kiện mới hơn không)
+         * **QUY TẮC CHUNG:**
+           - Mỗi query PHẢI có từ khóa "tin tức" hoặc "news" để ưu tiên các trang báo
+           - Query nên ngắn gọn, tập trung vào thông tin chính
+           - Tránh các từ không cần thiết làm giảm độ chính xác
+           - Nếu có năm trong input, giữ nguyên năm đó
+           - Nếu không có năm, có thể thêm năm hiện tại để tìm thông tin mới nhất
   
    - **VÍ DỤ KẾ HOẠCH MỤC 6:**
      * Ví dụ 1: Input "Hà Nội ngày mai mưa" (Thời tiết)
