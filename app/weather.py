@@ -567,6 +567,7 @@ def get_openweather_data(city_name: str, days_ahead: int = 0, part_of_day: Optio
                     # Select forecast for correct time of day (if requested)
                     forecast = None
                     if part_of_day:
+                        # CÓ KHUNG GIỜ: Tìm forecast trong khung giờ cụ thể
                         # Determine time range based on part_of_day (according to local time UTC+7)
                         time_ranges = {
                             "sáng": (3, 10),  
@@ -585,7 +586,13 @@ def get_openweather_data(city_name: str, days_ahead: int = 0, part_of_day: Optio
                                 item_dt_utc = datetime.fromtimestamp(item["dt"], tz=timezone.utc)
                                 item_dt_local = item_dt_utc.astimezone(vietnam_tz)
                                 hour = item_dt_local.hour
-                                if start_hour <= hour < end_hour:
+                                # Handle night range (23-3) which crosses midnight
+                                if start_hour > end_hour:  # Night range
+                                    if hour >= start_hour or hour < end_hour:
+                                        forecast = item
+                                        print(f"OpenWeather: Found forecast for {part_of_day} at {item_dt_local.strftime('%H:%M')} (local time)")
+                                        break
+                                elif start_hour <= hour < end_hour:
                                     forecast = item
                                     print(f"OpenWeather: Found forecast for {part_of_day} at {item_dt_local.strftime('%H:%M')} (local time)")
                                     break
@@ -599,7 +606,10 @@ def get_openweather_data(city_name: str, days_ahead: int = 0, part_of_day: Optio
                                     item_dt_local = item_dt_utc.astimezone(vietnam_tz)
                                     hour = item_dt_local.hour
                                     # Calculate distance to middle of time range
-                                    mid_hour = (start_hour + end_hour) / 2
+                                    if start_hour > end_hour:  # Night range
+                                        mid_hour = (start_hour + 24 + end_hour) / 2 % 24
+                                    else:
+                                        mid_hour = (start_hour + end_hour) / 2
                                     diff = abs(hour - mid_hour)
                                     if diff < min_diff:
                                         min_diff = diff
@@ -609,15 +619,92 @@ def get_openweather_data(city_name: str, days_ahead: int = 0, part_of_day: Optio
                                     forecast_dt_utc = datetime.fromtimestamp(forecast["dt"], tz=timezone.utc)
                                     forecast_dt_local = forecast_dt_utc.astimezone(vietnam_tz)
                                     print(f"OpenWeather: Using nearest forecast for {part_of_day} at {forecast_dt_local.strftime('%H:%M')} (local time)")
+                    else:
+                        # KHÔNG CÓ KHUNG GIỜ: Tổng hợp dữ liệu cho cả ngày (không lấy 1 thời điểm cụ thể)
+                        print(f"OpenWeather: No specific time requested - aggregating data for entire day {target_date}...")
+                        
+                        # Tính toán tổng hợp từ tất cả forecasts trong ngày
+                        if len(target_forecasts) > 1:
+                            # Tổng hợp: lấy giá trị trung bình và điều kiện thời tiết phổ biến nhất
+                            temps = []
+                            descriptions = []
+                            mains = []
+                            humidities = []
+                            wind_speeds = []
+                            
+                            for item in target_forecasts:
+                                temps.append(item["main"]["temp"])
+                                descriptions.append(item["weather"][0]["description"])
+                                mains.append(item["weather"][0]["main"])
+                                humidities.append(item["main"]["humidity"])
+                                wind_speeds.append(item.get("wind", {}).get("speed", 0))
+                            
+                            # Tính trung bình
+                            avg_temp = sum(temps) / len(temps)
+                            avg_feels_like = sum([item["main"]["feels_like"] for item in target_forecasts]) / len(target_forecasts)
+                            avg_humidity = sum(humidities) / len(humidities)
+                            avg_wind = sum(wind_speeds) / len(wind_speeds)
+                            
+                            # Tìm điều kiện thời tiết phổ biến nhất (mode)
+                            from collections import Counter
+                            main_counter = Counter(mains)
+                            most_common_main = main_counter.most_common(1)[0][0]
+                            
+                            # Tìm description phổ biến nhất, nhưng ưu tiên mức độ nghiêm trọng cao hơn
+                            # Ví dụ: nếu có "mưa to" ở bất kỳ thời điểm nào, ưu tiên "mưa to" hơn "mưa nhẹ"
+                            desc_counter = Counter(descriptions)
+                            
+                            # Ưu tiên mức độ nghiêm trọng: Thunderstorm > Heavy Rain > Rain > Light Rain > Drizzle
+                            severity_order = {
+                                "thunderstorm": 5,
+                                "heavy": 4,
+                                "torrential": 4,
+                                "rain": 3,
+                                "light": 2,
+                                "drizzle": 1
+                            }
+                            
+                            def get_severity(desc: str) -> int:
+                                desc_lower = desc.lower()
+                                for keyword, score in severity_order.items():
+                                    if keyword in desc_lower:
+                                        return score
+                                return 0
+                            
+                            # Tìm description có mức độ nghiêm trọng cao nhất
+                            most_severe_desc = max(descriptions, key=get_severity)
+                            # Nếu có nhiều description cùng mức độ, chọn phổ biến nhất
+                            if get_severity(most_severe_desc) == get_severity(desc_counter.most_common(1)[0][0]):
+                                most_common_desc = desc_counter.most_common(1)[0][0]
+                            else:
+                                most_common_desc = most_severe_desc
+                            
+                            # Tạo forecast tổng hợp
+                            forecast = {
+                                "main": {"temp": avg_temp, "feels_like": avg_feels_like, "humidity": round(avg_humidity)},
+                                "weather": [{"main": most_common_main, "description": most_common_desc}],
+                                "wind": {"speed": avg_wind},
+                                "dt": target_forecasts[0]["dt"]  # Dùng timestamp của forecast đầu tiên
+                            }
+                            print(f"OpenWeather: Aggregated data for entire day - {most_common_desc} ({most_common_main}), avg temp {round(avg_temp)}°C")
+                        else:
+                            # Chỉ có 1 forecast, dùng nó
+                            forecast = target_forecasts[0]
+                            print(f"OpenWeather: Using single forecast for entire day")
                     
-                    # If no part_of_day or not found, get first forecast
+                    # Ensure forecast is set
                     if not forecast:
                         forecast = target_forecasts[0]
                     
                     # Get time from forecast (convert to local timezone)
-                    forecast_dt_utc = datetime.fromtimestamp(forecast["dt"], tz=timezone.utc)
-                    forecast_dt_local = forecast_dt_utc.astimezone(vietnam_tz)
-                    time_str = forecast_dt_local.strftime('%H:%M')
+                    # Nếu không có part_of_day, hiển thị "cả ngày" thay vì thời gian cụ thể
+                    if part_of_day:
+                        forecast_dt_utc = datetime.fromtimestamp(forecast["dt"], tz=timezone.utc)
+                        forecast_dt_local = forecast_dt_utc.astimezone(vietnam_tz)
+                        time_str = forecast_dt_local.strftime('%H:%M')
+                    else:
+                        # Không có thời gian cụ thể → hiển thị "cả ngày"
+                        time_str = "cả ngày"
                     
                     # Use normalized_city_name from geopy if available
                     final_location_name = normalized_city_name
@@ -632,9 +719,13 @@ def get_openweather_data(city_name: str, days_ahead: int = 0, part_of_day: Optio
                         "main": forecast["weather"][0]["main"],
                         "humidity": forecast["main"]["humidity"],
                         "wind_speed": forecast.get("wind", {}).get("speed", 0),
-                        "source": "openweathermap.org"
+                        "source": "openweathermap.org",
+                        "part_of_day": part_of_day  # Lưu thông tin part_of_day để format snippet
                     }
-                    print(f"OpenWeather: Success - {result['location']} on {target_date} {time_str}: {result['description']} ({result['temperature']}°C)")
+                    if part_of_day:
+                        print(f"OpenWeather: Success - {result['location']} on {target_date} {time_str} ({part_of_day}): {result['description']} ({result['temperature']}°C)")
+                    else:
+                        print(f"OpenWeather: Success - {result['location']} on {target_date} (cả ngày): {result['description']} ({result['temperature']}°C)")
                     return result
                 
                 print(f"ERROR: No forecast found for '{normalized_city_name}' on date {target_date}")
@@ -653,6 +744,8 @@ def format_openweather_snippet(weather_data: Dict) -> str:
     This snippet will be used by Agent 2 to compare with input.
     
     Format: [DATE] [TIME] - [WEATHER] at [LOCATION]
+    - Nếu có part_of_day: hiển thị thời gian cụ thể
+    - Nếu không có part_of_day: hiển thị "cả ngày" (tổng hợp dữ liệu cho cả ngày)
     """
     if not weather_data:
         return ""
@@ -666,6 +759,7 @@ def format_openweather_snippet(weather_data: Dict) -> str:
     main = weather_data.get("main", "N/A")  # Rain, Clear, Clouds, Thunderstorm, etc.
     humidity = weather_data.get("humidity", 0)
     wind = round(weather_data.get("wind_speed", 0) * 3.6, 1)  # Convert m/s to km/h
+    part_of_day = weather_data.get("part_of_day")  # "sáng", "chiều", "tối", or None
     
     # Format as requested: date-time-weather
     # Convert date from YYYY-MM-DD to DD/MM/YYYY for readability
@@ -675,8 +769,18 @@ def format_openweather_snippet(weather_data: Dict) -> str:
     except:
         date_formatted = date
     
+    # Format time display
+    if time == "cả ngày" or not part_of_day:
+        # Không có thời gian cụ thể → hiển thị "cả ngày"
+        time_display = "cả ngày"
+        time_info = f"trong ngày {date_formatted}"
+    else:
+        # Có khung giờ cụ thể → hiển thị thời gian và khung giờ
+        time_display = f"{time} ({part_of_day})"
+        time_info = f"vào {part_of_day} ngày {date_formatted} lúc {time}"
+    
     # Main format: DATE TIME - WEATHER at LOCATION
-    snippet = f"[{date_formatted}] [{time}] - {description} ({main}) at {location}. Temperature {temp}°C (feels like {feels_like}°C). Humidity {humidity}%, wind {wind} km/h. Source: OpenWeatherMap API."
+    snippet = f"[{date_formatted}] [{time_display}] - {description} ({main}) tại {location} {time_info}. Nhiệt độ {temp}°C (cảm giác như {feels_like}°C). Độ ẩm {humidity}%, gió {wind} km/h. Nguồn: OpenWeatherMap API."
     
     # Add detailed information about weather conditions
     if main == "Rain":
