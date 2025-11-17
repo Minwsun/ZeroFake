@@ -50,12 +50,13 @@ def call_google_search(text_input: str, site_query_string: str) -> list:
                 print(f"DuckDuckGo Search: Tối ưu hóa query thành '{optimized_query}' để ưu tiên các trang báo")
             
             # Tăng max_results để lấy nhiều kết quả hơn (đặc biệt cho sự kiện đã xảy ra)
-            # Ưu tiên kết quả mới nhất bằng cách thử timelimit='m' (tháng) hoặc 'w' (tuần)
+            # Ưu tiên kết quả mới nhất: nếu query có "mới nhất" hoặc "latest", ưu tiên tuần gần đây
+            timelimit = 'w' if any(kw in optimized_query.lower() for kw in ['mới nhất', 'latest', 'recent', 'mới']) else 'm'
             results = ddgs.text(
                 keywords=optimized_query,
                 region='vi-vn',
                 safesearch='off',
-                timelimit='m',  # Ưu tiên kết quả trong tháng gần đây (mới nhất)
+                timelimit=timelimit,  # Ưu tiên kết quả trong tuần/tháng gần đây (mới nhất)
                 max_results=20  # Tăng từ 15 lên 20 để có nhiều kết quả hơn
             )
 
@@ -101,25 +102,104 @@ def call_google_search(text_input: str, site_query_string: str) -> list:
                     'date': r.get('date') or None  # Lưu ngày nếu có
                 })
             
-            # SẮP XẾP: Ưu tiên các trang báo mới nhất
-            # 1. Ưu tiên trang báo (is_news_site = True)
-            # 2. Trong cùng loại, ưu tiên kết quả có ngày mới hơn
+            # SẮP XẾP: ưu tiên nguồn chính thống & trang báo mới nhất
+            # 1. Ưu tiên domain chính thống (báo lớn, .gov, tổ chức quốc tế)
+            # 2. Trong cùng tier, ưu tiên trang báo (is_news_site = True)
+            # 3. Ưu tiên kết quả có ngày mới hơn
             from datetime import datetime
+            from urllib.parse import urlparse
+            import os
+            import json
+
+            _DDG_TRUSTED_DOMAINS_CACHE = None
+
+            def _load_trusted_domains_ddg():
+                nonlocal _DDG_TRUSTED_DOMAINS_CACHE
+                if _DDG_TRUSTED_DOMAINS_CACHE is not None:
+                    return _DDG_TRUSTED_DOMAINS_CACHE
+
+                tier0_default = {
+                    'chinhphu.vn', 'moh.gov.vn', 'moet.gov.vn', 'mof.gov.vn',
+                    'sbv.gov.vn', 'vncert.gov.vn',
+                    'who.int', 'un.org', 'worldbank.org', 'imf.org', 'ec.europa.eu',
+                    'reuters.com', 'apnews.com', 'afp.com', 'bbc.com', 'nytimes.com',
+                    'theguardian.com', 'washingtonpost.com', 'wsj.com', 'ft.com',
+                    'vnexpress.net', 'dantri.com.vn', 'tuoitre.vn', 'thanhnien.vn',
+                    'vietnamnet.vn', 'vtv.vn', 'vov.vn', 'nhandan.vn', 'qdnd.vn',
+                    'cand.com.vn', 'laodong.vn', 'tienphong.vn', 'zingnews.vn',
+                }
+                tier1_default = {
+                    'bloomberg.com', 'cnbc.com', 'forbes.com', 'yahoo.com',
+                    'marketwatch.com', 'nature.com', 'science.org', 'sciencemag.org',
+                    'techcrunch.com', 'wired.com', 'theverge.com', 'engadget.com',
+                    'pcmag.com', 'cnet.com', 'cointelegraph.com', 'coindesk.com',
+                }
+
+                tier0 = {d.lower() for d in tier0_default}
+                tier1 = {d.lower() for d in tier1_default}
+
+                json_path = os.path.join(os.path.dirname(__file__), "trusted_domains.json")
+                try:
+                    with open(json_path, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                    extra_tier0 = data.get("tier0") or []
+                    extra_tier1 = data.get("tier1") or []
+                    tier0.update(d.lower() for d in extra_tier0 if isinstance(d, str))
+                    tier1.update(d.lower() for d in extra_tier1 if isinstance(d, str))
+                except FileNotFoundError:
+                    pass
+                except Exception as e:
+                    print(f"WARNING: Cannot load trusted_domains.json for DDG: {type(e).__name__}: {e}")
+
+                _DDG_TRUSTED_DOMAINS_CACHE = (tier0, tier1)
+                return _DDG_TRUSTED_DOMAINS_CACHE
+
+            def _source_tier_for_ddg(item):
+                tier0, tier1 = _load_trusted_domains_ddg()
+                domain = urlparse(item.get('link', '')).netloc.lower().replace('www.', '')
+                if domain.endswith(('.gov', '.gov.vn')):
+                    return 0
+                if domain in tier0:
+                    return 0
+                if domain in tier1:
+                    return 1
+
+                news_keywords = ("news", "press", "times", "post", "journal", "tribune", "herald")
+                business_keywords = ("finance", "money", "market", "stock", "economy", "business")
+                weather_keywords = ("weather", "climate", "meteo", "forecast")
+                sports_keywords = ("sport", "sports", "soccer", "football", "basketball", "tennis", "fifa", "uefa")
+                tech_keywords = ("tech", "technology", "android", "apple", "pcmag", "gsmarena", "hardware")
+                science_keywords = ("science", "nature", "sciencemag", "research", "academy")
+
+                if any(kw in domain for kw in news_keywords):
+                    return 1
+                if any(kw in domain for kw in business_keywords):
+                    return 1
+                if any(kw in domain for kw in weather_keywords):
+                    return 1
+                if any(kw in domain for kw in sports_keywords):
+                    return 1
+                if any(kw in domain for kw in tech_keywords):
+                    return 1
+                if any(kw in domain for kw in science_keywords):
+                    return 1
+
+                return 2
+
             def sort_key(item):
+                source_tier = _source_tier_for_ddg(item)
                 is_news = item.get('is_news_site', False)
                 date_str = item.get('date')
-                # Nếu có ngày, parse và dùng để sắp xếp (mới nhất trước)
                 date_score = 0
                 if date_str:
                     try:
-                        # Thử parse ngày từ nhiều format
                         date_obj = datetime.strptime(date_str[:10], '%Y-%m-%d')
-                        date_score = date_obj.timestamp()  # Timestamp để so sánh
-                    except:
+                        date_score = date_obj.timestamp()
+                    except Exception:
                         pass
-                # Trả về tuple: (is_news, date_score) - ưu tiên news site và ngày mới hơn
-                return (not is_news, -date_score)  # False (news) < True (non-news), date mới hơn (timestamp lớn hơn) ở trước
-            
+                # tier thấp hơn tốt hơn, news tốt hơn, ngày mới hơn tốt hơn
+                return (source_tier, not is_news, -date_score)
+
             all_items.sort(key=sort_key)
             
             # Loại bỏ các field không cần thiết trước khi trả về (để tương thích)
@@ -138,11 +218,13 @@ def call_google_search(text_input: str, site_query_string: str) -> list:
                 
                 for enhanced_query in enhanced_queries[:2]:  # Chỉ thử 2 queries đầu
                     try:
+                        # Ưu tiên kết quả mới nhất cho enhanced queries
+                        enhanced_timelimit = 'w' if any(kw in enhanced_query.lower() for kw in ['mới nhất', 'latest', 'recent', 'mới']) else 'm'
                         enhanced_results = ddgs.text(
                             keywords=enhanced_query,
                             region='vi-vn',
                             safesearch='off',
-                            timelimit='m',  # Ưu tiên kết quả mới nhất
+                            timelimit=enhanced_timelimit,  # Ưu tiên kết quả mới nhất
                             max_results=5
                         )
                         

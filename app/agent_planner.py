@@ -1,13 +1,17 @@
 # app/agent_planner.py
 import os
 import json
-import google.generativeai as genai
 import re
-import asyncio
 from dotenv import load_dotenv
 from typing import Optional, Tuple
 
 from app.weather import classify_claim
+from app.model_clients import (
+    call_gemini_model,
+    call_groq_chat_completion,
+    call_compound_model,
+    ModelClientError,
+)
 
 # Import geopy cho geocoding toàn cầu
 try:
@@ -534,7 +538,8 @@ def _normalize_plan(plan: dict, text_input: str, flash_mode: bool = False) -> di
             "relative_time": None,
             "time_scope": "present"
         },
-        "required_tools": plan.get("required_tools") if isinstance(plan.get("required_tools"), list) else []
+        "required_tools": plan.get("required_tools") if isinstance(plan.get("required_tools"), list) else [],
+        "browse_findings": plan.get("browse_findings") if isinstance(plan.get("browse_findings"), list) else []
     }
     
     # QUAN TRỌNG: Hiệu chỉnh volatility cho sự thật hiển nhiên (common knowledge) - ƯU TIÊN CAO NHẤT
@@ -766,28 +771,114 @@ def _normalize_plan(plan: dict, text_input: str, flash_mode: bool = False) -> di
     return plan_struct
 
 
-async def create_action_plan(text_input: str, flash_mode: bool = False) -> dict:
+def _normalize_agent1_model(model_key: str | None) -> str:
+    """Normalize Agent 1 model identifier."""
+    if not model_key:
+        return "models/gemini-2.5-flash"
+    mapping = {
+        "gemini_flash": "models/gemini-2.5-flash",
+        "gemini flash": "models/gemini-2.5-flash",
+        "gemini-1.5-flash": "models/gemini-2.5-flash",
+        "gemini-2.5-flash": "models/gemini-2.5-flash",
+        "models/gemini_flash": "models/gemini-2.5-flash",
+        "groq/compound": "groq/compound",
+        "compound": "groq/compound",
+    }
+    return mapping.get(model_key, model_key)
+
+
+def _detect_agent1_provider(model_name: str) -> str:
+    """Detect provider for Agent 1 model."""
+    if not model_name:
+        return "gemini"
+    lowered = model_name.lower()
+    if lowered == "groq/compound":
+        return "compound"
+    if lowered.startswith("llama-"):
+        return "groq"
+    if "gemini" in lowered:
+        return "gemini"
+    return "gemini"
+
+
+async def create_action_plan(
+    text_input: str,
+    model_key: str | None = None,
+    flash_mode: bool = False,
+    unlimit_mode: bool = False,
+) -> dict:
     """
-    Gọi Agent 1 (Gemini Flash) để phân tích tin và tạo Kế hoạch thực thi chi tiết.
+    Gọi Agent 1 để phân tích tin và tạo kế hoạch thực thi chi tiết theo model đã chọn.
     """
     if not PLANNER_PROMPT:
         raise ValueError("Planner prompt (prompt 1) chưa được tải.")
-    
-    if not GEMINI_API_KEY:
-        raise ValueError("GEMINI_API_KEY chưa được cấu hình.")
-        
-    genai.configure(api_key=GEMINI_API_KEY)
-    
-    # Lấy ngày hiện tại để tính toán days_ahead chính xác
+
     from datetime import datetime
+
     current_date = datetime.now().strftime('%Y-%m-%d')
-    
-    # Tránh lỗi KeyError do dấu ngoặc nhọn trong prompt ví dụ JSON
     prompt = PLANNER_PROMPT.replace("{text_input}", text_input)
     prompt = prompt.replace("{current_date}", current_date)
 
-    # Flash mode: dùng gemini-2.5-flash. Normal: cũng dùng gemini-2.5-flash
-    model_names = ['models/gemini-2.5-flash']
+    if unlimit_mode:
+        prompt += (
+            "\n\n[UNLIMIT MODE ENABLED]\n"
+            "Ưu tiên khai thác các API chuyên ngành (giao thông, bản đồ, khí hậu, tài chính, "
+            "công nghệ, khoa học, y tế, thể thao) để xây dựng kế hoạch thu thập bằng chứng toàn diện."
+        )
+
+    model_name = _normalize_agent1_model(model_key)
+    provider = _detect_agent1_provider(model_name)
+    print(f"Planner: generating plan with model '{model_name}' (provider={provider})")
+
+    text = ""
+    try:
+        if provider == "gemini":
+            if not GEMINI_API_KEY:
+                raise ModelClientError("GEMINI_API_KEY is not configured.")
+            timeout = None if flash_mode else 30.0
+            enable_browse = "gemini" in (model_name or "").lower()
+            text = await call_gemini_model(
+                model_name,
+                prompt,
+                timeout=timeout,
+                enable_browse=enable_browse,
+            )
+        elif provider == "groq":
+            system_prompt = (
+                "You are ZeroFake Agent 1 (Planner). "
+                "Read the user's news claim and respond ONLY with a valid JSON plan."
+            )
+            text = await call_groq_chat_completion(
+                model_name,
+                prompt,
+                timeout=30.0,
+                temperature=0.2,
+                system_prompt=system_prompt,
+            )
+        elif provider == "compound":
+            text = await call_compound_model(
+                prompt,
+                timeout=None if (flash_mode or unlimit_mode) else 60.0,
+                temperature=0.15,
+                system_prompt=(
+                    "Plan evidence gathering actions for ZeroFake. "
+                    "Always output valid JSON that matches the planner schema."
+                ),
+            )
+        else:
+            raise ModelClientError(f"Unsupported provider '{provider}' for Agent 1.")
+    except ModelClientError as exc:
+        print(f"Planner: Error using model '{model_name}': {exc}")
+        text = ""
+
+    plan_json = _parse_json_from_text(text) if text else {}
+    plan_json = _normalize_plan(plan_json, text_input, flash_mode)
+    if plan_json:
+        return plan_json
+
+    print("Planner: Falling back to heuristic plan normalization.")
+    fallback = _normalize_plan({}, text_input, flash_mode)
+    return fallback
 
     last_err = None
     for model_name in model_names:

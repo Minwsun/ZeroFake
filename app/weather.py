@@ -93,16 +93,21 @@ def extract_weather_info(text: str) -> Optional[Dict]:
         patterns = [
             r"(?:tại|ở|in|at|thành phố|city of|ville de|ciudad de|stadt)\s+([A-ZÀ-ÝÁÉÍÓÚÝĂÂÊÔƠƯĐ][A-Za-zÀ-ỹáéíóúýăâêôơưđ\-'\.\s]+?)(?:[,\.;:!\?\)\]\}]|\s|$)",
             r"([A-ZÀ-ÝÁÉÍÓÚÝĂÂÊÔƠƯĐ][A-Za-zÀ-ỹáéíóúýăâêôơưđ\-'\.\s]+?)\s+(?:city|province|state|county|prefecture|shi|ken|市|省)",
-        ]
-        for p in patterns:
-            m = re.search(p, text, flags=re.IGNORECASE)
-            if m:
-                candidate = m.group(1).strip().strip('"\'')
-                candidate_clean = re.sub(r"\b(trong|vào|lúc|ngày|tháng|năm|buổi|sáng|chiều|tối)\b", "", candidate, flags=re.IGNORECASE).strip()
+    ]
+    for p in patterns:
+        m = re.search(p, text, flags=re.IGNORECASE)
+        if m:
+            candidate = m.group(1).strip().strip('"\'')
+                candidate_clean = re.sub(
+                    r"\b(trong|vào|lúc|ngày|tháng|năm|buổi|sáng|chiều|tối)\b",
+                    "",
+                    candidate,
+                    flags=re.IGNORECASE,
+                ).strip()
                 if valid_candidate(candidate_clean) and len(candidate_clean.split()) >= 2:
                     location_name = candidate_clean
                     break
-    
+
     # Pattern 2: Find multi-word capitalized phrases (prioritize long phrases, Unicode support)
     if not location_name:
         # Extended pattern supporting many Unicode characters
@@ -168,25 +173,25 @@ def classify_claim(text: str) -> Dict:
     
     # ONLY set days_ahead = 0 if NOT already set by pattern above
     if days_ahead is None:
-        if any(k in text_lower for k in historical_keywords):
-            time_scope = 'historical'
+    if any(k in text_lower for k in historical_keywords):
+        time_scope = 'historical'
             if "hom qua" in text_lower or "yesterday" in text_lower:
                 relative_time_str = "hôm qua"
-        elif any(k in text_lower for k in present_keywords):
-            time_scope = 'present_future'
-            days_ahead = 0
+    elif any(k in text_lower for k in present_keywords):
+        time_scope = 'present_future'
+        days_ahead = 0
             relative_time_str = "hôm nay"
-        elif any(k in text_lower for k in future_keywords):
-            time_scope = 'present_future'
+    elif any(k in text_lower for k in future_keywords):
+        time_scope = 'present_future'
             relative_time_str = "ngày mai"
             if "week" in text_lower or "tuan" in text_lower:
-                days_ahead = 7
+            days_ahead = 7
                 relative_time_str = "tuần tới"
-            elif "mai" in text_lower or "tomorrow" in text_lower:
-                days_ahead = 1
+        elif "mai" in text_lower or "tomorrow" in text_lower:
+            days_ahead = 1
                 relative_time_str = "ngày mai"
-            else:
-                days_ahead = 3
+        else:
+            days_ahead = 3
 
     part_of_day = None
     if any(k in text_lower for k in ["sáng", "morning"]):
@@ -340,8 +345,8 @@ def get_openweather_data(city_name: str, days_ahead: int = 0, part_of_day: Optio
             elif geocode_response.status_code != 200:
                 print(f"ERROR: OpenWeather geocoding API returned status code {geocode_response.status_code}")
                 print(f"Response: {geocode_response.text[:200]}")
-                return None
-            
+        return None
+
             geocode_response.raise_for_status()
             geocode_data = geocode_response.json()
             
@@ -370,7 +375,7 @@ def get_openweather_data(city_name: str, days_ahead: int = 0, part_of_day: Optio
                         return None
                 else:
                     print(f"Suggestion: Try using English name (e.g., 'Ho Chi Minh City' instead of 'Thành phố Hồ Chí Minh')")
-                    return None
+        return None
             
             # Select first result (can improve selection logic later)
             selected = geocode_data[0]
@@ -417,14 +422,14 @@ def get_openweather_data(city_name: str, days_ahead: int = 0, part_of_day: Optio
                     print(f"ERROR: OpenWeather weather API returned status code {weather_response.status_code}")
                     print(f"Response: {weather_response.text[:200]}")
                     return None
-                
+
                 weather_response.raise_for_status()
                 weather_data = weather_response.json()
                 
                 if not weather_data or "main" not in weather_data:
                     print("ERROR: OpenWeather API returned invalid data (missing 'main' field)")
                     return None
-                
+
                 # Get specific time from API (if available)
                 current_time = datetime.now()
                 time_str = current_time.strftime('%H:%M')
@@ -497,15 +502,15 @@ def get_openweather_data(city_name: str, days_ahead: int = 0, part_of_day: Optio
                         print(f"ERROR: OpenWeather forecast API returned status code {forecast_response.status_code}")
                         print(f"Response: {forecast_response.text[:200]}")
                         return None
-                    
+
                     forecast_response.raise_for_status()
                     forecast_data_raw = forecast_response.json()
                     forecast_data = {"list": forecast_data_raw.get("list", []), "source": "forecast25"}
                     
                     if not forecast_data["list"]:
                         print("ERROR: OpenWeather forecast API returned invalid data (missing 'list' field)")
-                        return None
-                
+        return None
+
                 # Find forecast for specific date
                 # Ensure days_ahead is not None
                 if days_ahead is None:

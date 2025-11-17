@@ -48,8 +48,12 @@ pip install -r requirements.txt
 ### API Keys Configuration (.env)
 Create a `.env` file in the root directory:
 ```
-GEMINI_API_KEY=...            # AI API Key (for agents)
-OPENWEATHER_API_KEY=...       # OpenWeather API Key
+GEMINI_API_KEY=...                  # Gemini models (Agents 1 & 2)
+OPENROUTER_API_KEY=...              # OpenRouter models (Claude, etc.)
+# Optional overrides for OpenRouter metadata
+# OPENROUTER_SITE_URL=https://zerofake.local
+# OPENROUTER_APP_NAME=ZeroFake Fact Checker
+OPENWEATHER_API_KEY=...             # OpenWeather API Key
 ```
 
 ### Running the Application

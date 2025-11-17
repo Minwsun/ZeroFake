@@ -304,21 +304,37 @@ Trước khi áp dụng các quy tắc kết luận, hãy phân tích [INPUT G�
      - **CHỈ ÁP DỤNG KHI:** [INPUT GỐC] là thông tin ĐÚNG nhưng đã CŨ, và có thông tin MỚI HƠN đã thay thế.
      
      - **Điều kiện:**
-       * Lớp 2 xác nhận [INPUT GỐC] là ĐÚNG (ví dụ: tin "Apple ra mắt iPhone 15" từ 2023).
-       * **NHƯNG** [GÓI BẰNG CHỨNG] cũng chứa thông tin MỚI HƠN, đã thay thế thông tin đó (ví dụ: tin "Apple ra mắt iPhone 17" từ 2025).
-       * VÀ [HÔM NAY] ({current_date}) đã quá xa so với bằng chứng (2025 so với 2023).
+       * Lớp 2 hoặc Lớp 3 xác nhận [INPUT GỐC] là ĐÚNG (ví dụ: tin "Apple ra mắt iPhone 15" từ 2023).
+       * **QUAN TRỌNG:** Kiểm tra trường "is_old" trong bằng chứng:
+         - Nếu bằng chứng có "is_old": true → đây là thông tin cũ (hơn 1 năm so với ngày hiện tại)
+         - Nếu bằng chứng có "date" và ngày đó cách [HÔM NAY] ({current_date}) hơn 1 năm → đây là thông tin cũ
+       * **NHƯNG** [GÓI BẰNG CHỨNG] cũng chứa thông tin MỚI HƠN, đã thay thế thông tin đó (ví dụ: tin "Apple ra mắt iPhone 17" từ 2025 với "is_old": false).
+       * VÀ [HÔM NAY] ({current_date}) đã quá xa so với bằng chứng cũ (ví dụ: 2025 so với 2023).
        * **QUAN TRỌNG:** [INPUT GỐC] phải là thông tin ĐÚNG, không phải SAI. Nếu [INPUT GỐC] là SAI về số liệu hoặc thực tế → dùng Quy tắc A (TIN GIẢ).
 
+     - **Cách phát hiện thông tin cũ:**
+       * Kiểm tra trường "is_old": true trong bằng chứng → thông tin cũ (hơn 365 ngày)
+       * Kiểm tra trường "date" trong bằng chứng:
+         - Nếu "date" có dạng YYYY-MM-DD và cách [HÔM NAY] hơn 1 năm → thông tin cũ
+         - Ví dụ: "date": "2023-09-15" và [HÔM NAY] là "2025-11-13" → thông tin cũ (hơn 2 năm)
+       * So sánh nội dung: Nếu bằng chứng nói về sự kiện cũ (ví dụ: "iPhone 15") nhưng có bằng chứng mới hơn về sự kiện tương tự (ví dụ: "iPhone 17") → thông tin cũ đã bị thay thế
+
      - **Ví dụ GÂY HIỂU LẦM:**
-       * Input: "Apple ra mắt iPhone 15" (2023) → Bằng chứng: "Apple đã ra mắt iPhone 15 năm 2023" (ĐÚNG) + "Apple đã ra mắt iPhone 17 năm 2025" (MỚI HƠN) → **GÂY HIỂU LẦM** (thông tin đúng nhưng cũ)
+       * Input: "Apple ra mắt iPhone 15" (2025) → Bằng chứng: 
+         - "Apple đã ra mắt iPhone 15 năm 2023" với "is_old": true, "date": "2023-09-15" (ĐÚNG nhưng CŨ)
+         - "Apple đã ra mắt iPhone 17 năm 2025" với "is_old": false, "date": "2025-09-15" (MỚI HƠN)
+         → **GÂY HIỂU LẦM** (thông tin đúng nhưng cũ, đã có phiên bản mới hơn)
 
      - **Ví dụ KHÔNG PHẢI GÂY HIỂU LẦM (mà là TIN GIẢ):**
        * Input: "Faker có 10 chức vô địch" → Bằng chứng: "Faker có 8 chức vô địch" → **TIN GIẢ** (số liệu sai, không phải thông tin cũ)
-       * Input: "Faker có 4 chức vô địch CKTG" (số liệu cũ) → Bằng chứng: "Faker có 6 chức vô địch CKTG" (số liệu mới) → **TIN GIẢ** (số liệu sai, không phải thông tin cũ về sự kiện)
+       * Input: "Faker có 4 chức vô địch CKTG" (số liệu cũ) → Bằng chứng: "Faker có 6 chức vô địch CKTG" → **TIN GIẢ** (số liệu sai, không phải thông tin cũ về sự kiện)
+
+     - **Ví dụ TIN THẬT (thông tin cũ nhưng không gây hiểu lầm):**
+       * Input: "Thế chiến 2 kết thúc năm 1945" → Bằng chứng: "Thế chiến 2 kết thúc năm 1945" với "is_old": true → **TIN THẬT** (sự kiện lịch sử, không có thông tin mới thay thế)
 
      - => **Kết luận: "GÂY HIỂU LẦM"**.
 
-     - => **Lý do:** "Đây là tin tức ĐÚNG nhưng đã CŨ (từ 2023). Việc trình bày như thể tin mới trong năm {current_date} là gây hiểu lầm, vì các sự kiện mới hơn (như iPhone 17) đã xảy ra."
+     - => **Lý do:** "Đây là tin tức ĐÚNG nhưng đã CŨ (từ {date_cũ}). Việc trình bày như thể tin mới trong năm {current_date} là gây hiểu lầm, vì các sự kiện mới hơn (như {sự_kiện_mới}) đã xảy ra."
 
 
 
@@ -385,6 +401,25 @@ Chỉ trả về JSON với schema:
 
   "key_evidence_snippet": "Snippet quan trọng nhất (ưu tiên LỚP 2; nếu không có thì LỚP 3; cuối cùng mới đến LỚP 4)",
 
-  "key_evidence_source": "Nguồn bằng chứng (ví dụ: 'Lớp 2: vnexpress.net')"
+  "key_evidence_source": "Nguồn bằng chứng (ví dụ: 'Lớp 2: vnexpress.net')",
+
+  "additional_search_queries": ["query1", "query2", ...] hoặc [] nếu không cần
 
 }
+
+**QUAN TRỌNG: NẾU BẠN THẤY THIẾU THÔNG TIN QUAN TRỌNG ĐỂ ĐƯA RA KẾT LUẬN CHÍNH XÁC:**
+
+- Nếu [GÓI BẰNG CHỨNG 4 LỚP] không đủ thông tin để bạn đưa ra kết luận chắc chắn
+- Nếu bạn cần thêm thông tin về một khía cạnh cụ thể của [INPUT GỐC]
+- Nếu bạn cần xác minh một chi tiết quan trọng mà bằng chứng hiện tại chưa rõ ràng
+
+→ Hãy thêm field "additional_search_queries" với danh sách các câu truy vấn tìm kiếm bổ sung (tối đa 3 queries) mà bạn muốn hệ thống tìm kiếm thêm.
+
+**Ví dụ:**
+- Nếu input nói về "Apple ra mắt iPhone 15" nhưng bạn cần biết iPhone mới nhất hiện tại là gì → ["iPhone mới nhất 2025", "Apple iPhone latest model"]
+- Nếu input nói về một sự kiện nhưng thiếu thông tin về thời gian → ["sự kiện X thời gian", "sự kiện X ngày"]
+
+**LƯU Ý:**
+- Chỉ thêm "additional_search_queries" nếu THẬT SỰ CẦN THIẾT
+- Nếu bằng chứng hiện tại đã đủ để kết luận → để "additional_search_queries": []
+- Tối đa 3 queries bổ sung

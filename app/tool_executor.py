@@ -1,12 +1,160 @@
 # app/tool_executor.py
 import asyncio
 import json
+import os
 from urllib.parse import urlparse
 from datetime import datetime
 
 from app.search import call_google_search
 from app.ranker import get_rank_from_url, _extract_date
 from app.weather import get_openweather_data, format_openweather_snippet
+
+
+# --- SOURCE PRIORITIZATION HELPERS ---
+
+_TRUSTED_DOMAINS_CACHE: tuple[set[str], set[str]] | None = None
+
+
+def _load_trusted_domains() -> tuple[set[str], set[str]]:
+	"""
+	Tải danh sách domain uy tín từ file JSON (app/trusted_domains.json) và merge với mặc định.
+	Cho phép người dùng tự mở rộng lên hàng trăm / hàng ngàn domain mà không cần sửa code.
+	"""
+	global _TRUSTED_DOMAINS_CACHE
+	if _TRUSTED_DOMAINS_CACHE is not None:
+		return _TRUSTED_DOMAINS_CACHE
+
+	# Mặc định tier 0 và tier 1 (giữ như trước)
+	tier0_default = {
+		# VN government & cơ quan nhà nước
+		"chinhphu.vn",
+		"moh.gov.vn",
+		"moet.gov.vn",
+		"mof.gov.vn",
+		"sbv.gov.vn",
+		"vncert.gov.vn",
+		# International organizations
+		"who.int",
+		"un.org",
+		"worldbank.org",
+		"imf.org",
+		"ec.europa.eu",
+		# Major news wires & global press
+		"reuters.com",
+		"apnews.com",
+		"afp.com",
+		"bbc.com",
+		"nytimes.com",
+		"theguardian.com",
+		"washingtonpost.com",
+		"wsj.com",
+		"ft.com",
+		# Major Vietnamese press
+		"vnexpress.net",
+		"dantri.com.vn",
+		"tuoitre.vn",
+		"thanhnien.vn",
+		"vietnamnet.vn",
+		"vtv.vn",
+		"vov.vn",
+		"nhandan.vn",
+		"qdnd.vn",
+		"cand.com.vn",
+		"laodong.vn",
+		"tienphong.vn",
+		"zingnews.vn",
+	}
+
+	tier1_default = {
+		"bloomberg.com",
+		"cnbc.com",
+		"forbes.com",
+		"yahoo.com",
+		"marketwatch.com",
+		"nature.com",
+		"science.org",
+		"sciencemag.org",
+		"techcrunch.com",
+		"wired.com",
+		"theverge.com",
+		"engadget.com",
+		"pcmag.com",
+		"cnet.com",
+		"cointelegraph.com",
+		"coindesk.com",
+	}
+
+	tier0 = {d.lower() for d in tier0_default}
+	tier1 = {d.lower() for d in tier1_default}
+
+	# Đọc mở rộng từ file JSON nếu có
+	json_path = os.path.join(os.path.dirname(__file__), "trusted_domains.json")
+	try:
+		with open(json_path, "r", encoding="utf-8") as f:
+			data = json.load(f)
+		extra_tier0 = data.get("tier0") or []
+		extra_tier1 = data.get("tier1") or []
+		tier0.update(d.lower() for d in extra_tier0 if isinstance(d, str))
+		tier1.update(d.lower() for d in extra_tier1 if isinstance(d, str))
+		print(f"SourcePriorities: loaded {len(extra_tier0)} tier0 and {len(extra_tier1)} tier1 domains from trusted_domains.json")
+	except FileNotFoundError:
+		# Không sao, dùng mặc định
+		pass
+	except Exception as e:  # noqa: BLE001
+		print(f"WARNING: Cannot load trusted_domains.json: {type(e).__name__}: {e}")
+
+	_TRUSTED_DOMAINS_CACHE = (tier0, tier1)
+	return _TRUSTED_DOMAINS_CACHE
+
+
+def _get_source_tier(domain: str) -> int:
+	"""
+	Xếp hạng độ "chính thống" của nguồn (tự động + theo danh sách):
+	- 0: Cực kỳ chính thống (chính phủ, tổ chức lớn, báo quốc gia lớn)
+	- 1: Trung bình / báo chí, tạp chí uy tín, nguồn chuyên ngành lớn
+	- 2: Còn lại (blog, forum, mạng xã hội, trang tổng hợp)
+	"""
+	d = (domain or "").lower()
+
+	# Bỏ "www."
+	if d.startswith("www."):
+		d = d[4:]
+
+	# .gov / .gov.vn luôn coi là tier 0
+	official_suffixes = (".gov", ".gov.vn")
+	if d.endswith(official_suffixes):
+		return 0
+
+	tier0, tier1 = _load_trusted_domains()
+
+	# Ưu tiên domain có trong trusted_domains.json
+	if d in tier0:
+		return 0
+	if d in tier1:
+		return 1
+
+	# Heuristic tự động theo lĩnh vực
+	news_keywords = ("news", "press", "times", "post", "journal", "tribune", "herald")
+	business_keywords = ("finance", "money", "market", "bloomberg", "stock", "economy", "business")
+	weather_keywords = ("weather", "climate", "meteo", "forecast")
+	sports_keywords = ("sport", "sports", "soccer", "football", "basketball", "tennis", "fifa", "uefa")
+	tech_keywords = ("tech", "technology", "android", "apple", "pcmag", "gsmarena", "hardware")
+	science_keywords = ("science", "nature", "sciencemag", "research", "journal", "academy")
+
+	if any(kw in d for kw in news_keywords):
+		return 1
+	if any(kw in d for kw in business_keywords):
+		return 1
+	if any(kw in d for kw in weather_keywords):
+		return 1
+	if any(kw in d for kw in sports_keywords):
+		return 1
+	if any(kw in d for kw in tech_keywords):
+		return 1
+	if any(kw in d for kw in science_keywords):
+		return 1
+
+	return 2
 
 
 # --- SEARCH TOOL (Gemini Web Search với fallback CSE) ---
@@ -17,9 +165,7 @@ async def _execute_search_tool(parameters: dict, site_query_string: str, flash_m
 	if not queries:
 		return {"tool_name": "search", "status": "no_queries", "layer_2": [], "layer_3": [], "layer_4": []}
 
-	if not flash_mode:
-		queries = queries[:3]
-	
+	# Mỗi query chỉ được tìm kiếm 1 lần (không giới hạn số lượng queries)
 	all_items = []
 	seen_urls = set()
 
@@ -51,13 +197,34 @@ async def _execute_search_tool(parameters: dict, site_query_string: str, flash_m
 
 	for item in all_items:
 		link = item.get('link', '')
+		domain = urlparse(link).netloc.replace('www.', '')
 		rank_score = get_rank_from_url(link)
+		date_str = _extract_date(item)
+
+		# Kiểm tra thông tin cũ (hơn 1 năm so với ngày hiện tại)
+		is_old = False
+		if date_str:
+			try:
+				from datetime import datetime, timedelta
+				item_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+				today = datetime.now().date()
+				days_diff = (today - item_date).days
+				# Đánh dấu là thông tin cũ nếu hơn 365 ngày
+				if days_diff > 365:
+					is_old = True
+			except Exception:
+				pass
+
+		source_tier = _get_source_tier(domain)
+
 		evidence_item = {
-			"source": urlparse(link).netloc.replace('www.', ''),
+			"source": domain,
 			"url": link,
 			"snippet": (item.get('snippet', '') or ''),
 			"rank_score": rank_score,
-			"date": _extract_date(item)
+			"date": date_str,
+			"is_old": is_old,  # Đánh dấu thông tin cũ
+			"source_tier": source_tier,  # Độ chính thống của nguồn
 		}
 		if rank_score >= 0.85:
 			layer_2.append(evidence_item)
@@ -66,8 +233,27 @@ async def _execute_search_tool(parameters: dict, site_query_string: str, flash_m
 		else:
 			layer_4.append(evidence_item)
 
-	layer_2.sort(key=lambda x: x.get('date') or '1970-01-01', reverse=True)
-	layer_3.sort(key=lambda x: x.get('date') or '1970-01-01', reverse=True)
+	# Sắp xếp theo:
+	# 1) Nguồn chính thống hơn (source_tier thấp hơn)
+	# 2) Không cũ (is_old = False)
+	# 3) Ngày mới hơn
+	# 4) rank_score cao hơn
+	def sort_key(item):
+		source_tier = item.get('source_tier', 2)
+		is_old = item.get('is_old', False)
+		date_str = item.get('date') or '1970-01-01'
+		rank_score = item.get('rank_score', 0.0)
+		try:
+			from datetime import datetime
+			date_obj = datetime.strptime(date_str, '%Y-%m-%d')
+			date_timestamp = date_obj.timestamp()
+		except Exception:
+			date_timestamp = 0
+		# tier: thấp hơn = tốt hơn; is_old False tốt hơn; date mới hơn tốt hơn; rank_score cao hơn tốt hơn
+		return (source_tier, is_old, -date_timestamp, -rank_score)
+	
+	layer_2.sort(key=sort_key)
+	layer_3.sort(key=sort_key)
 
 	return {
 		"tool_name": "search", "status": "success",
@@ -242,6 +428,13 @@ async def execute_tool_plan(plan: dict, site_query_string: str, flash_mode: bool
 			# Thêm dữ liệu OpenWeather vào layer_1_tools
 			evidence_bundle["layer_1_tools"].extend(res.get("layer_1_tools", []))
 
+	# Nếu đã có bất kỳ evidence nào từ web (L2/L3/L4),
+	# thì layer_1_tools chỉ được sử dụng như fallback: xoá để Agent 2 không ưu tiên dùng.
+	if evidence_bundle["layer_2_high_trust"] or evidence_bundle["layer_3_general"] or evidence_bundle["layer_4_social_low"]:
+		if evidence_bundle["layer_1_tools"]:
+			print("ToolExecutor: Đã có evidence từ web, bỏ qua layer_1_tools (tool) theo yêu cầu ưu tiên.")
+			evidence_bundle["layer_1_tools"] = []
+
 	# (Fallback) nếu bundle trống, chạy CSE batch
 	if not (evidence_bundle["layer_1_tools"] or evidence_bundle["layer_2_high_trust"] or evidence_bundle["layer_3_general"] or evidence_bundle["layer_4_social_low"]):
 		all_queries = []
@@ -258,12 +451,29 @@ async def execute_tool_plan(plan: dict, site_query_string: str, flash_mode: bool
 					link = item.get('link')
 					if link and link not in seen_urls:
 						rank_score = get_rank_from_url(link)
+						date_str = _extract_date(item)
+						
+						# Kiểm tra thông tin cũ (hơn 1 năm so với ngày hiện tại)
+						is_old = False
+						if date_str:
+							try:
+								from datetime import datetime
+								item_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+								today = datetime.now().date()
+								days_diff = (today - item_date).days
+								# Đánh dấu là thông tin cũ nếu hơn 365 ngày
+								if days_diff > 365:
+									is_old = True
+							except Exception:
+								pass
+						
 						mapped = {
 							"source": urlparse(link).netloc.replace('www.', ''),
 							"url": link,
 							"snippet": (item.get('snippet', '') or ''),
 							"rank_score": rank_score,
-							"date": _extract_date(item)
+							"date": date_str,
+							"is_old": is_old  # Đánh dấu thông tin cũ
 						}
 						if rank_score >= 0.85:
 							layer_2.append(mapped)
@@ -274,8 +484,20 @@ async def execute_tool_plan(plan: dict, site_query_string: str, flash_mode: bool
 						seen_urls.add(link)
 			except Exception as e:
 				print(f"Fallback CSE batch error: {e}")
-		layer_2.sort(key=lambda x: x.get('date') or '1970-01-01', reverse=True)
-		layer_3.sort(key=lambda x: x.get('date') or '1970-01-01', reverse=True)
+		# Sắp xếp theo ngày (mới nhất trước) và ưu tiên thông tin không cũ
+		def fallback_sort_key(item):
+			is_old = item.get('is_old', False)
+			date_str = item.get('date') or '1970-01-01'
+			try:
+				from datetime import datetime
+				date_obj = datetime.strptime(date_str, '%Y-%m-%d')
+				date_timestamp = date_obj.timestamp()
+			except:
+				date_timestamp = 0
+			return (is_old, -date_timestamp)
+		
+		layer_2.sort(key=fallback_sort_key)
+		layer_3.sort(key=fallback_sort_key)
 		evidence_bundle["layer_2_high_trust"].extend(layer_2)
 		evidence_bundle["layer_3_general"].extend(layer_3)
 		evidence_bundle["layer_4_social_low"].extend(layer_4)

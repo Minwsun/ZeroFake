@@ -8,9 +8,11 @@ import traceback
 import logging
 import signal
 import sys
+import os
 from dotenv import load_dotenv
 import datetime
 import json
+from urllib.parse import urlparse
 
 # Setup logging - suppress CancelledError and KeyboardInterrupt during shutdown
 logging.basicConfig(
@@ -71,6 +73,99 @@ def _sanitize_check_response(obj: dict) -> dict:
     return obj
 
 
+def _convert_planner_findings_to_evidence(findings: list[dict]) -> list[dict]:
+    """Convert Agent 1 browse findings into L2 evidence items."""
+    converted = []
+    if not isinstance(findings, list):
+        return converted
+    seen_urls = set()
+    today = datetime.date.today()
+
+    for item in findings:
+        if not isinstance(item, dict):
+            continue
+        url = item.get("url")
+        if not url or url in seen_urls:
+            continue
+        seen_urls.add(url)
+
+        source = item.get("source")
+        if not source:
+            domain = urlparse(url).netloc.replace("www.", "")
+            source = domain or "unknown"
+
+        summary = item.get("summary") or item.get("title") or ""
+        if not summary:
+            continue
+
+        date_str = item.get("published_date")
+        parsed_date = None
+        is_old = False
+        if date_str:
+            try:
+                parsed_date = datetime.datetime.strptime(date_str[:10], "%Y-%m-%d").strftime("%Y-%m-%d")
+                item_date = datetime.datetime.strptime(parsed_date, "%Y-%m-%d").date()
+                if (today - item_date).days > 365:
+                    is_old = True
+            except Exception:
+                parsed_date = None
+
+        confidence = (item.get("confidence") or "").lower()
+        rank_score = 0.9
+        if confidence == "medium":
+            rank_score = 0.8
+        elif confidence == "low":
+            rank_score = 0.7
+
+        converted.append({
+            "source": source,
+            "url": url,
+            "snippet": summary,
+            "rank_score": rank_score,
+            "date": parsed_date,
+            "is_old": is_old,
+            "origin": "planner_browse",
+        })
+
+    return converted
+
+
+def _merge_planner_findings_into_bundle(evidence_bundle: dict, planner_findings: list[dict]) -> dict:
+    """Inject Agent 1 browse findings into the evidence bundle before Agent 2."""
+    if not planner_findings:
+        return evidence_bundle
+
+    evidence_bundle = evidence_bundle or {
+        "layer_1_tools": [],
+        "layer_2_high_trust": [],
+        "layer_3_general": [],
+        "layer_4_social_low": [],
+    }
+
+    converted = _convert_planner_findings_to_evidence(planner_findings)
+    if not converted:
+        return evidence_bundle
+
+    existing_urls = {
+        item.get("url")
+        for item in (evidence_bundle.get("layer_2_high_trust") or [])
+    }
+
+    new_items = []
+    for item in converted:
+        if item["url"] in existing_urls:
+            continue
+        existing_urls.add(item["url"])
+        new_items.append(item)
+
+    if new_items:
+        evidence_bundle.setdefault("layer_2_high_trust", [])
+        evidence_bundle["layer_2_high_trust"] = new_items + evidence_bundle["layer_2_high_trust"]
+        logger.info(f"Planner browse findings injected: {len(new_items)} item(s).")
+
+    return evidence_bundle
+
+
 @app.on_event("startup")
 async def startup_event():
     """Initialize modules when server starts"""
@@ -113,9 +208,17 @@ async def shutdown_event():
 
 def setup_signal_handlers():
     """Setup signal handlers for graceful shutdown"""
+    if os.name == "nt":
+        logger.info("Signal handlers are skipped on Windows (managed by Uvicorn).")
+        return
+
     def signal_handler(signum, frame):
         logger.info(f"Received signal {signum}, shutting down gracefully...")
-        sys.exit(0)
+        try:
+            loop = asyncio.get_event_loop()
+            loop.stop()
+        except RuntimeError:
+            sys.exit(0)
     
     # Only setup on Unix-like systems (Windows doesn't support signal.SIGTERM)
     if hasattr(signal, 'SIGTERM'):
@@ -144,6 +247,8 @@ except Exception:
 class CheckRequest(BaseModel):
     text: str
     flash_mode: bool = False
+    agent1_model: str | None = None
+    agent2_model: str | None = None
 
 
 class CheckResponse(BaseModel):
@@ -189,6 +294,13 @@ async def extract_location_endpoint(request: ExtractLocationRequest):
         return ExtractLocationResponse(city=None, success=False)
 
 
+def _is_flash_model(model_name: str | None) -> bool:
+    if not model_name:
+        return False
+    normalized = model_name.lower()
+    return "gemini" in normalized and "flash" in normalized
+
+
 @app.post("/check_news", response_model=CheckResponse)
 async def handle_check_news(request: CheckRequest, background_tasks: BackgroundTasks):
     """
@@ -197,18 +309,44 @@ async def handle_check_news(request: CheckRequest, background_tasks: BackgroundT
     -> Tool Executor (DuckDuckGo search) -> Agent 2 (learnlm Synthesizer) synthesizes.
     Overall timeout: 100 seconds (unless flash mode is enabled).
     """
-    if request.flash_mode:
-        return await _handle_check_news_internal(request, background_tasks)
+    agent1_model = request.agent1_model or "models/gemini-2.5-flash"
+    agent2_model = request.agent2_model or "models/gemini-2.5-flash"
+
+    flash_mode = request.flash_mode or (_is_flash_model(agent1_model) and _is_flash_model(agent2_model))
+
+    if flash_mode:
+        return await _handle_check_news_internal(
+            request,
+            background_tasks,
+            agent1_model=agent1_model,
+            agent2_model=agent2_model,
+            flash_mode=flash_mode,
+        )
     try:
-        return await asyncio.wait_for(_handle_check_news_internal(request, background_tasks), timeout=100.0)
+        return await asyncio.wait_for(
+            _handle_check_news_internal(
+                request,
+                background_tasks,
+                agent1_model=agent1_model,
+                agent2_model=agent2_model,
+                flash_mode=flash_mode,
+            ),
+            timeout=100.0,
+        )
     except asyncio.TimeoutError:
         logger.error("Overall timeout when processing check_news")
         raise HTTPException(status_code=504, detail="Request timeout - system response too slow")
 
 
-async def _handle_check_news_internal(request: CheckRequest, background_tasks: BackgroundTasks):
+async def _handle_check_news_internal(
+    request: CheckRequest,
+    background_tasks: BackgroundTasks,
+    *,
+    agent1_model: str,
+    agent2_model: str,
+    flash_mode: bool,
+):
     """Internal handler for check_news"""
-    flash = request.flash_mode
     try:
         # Step 1: Check KB Cache (Keep as is)
         logger.info("Checking KB cache...")
@@ -219,12 +357,20 @@ async def _handle_check_news_internal(request: CheckRequest, background_tasks: B
         
         # Step 2: Agent 1 (Planner) creates plan
         logger.info("Agent 1 (Planner) is creating plan...")
-        plan = await create_action_plan(request.text, flash_mode=flash)
+        plan = await create_action_plan(
+            request.text,
+            model_key=agent1_model,
+            flash_mode=flash_mode,
+        )
         logger.info(f"Plan: {json.dumps(plan, ensure_ascii=False, indent=2)}")
+        planner_findings = plan.get("browse_findings") if isinstance(plan.get("browse_findings"), list) else []
+        if planner_findings:
+            logger.info(f"Planner provided {len(planner_findings)} browse finding(s) via Gemini Flash.")
         
         # Step 3: Collect evidence (always run DDG search)
         logger.info("Tool Executor (DDG Search) is collecting evidence...")
-        evidence_bundle = await execute_tool_plan(plan, SITE_QUERY_STRING, flash_mode=flash)
+        evidence_bundle = await execute_tool_plan(plan, SITE_QUERY_STRING, flash_mode=flash_mode)
+        evidence_bundle = _merge_planner_findings_into_bundle(evidence_bundle, planner_findings)
 
         # Enrich plan with collected evidence
         enriched_plan = enrich_plan_with_evidence(plan, evidence_bundle)
@@ -233,7 +379,13 @@ async def _handle_check_news_internal(request: CheckRequest, background_tasks: B
         # Step 4: Agent 2 (Synthesizer) makes judgment
         logger.info("Agent 2 (Synthesizer) is synthesizing...")
         current_date = datetime.datetime.now().strftime('%Y-%m-%d')
-        gemini_result = await execute_final_analysis(request.text, evidence_bundle, current_date, flash_mode=flash)
+        gemini_result = await execute_final_analysis(
+            request.text,
+            evidence_bundle,
+            current_date,
+            model_key=agent2_model,
+            flash_mode=flash_mode,
+        )
         gemini_result = _sanitize_check_response(gemini_result)
         logger.info(f"Agent 2 result: {gemini_result.get('conclusion', 'N/A')}")
         

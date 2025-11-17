@@ -2,13 +2,17 @@
 
 import os
 import json
-import google.generativeai as genai
 import re
-import asyncio
 from dotenv import load_dotenv
 from typing import Dict, Any, List
 
 from app.weather import classify_claim
+from app.model_clients import (
+    call_gemini_model,
+    call_openrouter_chat_completion,
+    ModelClientError,
+    RateLimitError,
+)
 
 
 load_dotenv()
@@ -65,15 +69,29 @@ def load_synthesis_prompt(prompt_path="synthesis_prompt.txt"):
 
 def _parse_json_from_text(text: str) -> dict:
     """Trích xuất JSON an toàn từ text trả về của LLM"""
-    match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', text or "", re.DOTALL)
+    if not text:
+        print("LỖI: Agent 2 (Synthesizer) không tìm thấy JSON.")
+        return {}
+
+    cleaned = text.strip()
+    # Remove Markdown code fences if present
+    if cleaned.startswith("```"):
+        cleaned = re.sub(r"^```[a-zA-Z0-9_-]*\s*", "", cleaned)
+        cleaned = cleaned.rstrip("`").strip()
+
+    match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', cleaned, re.DOTALL)
     if match:
         try:
             return json.loads(match.group(0))
         except json.JSONDecodeError:
-            print(f"LỖI: Agent 2 (Synthesizer) trả về JSON không hợp lệ. Text: {text[:300]}...")
+            print(f"LỖI: Agent 2 (Synthesizer) trả về JSON không hợp lệ. Text: {cleaned[:300]}...")
             return {}
-    print("LỖI: Agent 2 (Synthesizer) không tìm thấy JSON.")
-    return {}
+    # Try direct JSON load if regex failed
+    try:
+        return json.loads(cleaned)
+    except Exception:
+        print(f"LỖI: Agent 2 (Synthesizer) không tìm thấy JSON. Raw response: {cleaned[:300]}...")
+        return {}
 
 
 
@@ -153,6 +171,7 @@ def _heuristic_summarize(text_input: str, bundle: Dict[str, Any], current_date: 
     """
     l1 = bundle.get("layer_1_tools") or []
     l2 = bundle.get("layer_2_high_trust") or []
+    l3 = bundle.get("layer_3_general") or []
 
     try:
         claim = classify_claim(text_input)
@@ -160,6 +179,7 @@ def _heuristic_summarize(text_input: str, bundle: Dict[str, Any], current_date: 
         claim = {"is_weather": False}
 
     is_weather_claim = claim.get("is_weather", False)
+    text_lower = text_input.lower()
 
     # Ưu tiên Lớp 1 (OpenWeather API) cho tin thời tiết
     if is_weather_claim and l1:
@@ -169,7 +189,6 @@ def _heuristic_summarize(text_input: str, bundle: Dict[str, Any], current_date: 
             # So sánh điều kiện thời tiết
             main_condition = weather_data.get("main", "").lower()
             description = weather_data.get("description", "").lower()
-            text_lower = text_input.lower()
             
             # Kiểm tra mưa
             if "mưa" in text_lower or "rain" in text_lower:
@@ -255,6 +274,50 @@ def _heuristic_summarize(text_input: str, bundle: Dict[str, Any], current_date: 
                 "cached": False
             }
 
+    # Phát hiện thông tin gây hiểu lầm do đã cũ (đặc biệt với sản phẩm/phiên bản)
+    if not is_weather_claim:
+        evidence_items = l2 + l3
+        old_items = [item for item in evidence_items if item.get("is_old")]
+        fresh_items = [item for item in evidence_items if item.get("is_old") is False]
+
+        marketing_keywords = [
+            "giảm giá", "khuyến mãi", "sale", "ra mắt", "mở bán", "đặt trước",
+            "phiên bản", "model", "thế hệ", "đời", "nâng cấp", "lên kệ", "ưu đãi",
+            "launch", "promotion"
+        ]
+        product_pattern = re.compile(r"(iphone|ipad|macbook|galaxy|pixel|surface|playstation|xbox|sony|samsung|apple|oppo|xiaomi|huawei|vinfast)\s?[0-9a-z]{1,4}", re.IGNORECASE)
+        mentions_product_cycle = any(kw in text_lower for kw in marketing_keywords) or bool(product_pattern.search(text_input))
+
+        if old_items and (fresh_items or mentions_product_cycle):
+            reference_old = old_items[0]
+            old_source = reference_old.get("source") or reference_old.get("url") or "nguồn cũ"
+            old_date = reference_old.get("date") or "trước đây"
+            latest_snippet = _as_str(reference_old.get("snippet"))
+
+            if fresh_items:
+                latest_item = fresh_items[0]
+                latest_source = latest_item.get("source") or latest_item.get("url") or "nguồn mới"
+                latest_date = latest_item.get("date") or "gần đây"
+                reason = _as_str(
+                    f"Thông tin về '{text_input}' dựa trên nguồn {old_source} ({old_date}) đã cũ, "
+                    f"trong khi các nguồn mới như {latest_source} ({latest_date}) cho thấy bối cảnh đã thay đổi. "
+                    "Việc trình bày như tin nóng dễ gây hiểu lầm."
+                )
+            else:
+                reason = _as_str(
+                    f"Thông tin về '{text_input}' chỉ được hỗ trợ bởi nguồn cũ {old_source} ({old_date}). "
+                    "Sản phẩm/sự kiện này đã xuất hiện từ lâu nên việc trình bày như tin tức mới là gây hiểu lầm."
+                )
+
+            return {
+                "conclusion": "GÂY HIỂU LẦM",
+                "reason": reason,
+                "style_analysis": "",
+                "key_evidence_snippet": latest_snippet,
+                "key_evidence_source": _as_str(old_source),
+                "cached": False
+            }
+
     # Không đủ điều kiện → TIN GIẢ (không có bằng chứng xác nhận)
     return {
         "conclusion": "TIN GIẢ",
@@ -267,25 +330,48 @@ def _heuristic_summarize(text_input: str, bundle: Dict[str, Any], current_date: 
 
 
 
-def _pick_models(flash_mode: bool) -> List[str]:
-    """Chọn danh sách model cho Synthesizer dựa trên chế độ flash"""
-    if flash_mode:
-        return ['models/gemini-2.5-flash']  # Flash mode: dùng gemini-2.5-flash
-    return ['models/gemini-2.5-pro']  # Normal mode: dùng gemini-2.5-pro
+def _normalize_agent2_model(model_key: str | None) -> str:
+    """Normalize Agent 2 model identifier."""
+    if not model_key:
+        return "models/gemini-2.5-pro"
+    mapping = {
+        "gemini_flash": "models/gemini-2.5-flash",
+        "gemini flash": "models/gemini-2.5-flash",
+        "gemini-2.5-flash": "models/gemini-2.5-flash",
+        "models/gemini_flash": "models/gemini-2.5-flash",
+        "gemini_pro": "models/gemini-2.5-pro",
+        "gemini pro": "models/gemini-2.5-pro",
+        "models/gemini-2.5-pro": "models/gemini-2.5-pro",
+        "openai/gpt-oss-120b": "openai/gpt-oss-120b",
+        "meta-llama/llama-3.3-70b-instruct": "meta-llama/llama-3.3-70b-instruct",
+        "qwen/qwen-2.5-72b-instruct": "qwen/qwen-2.5-72b-instruct",
+    }
+    return mapping.get(model_key, model_key)
 
 
-async def execute_final_analysis(text_input: str, evidence_bundle: dict, current_date: str, flash_mode: bool = False) -> dict:
+def _detect_agent2_provider(model_name: str) -> str:
+    """Detect provider for Agent 2 model."""
+    if not model_name:
+        return "gemini"
+    lowered = model_name.lower()
+    if "gemini" in lowered or model_name.startswith("models/"):
+        return "gemini"
+    # All other models (including openai/, meta-llama/, qwen/, etc.) go through OpenRouter
+    return "openrouter"
+
+
+async def execute_final_analysis(
+    text_input: str,
+    evidence_bundle: dict,
+    current_date: str,
+    model_key: str | None = None,
+    flash_mode: bool = False,
+) -> dict:
     """
     Gọi Agent 2 để tổng hợp bằng chứng; cắt gọn evidence; dynamic model picking; retry nhẹ; heuristic fallback.
     """
     if not SYNTHESIS_PROMPT:
         raise ValueError("Synthesis prompt (prompt 2) chưa được tải.")
-    if not GEMINI_API_KEY:
-        raise ValueError("GEMINI_API_KEY chưa được cấu hình.")
-
-    genai.configure(api_key=GEMINI_API_KEY)
-
-    model_names = _pick_models(flash_mode)
 
     # Trim evidence before sending
     trimmed_bundle = _trim_evidence_bundle(evidence_bundle)
@@ -297,39 +383,186 @@ async def execute_final_analysis(text_input: str, evidence_bundle: dict, current
     prompt = prompt.replace("{text_input}", text_input)
     prompt = prompt.replace("{current_date}", current_date)
 
-    last_err = None
-    # Try each model once với timeout (nếu không unlimit)
-    for model_name in model_names:
-        try:
-            print(f"Synthesizer: thử model '{model_name}'")
-            model = genai.GenerativeModel(model_name)
-            if flash_mode:
-                response = await asyncio.to_thread(model.generate_content, prompt, safety_settings=SAFETY_SETTINGS)
-            else:
-                response = await asyncio.wait_for(
-                    asyncio.to_thread(model.generate_content, prompt, safety_settings=SAFETY_SETTINGS),
-                    timeout=45.0
-                )
-            text = getattr(response, 'text', None)
-            if text is None and hasattr(response, 'candidates') and response.candidates:
-                text = str(response.candidates[0].content)
-            result_json = _parse_json_from_text(text or "")
-            if result_json:
-                result_json["cached"] = False
-                return result_json
-        except asyncio.TimeoutError:
-            print(f"Synthesizer: Timeout khi gọi model '{model_name}'")
-            last_err = "Timeout"
-            continue
-        except Exception as e:
-            last_err = e
-            # 429/quota → fallback ngay
-            msg = str(e)
-            if '429' in msg or 'quota' in msg.lower():
-                break
-            print(f"Synthesizer: Lỗi với model '{model_name}': {e}")
-            continue
+    model_name = _normalize_agent2_model(model_key)
+    provider = _detect_agent2_provider(model_name)
+    print(f"Synthesizer: generating verdict with model '{model_name}' (provider={provider})")
 
-    print(f"Lỗi khi gọi Agent 2 (Synthesizer): {last_err}")
+    text_response = ""
+    try:
+        if provider == "gemini":
+            if not GEMINI_API_KEY:
+                raise ModelClientError("GEMINI_API_KEY is not configured.")
+            timeout = None if flash_mode else 45.0
+            text_response = await call_gemini_model(
+                model_name,
+                prompt,
+                timeout=timeout,
+                safety_settings=SAFETY_SETTINGS,
+            )
+        elif provider == "openrouter":
+            system_prompt = (
+                "You are ZeroFake Agent 2 (Synthesizer). "
+                "Read the evidence bundle and user's news claim. "
+                "Respond ONLY with a valid JSON object that matches the required schema."
+            )
+            text_response = await call_openrouter_chat_completion(
+                model_name,
+                prompt,
+                timeout=60.0,
+                temperature=0.1,
+                system_prompt=system_prompt,
+            )
+        else:
+            raise ModelClientError(f"Unsupported provider '{provider}' for Agent 2.")
+    except RateLimitError as exc:
+        print(f"Synthesizer: Rate limit when using model '{model_name}': {exc}")
+        if provider == "openrouter":
+            fallback_model = "anthropic/claude-3.5-haiku"
+            if model_name != fallback_model:
+                print(f"Synthesizer: Retrying with fallback OpenRouter model '{fallback_model}'")
+                try:
+                    text_response = await call_openrouter_chat_completion(
+                        fallback_model,
+                        prompt,
+                        timeout=60.0,
+                        temperature=0.1,
+                        system_prompt=(
+                            "You are ZeroFake Agent 2 (Synthesizer). "
+                            "Read the evidence bundle and user's news claim. "
+                            "Respond ONLY with a valid JSON object that matches the required schema."
+                        ),
+                    )
+                    model_name = fallback_model
+                except ModelClientError as fallback_exc:
+                    print(f"Synthesizer: Fallback OpenRouter model '{fallback_model}' failed: {fallback_exc}")
+                    text_response = ""
+            else:
+                text_response = ""
+        else:
+            text_response = ""
+    except ModelClientError as exc:
+        print(f"Synthesizer: Error using model '{model_name}': {exc}")
+        text_response = ""
+
+    result_json = _parse_json_from_text(text_response or "")
+    if result_json:
+        # Check if Agent 2 requested additional search queries
+        additional_queries = result_json.get("additional_search_queries", [])
+        if additional_queries and isinstance(additional_queries, list) and len(additional_queries) > 0:
+            # Limit to max 3 queries
+            additional_queries = additional_queries[:3]
+            print(f"Synthesizer: Agent 2 requested {len(additional_queries)} additional search queries: {additional_queries}")
+            
+            # Perform additional searches
+            from app.search import call_google_search
+            from app.ranker import get_rank_from_url, _extract_date
+            from datetime import datetime
+            import asyncio
+            
+            additional_evidence = []
+            seen_urls = set(evidence_bundle.get("seen_urls", set()))
+            
+            for query in additional_queries:
+                try:
+                    print(f"Synthesizer: Searching additional query: '{query}'")
+                    search_items = await asyncio.to_thread(call_google_search, query, "")
+                    
+                    for item in search_items or []:
+                        link = item.get('link')
+                        if link and link not in seen_urls:
+                            seen_urls.add(link)
+                            # Rank and classify the item
+                            rank = get_rank_from_url(link)
+                            date = _extract_date(item.get('snippet', ''), item.get('title', ''))
+                            is_old = False
+                            if date:
+                                try:
+                                    date_obj = datetime.strptime(date[:10], '%Y-%m-%d')
+                                    days_diff = (datetime.now() - date_obj).days
+                                    is_old = days_diff > 365
+                                except:
+                                    pass
+                            
+                            additional_evidence.append({
+                                'title': item.get('title', ''),
+                                'link': link,
+                                'snippet': item.get('snippet', ''),
+                                'source': link,
+                                'rank': rank,
+                                'date': date,
+                                'is_old': is_old
+                            })
+                except Exception as e:
+                    print(f"Synthesizer: Error searching additional query '{query}': {e}")
+                    continue
+            
+            # If we found additional evidence, merge it into evidence bundle and re-analyze
+            if additional_evidence:
+                print(f"Synthesizer: Found {len(additional_evidence)} additional evidence items, re-analyzing...")
+                
+                # Merge additional evidence into appropriate layers
+                # Add to layer_3_general (or layer_2 if high rank)
+                for item in additional_evidence:
+                    rank = item.get('rank', 0)
+                    if rank >= 0.7:
+                        if 'layer_2_trusted' not in evidence_bundle:
+                            evidence_bundle['layer_2_trusted'] = []
+                        evidence_bundle['layer_2_trusted'].append(item)
+                    else:
+                        if 'layer_3_general' not in evidence_bundle:
+                            evidence_bundle['layer_3_general'] = []
+                        evidence_bundle['layer_3_general'].append(item)
+                
+                # Update seen_urls
+                evidence_bundle['seen_urls'] = seen_urls
+                
+                # Re-trim and re-analyze with updated evidence
+                trimmed_bundle = _trim_evidence_bundle(evidence_bundle)
+                evidence_bundle_json = json.dumps(trimmed_bundle, indent=2, ensure_ascii=False)
+                
+                # Update prompt with new evidence
+                updated_prompt = SYNTHESIS_PROMPT
+                updated_prompt = updated_prompt.replace("{evidence_bundle_json}", evidence_bundle_json)
+                updated_prompt = updated_prompt.replace("{text_input}", text_input)
+                updated_prompt = updated_prompt.replace("{current_date}", current_date)
+                
+                # Call Agent 2 again with updated evidence (only once to avoid infinite loop)
+                try:
+                    if provider == "gemini":
+                        text_response = await call_gemini_model(
+                            model_name, updated_prompt, timeout=None if flash_mode else 45.0
+                        )
+                    elif provider == "openrouter":
+                        text_response = await call_openrouter_chat_completion(
+                            model_name,
+                            updated_prompt,
+                            timeout=60.0,
+                            temperature=0.1,
+                            system_prompt=(
+                                "You are ZeroFake Agent 2 (Synthesizer). "
+                                "Read the evidence bundle and user's news claim. "
+                                "Respond ONLY with a valid JSON object that matches the required schema. "
+                                "Do NOT request additional_search_queries again - use the provided evidence."
+                            ),
+                        )
+                    
+                    # Parse the updated response
+                    updated_result = _parse_json_from_text(text_response or "")
+                    if updated_result:
+                        # Remove additional_search_queries from final result (internal use only)
+                        updated_result.pop("additional_search_queries", None)
+                        updated_result["cached"] = False
+                        print(f"Synthesizer: Re-analysis complete with additional evidence")
+                        return updated_result
+                except Exception as e:
+                    print(f"Synthesizer: Error during re-analysis: {e}")
+                    # Fall through to return original result
+        
+        # Remove additional_search_queries from final result (internal use only)
+        result_json.pop("additional_search_queries", None)
+        result_json["cached"] = False
+        return result_json
+
+    print("Lỗi khi gọi Agent 2 (Synthesizer): Model response invalid or empty.")
     # (SỬA ĐỔI) Gọi hàm fallback đã được cập nhật
     return _heuristic_summarize(text_input, trimmed_bundle, current_date)

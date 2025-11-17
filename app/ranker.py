@@ -66,29 +66,47 @@ def _flatten_config(nested_dict: dict) -> dict:
     return flat_map
 
 
-def load_ranker_config(config_path="config.json"):
-    """Tải config từ config.json và kết hợp với heuristic toàn cục."""
+def load_ranker_config(config_path: str = "config.json"):
+    """
+    Tải cấu hình rank domain.
+
+    THAY ĐỔI: thay vì dùng config.json, hệ thống sẽ ưu tiên đọc từ app/trusted_domains.json
+    (cùng format với tool_executor/search). Mỗi domain trong:
+      - tier0 → score ~0.95
+      - tier1 → score ~0.9
+    """
     global SOURCE_RANKER_CONFIG
     import json
     import os
-    
+
     # Khởi tạo với default
     SOURCE_RANKER_CONFIG = {"default": 0.6}
-    
-    # Thử tải config.json
+
+    # Đường dẫn trusted_domains.json (ưu tiên)
     try:
-        if os.path.exists(config_path):
-            with open(config_path, 'r', encoding='utf-8') as f:
-                config_data = json.load(f)
-            
-            # Làm phẳng config lồng nhau
-            flattened = _flatten_config(config_data)
-            SOURCE_RANKER_CONFIG.update(flattened)
-            print(f"Ranker: Đã tải {len(flattened)} nguồn từ config.json.")
+        base_dir = os.path.dirname(__file__)
+        trusted_path = os.path.join(base_dir, "trusted_domains.json")
+        if os.path.exists(trusted_path):
+            with open(trusted_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            tier0 = data.get("tier0") or []
+            tier1 = data.get("tier1") or []
+            count = 0
+            for d in tier0:
+                if isinstance(d, str):
+                    SOURCE_RANKER_CONFIG[d.lower()] = 0.95
+                    count += 1
+            for d in tier1:
+                if isinstance(d, str):
+                    # Nếu domain đã ở tier0 thì giữ score cao hơn
+                    SOURCE_RANKER_CONFIG.setdefault(d.lower(), 0.9)
+                    count += 1
+            print(f"Ranker: Đã tải {count} nguồn từ trusted_domains.json.")
+            return
         else:
-            print(f"Ranker: Không tìm thấy {config_path}, sử dụng heuristic toàn cục.")
+            print("Ranker: Không tìm thấy trusted_domains.json, sử dụng heuristic toàn cục.")
     except Exception as e:
-        print(f"Ranker: Lỗi khi tải config.json: {e}, sử dụng heuristic toàn cục.")
+        print(f"Ranker: Lỗi khi tải trusted_domains.json: {e}, sử dụng heuristic toàn cục.")
 
 
 # Danh sách các domain báo chí uy tín (để phát hiện domain giả)

@@ -5,7 +5,7 @@ import requests
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QTextEdit, QPushButton, QTextBrowser, QStatusBar, QLabel,
-    QDialog, QComboBox, QLineEdit, QDialogButtonBox, QMessageBox
+    QDialog, QComboBox, QLineEdit, QDialogButtonBox, QMessageBox, QCheckBox
 )
 from PyQt6.QtCore import QThread, pyqtSignal, QObject, Qt
 from PyQt6.QtGui import QFont
@@ -108,8 +108,14 @@ class MainWindow(QMainWindow):
         # Store current result
         self.current_result = None
         self.current_text_input = None
-        self.flash_mode = False
-        
+        self.flash_models = {
+            "models/gemini-2.5-flash",
+            "gemini-2.5-flash",
+            "gemini_flash",
+        }
+        self.default_agent1_model = "models/gemini-2.5-flash"
+        self.default_agent2_model = "models/gemini-2.5-flash"
+
         # Create UI
         self.init_ui()
     
@@ -139,6 +145,32 @@ class MainWindow(QMainWindow):
         self.input_text.setMaximumHeight(150)
         layout.addWidget(self.input_text)
         
+        # Model selection area
+        model_layout = QHBoxLayout()
+        
+        self.agent1_label = QLabel("Agent 1 model:")
+        model_layout.addWidget(self.agent1_label)
+        
+        self.agent1_combo = QComboBox()
+        self.agent1_combo.addItem("Gemini Flash", "models/gemini-2.5-flash")
+        self.agent1_combo.addItem("Llama 3.3 8B Instruct", "meta-llama/llama-3.3-8b-instruct")
+        self.agent1_combo.addItem("Mistral 7B Instruct", "mistralai/mistral-7b-instruct")
+        self.agent1_combo.setCurrentIndex(0)
+        model_layout.addWidget(self.agent1_combo)
+        
+        self.agent2_label = QLabel("Agent 2 model:")
+        model_layout.addWidget(self.agent2_label)
+        
+        self.agent2_combo = QComboBox()
+        self.agent2_combo.addItem("Gemini Pro", "models/gemini-2.5-pro")
+        self.agent2_combo.addItem("OpenAI gpt-oss-120b", "openai/gpt-oss-120b")
+        self.agent2_combo.addItem("Llama 3.3 70B Instruct", "meta-llama/llama-3.3-70b-instruct")
+        self.agent2_combo.addItem("Qwen2.5 72B Instruct", "qwen/qwen-2.5-72b-instruct")
+        self.agent2_combo.setCurrentIndex(0)
+        model_layout.addWidget(self.agent2_combo)
+        
+        layout.addLayout(model_layout)
+        
         # Button area
         button_layout = QHBoxLayout()
         
@@ -146,13 +178,6 @@ class MainWindow(QMainWindow):
         self.check_button.setMinimumHeight(40)
         self.check_button.clicked.connect(self.check_news)
         button_layout.addWidget(self.check_button)
-
-        self.flash_button = QPushButton("Flash: OFF")
-        self.flash_button.setCheckable(True)
-        self.flash_button.setMinimumHeight(40)
-        self.flash_button.setToolTip("Enable to use flash mode (gemini-2.5-flash for both agents, no timeout)")
-        self.flash_button.toggled.connect(self.toggle_flash_mode)
-        button_layout.addWidget(self.flash_button)
         
         # Feedback buttons (hidden initially)
         self.feedback_correct_button = QPushButton("Correct")
@@ -199,9 +224,20 @@ class MainWindow(QMainWindow):
         
         # Tạo thread và worker
         self.thread = QThread()
-        payload = {"text": text_input, "flash_mode": self.flash_mode}
-        timeout = None if self.flash_mode else 120
-        self.worker = Worker(f"{API_URL}/check_news", payload, timeout=timeout)
+        agent1_model = self.agent1_combo.currentData() or self.default_agent1_model
+        agent2_model = self.agent2_combo.currentData() or self.default_agent2_model
+        flash_mode = self._is_flash_mode_selected(agent1_model, agent2_model)
+
+        payload = {
+            "text": text_input,
+            "agent1_model": agent1_model,
+            "agent2_model": agent2_model,
+            "flash_mode": flash_mode,
+        }
+        endpoint = f"{API_URL}/check_news"
+        timeout = None if flash_mode else 120
+        
+        self.worker = Worker(endpoint, payload, timeout=timeout)
         self.worker.moveToThread(self.thread)
         
         # Kết nối signals
@@ -218,14 +254,9 @@ class MainWindow(QMainWindow):
         # Start thread
         self.thread.start()
 
-    def toggle_flash_mode(self, checked: bool):
-        self.flash_mode = checked
-        if checked:
-            self.flash_button.setText("Flash: ON")
-            self.status_bar.showMessage("Flash mode (gemini-2.5-flash) enabled - infinite wait")
-        else:
-            self.flash_button.setText("Flash: OFF")
-            self.status_bar.showMessage("Flash mode disabled")
+    def _is_flash_mode_selected(self, agent1_model: str, agent2_model: str) -> bool:
+        return agent1_model in self.flash_models and agent2_model in self.flash_models
+
     
     def update_ui(self, result: dict):
         """Update UI with result"""

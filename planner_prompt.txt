@@ -259,7 +259,7 @@ Hãy phân tích và trả về một cấu trúc JSON duy nhất với các tr�
            }
          }
        ]
-     * Ví dụ 4: Input "Apple ra mắt iPhone 15" (KHÔNG phải Thời tiết)
+    * Ví dụ 4: Input "Apple ra mắt iPhone 15" (KHÔNG phải Thời tiết)
        [
          {
            "tool_name": "search",
@@ -272,7 +272,7 @@ Hãy phân tích và trả về một cấu trúc JSON duy nhất với các tr�
            }
          }
        ]
-     * Ví dụ 5: Input "bão số 13 đổ bộ vào Việt Nam" (Sự kiện đã xảy ra - KHÔNG phải Thời tiết)
+    * Ví dụ 5: Input "bão số 13 đổ bộ vào Việt Nam" (Sự kiện đã xảy ra - KHÔNG phải Thời tiết)
        [
          {
            "tool_name": "search",
@@ -290,7 +290,23 @@ Hãy phân tích và trả về một cấu trúc JSON duy nhất với các tr�
            }
          }
        ]
-     * **LƯU Ý:** Location PHẢI là cụm từ đầy đủ, KHÔNG phải từ đơn lẻ!
+    * **LƯU Ý:** Location PHẢI là cụm từ đầy đủ, KHÔNG phải từ đơn lẻ!
+
+7. **"browse_findings" (DANH SÁCH BẰNG CHỨNG TỪ TÍNH NĂNG BROWSE – CHỈ DÀNH CHO GEMINI FLASH CÓ KHẢ NĂNG DUYỆT WEB):**
+   - Đây là mảng các object, mỗi object mô tả 1 nguồn thông tin vừa được bạn tra cứu trực tiếp bằng tính năng browse.
+   - CHỈ bao gồm khi bạn THỰC SỰ truy vấn và trích xuất được thông tin từ nguồn đó.
+   - Mỗi object có cấu trúc:
+     {
+       "title": "Tiêu đề bài / thông tin vừa đọc",
+       "source": "Tên miền (vd: vnexpress.net)",
+       "url": "Đường dẫn đầy đủ",
+       "summary": "Tóm tắt ngắn gọn (1-2 câu) nêu rõ nội dung chính liên quan tới claim",
+       "published_date": "YYYY-MM-DD" | null,
+       "confidence": "high" | "medium" | "low" (độ tin cậy chủ quan của bạn)
+     }
+   - ƯU TIÊN: các nguồn chính thống (tier 0/tier1), thông tin mới hoặc cập nhật nhất.
+   - KHÔNG liệt kê hơn 5 nguồn. Chỉ chọn những nguồn quan trọng nhất hỗ trợ việc kiểm chứng claim.
+   - Nếu không thể duyệt web (model không hỗ trợ), trả về mảng rỗng [].
 
 [YÊU CẦU ĐẦU RA (CHỈ TRẢ VỀ JSON)]:
 {
@@ -299,6 +315,16 @@ Hãy phân tích và trả về một cấu trúc JSON duy nhất với các tr�
   "volatility": "static" | "low" | "medium" | "high",
   "entities_and_values": {"locations": [], "persons": [], "organizations": [], "events": [], "data_points": []},
   "time_references": {"explicit_date": null, "relative_time": null, "time_scope": "..."},
-  "required_tools": [ {"tool_name": "weather" | "search", "parameters": {...}} ]
+  "required_tools": [ {"tool_name": "weather" | "search", "parameters": {...}} ],
+  "browse_findings": [
+    {
+      "title": "...",
+      "source": "...",
+      "url": "...",
+      "summary": "...",
+      "published_date": "YYYY-MM-DD" | null,
+      "confidence": "high" | "medium" | "low"
+    }
+  ]
 }
 
