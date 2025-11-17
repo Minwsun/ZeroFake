@@ -318,6 +318,68 @@ def _heuristic_summarize(text_input: str, bundle: Dict[str, Any], current_date: 
                 "cached": False
             }
 
+        if mentions_product_cycle and fresh_items and not old_items:
+            latest_item = fresh_items[0]
+            latest_source = latest_item.get("source") or latest_item.get("url") or "nguồn mới"
+            latest_date = latest_item.get("date") or "gần đây"
+            reason = _as_str(
+                f"Không tìm thấy nguồn gần đây xác nhận '{text_input}', trong khi các sản phẩm mới hơn đã xuất hiện "
+                f"(ví dụ {latest_source}, {latest_date}). Đây là thông tin cũ được lặp lại khiến người đọc hiểu lầm bối cảnh hiện tại."
+            )
+            return {
+                "conclusion": "GÂY HIỂU LẦM",
+                "reason": reason,
+                "style_analysis": "",
+                "key_evidence_snippet": _as_str(latest_item.get("snippet")),
+                "key_evidence_source": _as_str(latest_source),
+                "cached": False
+            }
+
+        claim_implies_present = any(
+            kw in text_lower
+            for kw in [
+                "hiện nay", "bây giờ", "đang", "sắp", "vừa", "today", "now", "currently",
+                "mới đây", "ngay lúc này", "trong thời gian tới"
+            ]
+        )
+        if claim_implies_present and old_items and not fresh_items:
+            old_item = old_items[0]
+            older_source = old_item.get("source") or old_item.get("url") or "nguồn cũ"
+            older_date = old_item.get("date") or "trước đây"
+            reason = _as_str(
+                f"'{text_input}' ám chỉ thông tin đang diễn ra nhưng chỉ có nguồn {older_source} ({older_date}) từ trước kia. "
+                "Việc dùng lại tin cũ khiến người đọc hiểu sai về tình trạng hiện tại."
+            )
+            return {
+                "conclusion": "GÂY HIỂU LẦM",
+                "reason": reason,
+                "style_analysis": "",
+                "key_evidence_snippet": _as_str(old_item.get("snippet")),
+                "key_evidence_source": _as_str(older_source),
+                "cached": False
+            }
+
+        misleading_tokens = [
+            "đã kết thúc", "đã dừng", "ngừng áp dụng", "không còn áp dụng",
+            "đã hủy", "đã hoãn", "đã đóng", "đã ngưng", "no longer", "ended", "discontinued"
+        ]
+        for item in evidence_items:
+            snippet_lower = (item.get("snippet") or "").lower()
+            if any(token in snippet_lower for token in misleading_tokens):
+                source = item.get("source") or item.get("url") or "nguồn cập nhật"
+                reason = _as_str(
+                    f"'{text_input}' bỏ qua cập nhật từ {source} cho biết sự kiện/chương trình đã kết thúc hoặc thay đổi "
+                    "nên thông tin dễ gây hiểu lầm."
+                )
+                return {
+                    "conclusion": "GÂY HIỂU LẦM",
+                    "reason": reason,
+                    "style_analysis": "",
+                    "key_evidence_snippet": _as_str(item.get("snippet")),
+                    "key_evidence_source": _as_str(source),
+                    "cached": False
+                }
+
     # Không đủ điều kiện → TIN GIẢ (không có bằng chứng xác nhận)
     return {
         "conclusion": "TIN GIẢ",

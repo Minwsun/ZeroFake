@@ -9,6 +9,7 @@ from app.weather import classify_claim
 from app.model_clients import (
     call_gemini_model,
     call_groq_chat_completion,
+    call_openrouter_chat_completion,
     call_compound_model,
     ModelClientError,
 )
@@ -462,6 +463,87 @@ def _optimize_search_query(query: str, text_input: str) -> str:
     return query.strip()
 
 
+def _generate_search_queries(text_input: str, plan_struct: dict) -> list[str]:
+    """Create a richer set of search queries to improve recall."""
+    from datetime import datetime
+
+    candidates = []
+    seen = set()
+    text_lower = (text_input or "").lower()
+
+    def add(q: str):
+        q = (q or "").strip()
+        if q and q not in seen:
+            seen.add(q)
+            candidates.append(q)
+
+    base = (text_input or "").strip()
+    main_claim = (plan_struct.get("main_claim") or "").strip()
+    time_refs = plan_struct.get("time_references") or {}
+    entities = plan_struct.get("entities_and_values") or {}
+
+    if base:
+        add(base)  # giữ nguyên câu gốc
+        add(f"{base} tin tức")
+        add(f"tin tức {base}")
+        add(f"{base} mới nhất")
+
+    if main_claim and main_claim.lower() != base.lower():
+        add(main_claim)
+        add(f"{main_claim} tin tức")
+
+    current_year = datetime.now().year
+    if base:
+        add(f"{base} {current_year}")
+
+    explicit_date = (time_refs.get("explicit_date") or "").strip()
+    if explicit_date and explicit_date[:4].isdigit():
+        add(f"{base} {explicit_date[:4]}")
+
+    locations = (entities.get("locations") or [])[:3]
+    if not locations:
+        common_locations = [
+            ("ukraina", "ukraina"),
+            ("ukraine", "ukraine"),
+            ("nga", "nga"),
+            ("russia", "nga"),
+            ("trung quốc", "trung quốc"),
+            ("china", "trung quốc"),
+            ("gaza", "gaza"),
+            ("israel", "israel"),
+        ]
+        for token, norm in common_locations:
+            if token in text_lower:
+                display = norm.title() if norm.islower() else norm
+                locations.append(display)
+
+    for loc in locations[:3]:
+        loc = loc.strip()
+        if loc:
+            add(f"{loc} {base} tin tức" if base else loc)
+
+    for org in (entities.get("organizations") or [])[:1]:
+        org = org.strip()
+        if org:
+            add(f"{org} {current_year} tin tức")
+
+    for event in (entities.get("events") or [])[:1]:
+        event = event.strip()
+        if event:
+            add(f"{event} tin tức")
+
+    conflict_keywords = [
+        "chiến sự", "xung đột", "tấn công", "đụng độ", "invasion", "war", "attacked", "tấn công quân sự"
+    ]
+    if any(kw in text_lower for kw in conflict_keywords):
+        for loc in locations[:2]:
+            if loc:
+                add(f"tình hình chiến sự {loc}")
+                add(f"chiến sự {loc} mới nhất")
+
+    return candidates or [base or text_input]
+
+
 def _is_common_knowledge(text_input: str) -> bool:
     """
     Check if the input is common knowledge (sự thật hiển nhiên).
@@ -741,18 +823,19 @@ def _normalize_plan(plan: dict, text_input: str, flash_mode: bool = False) -> di
     if not is_weather:
         # Chỉ tạo search tool cho các claim không phải thời tiết
         has_search = any(m.get('tool_name') == 'search' for m in plan_struct["required_tools"])
+        generated_queries = _generate_search_queries(text_input, plan_struct)
         if not has_search:
-            default_queries = [q for m in plan_struct.get("required_tools", []) if m.get("tool_name") == "search" for q in m.get("parameters", {}).get("queries", [])]
-            if not default_queries:
-                default_queries = [text_input]
-            if not flash_mode:
-                default_queries = list(dict.fromkeys(default_queries))[:3]
-            else:
-                default_queries = list(dict.fromkeys(default_queries))
             plan_struct["required_tools"].append({
                 "tool_name": "search",
-                "parameters": {"queries": default_queries, "search_type": "broad"}
+                "parameters": {"queries": generated_queries, "search_type": "broad"}
             })
+        else:
+            for tool in plan_struct["required_tools"]:
+                if tool.get("tool_name") == "search":
+                    existing = tool.get("parameters", {}).get("queries", []) or []
+                    combined = list(dict.fromkeys(existing + generated_queries))
+                    tool.setdefault("parameters", {})["queries"] = combined
+                    break
 
         # Tối ưu hóa queries và giới hạn khi cần
         for tool in plan_struct["required_tools"]:
@@ -760,10 +843,16 @@ def _normalize_plan(plan: dict, text_input: str, flash_mode: bool = False) -> di
                 queries = tool.get("parameters", {}).get("queries", [])
                 # Tối ưu hóa từng query để đảm bảo ra đúng kết quả
                 optimized_queries = [_optimize_search_query(q, text_input) for q in queries]
+                # Đảm bảo luôn có query nguyên bản (không tối ưu) của input
+                raw_query = text_input.strip()
+                final_queries = optimized_queries[:]
+                if raw_query:
+                    # Đặt raw_query ở đầu danh sách, giữ các query khác phía sau và loại trùng
+                    final_queries = [raw_query] + [q for q in final_queries if q != raw_query]
                 if not flash_mode:
-                    tool["parameters"]["queries"] = optimized_queries[:5]
+                    tool["parameters"]["queries"] = final_queries[:5]
                 else:
-                    tool["parameters"]["queries"] = list(dict.fromkeys(optimized_queries))
+                    tool["parameters"]["queries"] = list(dict.fromkeys(final_queries))
                 print(f"Agent Planner: Đã tối ưu hóa {len(queries)} queries thành {len(tool['parameters']['queries'])} queries")
     else:
         print("Weather claim: Skipping search tool creation, only using OpenWeather API")
@@ -798,6 +887,8 @@ def _detect_agent1_provider(model_name: str) -> str:
         return "groq"
     if "gemini" in lowered:
         return "gemini"
+    if lowered.startswith("meta-llama") or "/" in lowered:
+        return "openrouter"
     return "gemini"
 
 
@@ -852,6 +943,18 @@ async def create_action_plan(
                 model_name,
                 prompt,
                 timeout=30.0,
+                temperature=0.2,
+                system_prompt=system_prompt,
+            )
+        elif provider == "openrouter":
+            system_prompt = (
+                "You are ZeroFake Agent 1 (Planner). "
+                "Read the user's news claim and respond ONLY with a valid JSON plan."
+            )
+            text = await call_openrouter_chat_completion(
+                model_name,
+                prompt,
+                timeout=45.0,
                 temperature=0.2,
                 system_prompt=system_prompt,
             )
