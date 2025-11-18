@@ -93,20 +93,20 @@ def extract_weather_info(text: str) -> Optional[Dict]:
         patterns = [
             r"(?:tại|ở|in|at|thành phố|city of|ville de|ciudad de|stadt)\s+([A-ZÀ-ÝÁÉÍÓÚÝĂÂÊÔƠƯĐ][A-Za-zÀ-ỹáéíóúýăâêôơưđ\-'\.\s]+?)(?:[,\.;:!\?\)\]\}]|\s|$)",
             r"([A-ZÀ-ÝÁÉÍÓÚÝĂÂÊÔƠƯĐ][A-Za-zÀ-ỹáéíóúýăâêôơưđ\-'\.\s]+?)\s+(?:city|province|state|county|prefecture|shi|ken|市|省)",
-        ]
-        for p in patterns:
-            m = re.search(p, text, flags=re.IGNORECASE)
-            if m:
-                candidate = m.group(1).strip().strip('"\'')
-                candidate_clean = re.sub(
-                    r"\b(trong|vào|lúc|ngày|tháng|năm|buổi|sáng|chiều|tối)\b",
-                    "",
-                    candidate,
-                    flags=re.IGNORECASE,
-                ).strip()
-                if valid_candidate(candidate_clean) and len(candidate_clean.split()) >= 2:
-                    location_name = candidate_clean
-                    break
+    ]
+    for p in patterns:
+        m = re.search(p, text, flags=re.IGNORECASE)
+        if m:
+            candidate = m.group(1).strip().strip('"\'')
+            candidate_clean = re.sub(
+                r"\b(trong|vào|lúc|ngày|tháng|năm|buổi|sáng|chiều|tối)\b",
+                "",
+                candidate,
+                flags=re.IGNORECASE,
+            ).strip()
+            if valid_candidate(candidate_clean) and len(candidate_clean.split()) >= 2:
+                location_name = candidate_clean
+                break
 
     # Pattern 2: Find multi-word capitalized phrases (prioritize long phrases, Unicode support)
     if not location_name:
@@ -346,7 +346,7 @@ def get_openweather_data(city_name: str, days_ahead: int = 0, part_of_day: Optio
                 print(f"ERROR: OpenWeather geocoding API returned status code {geocode_response.status_code}")
                 print(f"Response: {geocode_response.text[:200]}")
                 return None
-            
+
             geocode_response.raise_for_status()
             geocode_data = geocode_response.json()
             
@@ -511,11 +511,11 @@ def get_openweather_data(city_name: str, days_ahead: int = 0, part_of_day: Optio
                         print("ERROR: OpenWeather forecast API returned invalid data (missing 'list' field)")
                         return None
 
-                # Find forecast for specific date
-                # Ensure days_ahead is not None
-                if days_ahead is None:
-                    days_ahead = 0
-                    print(f"OpenWeather: WARNING - days_ahead is None in forecast, using 0")
+                    # Find forecast for specific date
+                    # Ensure days_ahead is not None
+                    if days_ahead is None:
+                        days_ahead = 0
+                        print(f"OpenWeather: WARNING - days_ahead is None in forecast, using 0")
                 
                 target_date = (datetime.now() + timedelta(days=days_ahead)).date()
                 target_forecasts = []

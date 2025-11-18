@@ -43,9 +43,17 @@ async def call_gemini_model(
 
     genai.configure(api_key=GEMINI_API_KEY)
     model_kwargs = {}
+    # Chỉ enable browse cho các model hỗ trợ (không phải tất cả Gemini models đều hỗ trợ)
+    # googleSearchRetrieval chỉ hoạt động với một số model cụ thể
     if enable_browse:
-        model_kwargs["tools"] = [{"googleSearchRetrieval": {}}]
-        print(f"Gemini Client: enabling built-in browse for model '{model_name}'.")
+        # Chỉ enable cho các model được biết là hỗ trợ
+        browse_supported_models = ["gemini-1.5-pro", "gemini-pro"]
+        model_name_clean = model_name.replace("models/", "").lower()
+        if any(supported in model_name_clean for supported in browse_supported_models):
+            model_kwargs["tools"] = [{"googleSearchRetrieval": {}}]
+            print(f"Gemini Client: enabling built-in browse for model '{model_name}'.")
+        else:
+            print(f"Gemini Client: browse not supported for '{model_name}', skipping.")
     model = genai.GenerativeModel(model_name, **model_kwargs)
 
     def _generate():

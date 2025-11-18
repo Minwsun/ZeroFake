@@ -114,7 +114,7 @@ class MainWindow(QMainWindow):
             "gemini_flash",
         }
         self.default_agent1_model = "models/gemini-2.5-flash"
-        self.default_agent2_model = "models/gemini-2.5-flash"
+        self.default_agent2_model = "models/gemini-2.5-pro"
 
         # Create UI
         self.init_ui()
@@ -153,8 +153,9 @@ class MainWindow(QMainWindow):
         
         self.agent1_combo = QComboBox()
         self.agent1_combo.addItem("Gemini Flash", "models/gemini-2.5-flash")
-        self.agent1_combo.addItem("Llama 3.3 8B Instruct", "meta-llama/llama-3.3-8b-instruct")
-        self.agent1_combo.addItem("Mistral 7B Instruct", "mistralai/mistral-7b-instruct")
+        self.agent1_combo.addItem("Gemma 3 4B IT", "models/gemma-3-4b-it")
+        self.agent1_combo.addItem("Gemma 3 2B IT", "models/gemma-3-4b-it")  # Fallback to 4B
+        self.agent1_combo.addItem("Gemma 3 1B IT", "models/gemma-3-1b-it")
         self.agent1_combo.setCurrentIndex(0)
         model_layout.addWidget(self.agent1_combo)
         
@@ -163,9 +164,10 @@ class MainWindow(QMainWindow):
         
         self.agent2_combo = QComboBox()
         self.agent2_combo.addItem("Gemini Pro", "models/gemini-2.5-pro")
-        self.agent2_combo.addItem("OpenAI gpt-oss-120b", "openai/gpt-oss-120b")
-        self.agent2_combo.addItem("Llama 3.3 70B Instruct", "meta-llama/llama-3.3-70b-instruct")
-        self.agent2_combo.addItem("Qwen2.5 72B Instruct", "qwen/qwen-2.5-72b-instruct")
+        self.agent2_combo.addItem("Gemini Flash", "models/gemini-2.5-flash")
+        self.agent2_combo.addItem("Gemma 3 27B IT", "models/gemma-3-27b-it")
+        self.agent2_combo.addItem("Gemma 3 12B IT", "models/gemma-3-12b-it")
+        self.agent2_combo.addItem("Gemma 3 4B IT", "models/gemma-3-4b-it")
         self.agent2_combo.setCurrentIndex(0)
         model_layout.addWidget(self.agent2_combo)
         

@@ -872,6 +872,31 @@ def _normalize_agent1_model(model_key: str | None) -> str:
         "models/gemini_flash": "models/gemini-2.5-flash",
         "groq/compound": "groq/compound",
         "compound": "groq/compound",
+        "gemma-3-1b": "models/gemma-3-1b-it",
+        "gemma-3-1b-it": "models/gemma-3-1b-it",
+        "gemma-3-2b": "models/gemma-3-4b-it",  # 2B not available, fallback to 4B
+        "gemma-3-4b": "models/gemma-3-4b-it",
+        "gemma-3-4b-it": "models/gemma-3-4b-it",
+        "gemma-3-12b": "models/gemma-3-12b-it",
+        "gemma-3-12b-it": "models/gemma-3-12b-it",
+        "gemma-3-27b": "models/gemma-3-27b-it",
+        "gemma-3-27b-it": "models/gemma-3-27b-it",
+        "google/gemma-3-1b": "models/gemma-3-1b-it",
+        "google/gemma-3-2b": "models/gemma-3-4b-it",
+        "google/gemma-3-4b": "models/gemma-3-4b-it",
+        "google/gemma-3-12b": "models/gemma-3-12b-it",
+        "google/gemma-3-27b": "models/gemma-3-27b-it",
+        "models/gemma-3-1b": "models/gemma-3-1b-it",
+        "models/gemma-3-2b": "models/gemma-3-4b-it",
+        "models/gemma-3-4b": "models/gemma-3-4b-it",
+        "models/gemma-3-12b": "models/gemma-3-12b-it",
+        "models/gemma-3-27b": "models/gemma-3-27b-it",
+        "models/gemma-3-1b-it": "models/gemma-3-1b-it",
+        "models/gemma-3-4b-it": "models/gemma-3-4b-it",
+        "models/gemma-3-12b-it": "models/gemma-3-12b-it",
+        "models/gemma-3-27b-it": "models/gemma-3-27b-it",
+        "models/gemma-3n-e2b-it": "models/gemma-3n-e2b-it",
+        "models/gemma-3n-e4b-it": "models/gemma-3n-e4b-it",
     }
     return mapping.get(model_key, model_key)
 
@@ -881,14 +906,9 @@ def _detect_agent1_provider(model_name: str) -> str:
     if not model_name:
         return "gemini"
     lowered = model_name.lower()
-    if lowered == "groq/compound":
-        return "compound"
-    if lowered.startswith("llama-"):
-        return "groq"
-    if "gemini" in lowered:
+    if "gemini" in lowered or "gemma" in lowered:
         return "gemini"
-    if lowered.startswith("meta-llama") or "/" in lowered:
-        return "openrouter"
+    # All Agent 1 models now use Gemini API
     return "gemini"
 
 
@@ -918,105 +938,53 @@ async def create_action_plan(
         )
 
     model_name = _normalize_agent1_model(model_key)
-    provider = _detect_agent1_provider(model_name)
-    print(f"Planner: generating plan with model '{model_name}' (provider={provider})")
-
+    
+    # Fallback chain for Agent 1: gemini flash -> gemma 3-4B -> gemma 3-1B
+    # Note: gemma 3-2B is not available, so we skip it
+    fallback_chain = [
+        model_name,  # Try user's selected model first
+        "models/gemini-2.5-flash",
+        "models/gemma-3-4b-it",
+        "models/gemma-3-1b-it",
+    ]
+    # Remove duplicates while preserving order
+    seen = set()
+    fallback_chain = [x for x in fallback_chain if not (x in seen or seen.add(x))]
+    
+    if not GEMINI_API_KEY:
+        raise ModelClientError("GEMINI_API_KEY is not configured.")
+    
     text = ""
-    try:
-        if provider == "gemini":
-            if not GEMINI_API_KEY:
-                raise ModelClientError("GEMINI_API_KEY is not configured.")
+    last_error = None
+    
+    for fallback_model in fallback_chain:
+        try:
+            provider = _detect_agent1_provider(fallback_model)
+            if provider != "gemini":
+                continue  # Skip non-gemini models
+            
+            print(f"Planner: trying model '{fallback_model}' (provider={provider})")
             timeout = None if flash_mode else 30.0
-            enable_browse = "gemini" in (model_name or "").lower()
+            enable_browse = "gemini" in (fallback_model or "").lower()
             text = await call_gemini_model(
-                model_name,
+                fallback_model,
                 prompt,
                 timeout=timeout,
                 enable_browse=enable_browse,
             )
-        elif provider == "groq":
-            system_prompt = (
-                "You are ZeroFake Agent 1 (Planner). "
-                "Read the user's news claim and respond ONLY with a valid JSON plan."
-            )
-            text = await call_groq_chat_completion(
-                model_name,
-                prompt,
-                timeout=30.0,
-                temperature=0.2,
-                system_prompt=system_prompt,
-            )
-        elif provider == "openrouter":
-            system_prompt = (
-                "You are ZeroFake Agent 1 (Planner). "
-                "Read the user's news claim and respond ONLY with a valid JSON plan."
-            )
-            text = await call_openrouter_chat_completion(
-                model_name,
-                prompt,
-                timeout=45.0,
-                temperature=0.2,
-                system_prompt=system_prompt,
-            )
-        elif provider == "compound":
-            text = await call_compound_model(
-                prompt,
-                timeout=None if (flash_mode or unlimit_mode) else 60.0,
-                temperature=0.15,
-                system_prompt=(
-                    "Plan evidence gathering actions for ZeroFake. "
-                    "Always output valid JSON that matches the planner schema."
-                ),
-            )
-        else:
-            raise ModelClientError(f"Unsupported provider '{provider}' for Agent 1.")
-    except ModelClientError as exc:
-        print(f"Planner: Error using model '{model_name}': {exc}")
-        text = ""
-
-    plan_json = _parse_json_from_text(text) if text else {}
-    plan_json = _normalize_plan(plan_json, text_input, flash_mode)
-    if plan_json:
-        return plan_json
-
-    print("Planner: Falling back to heuristic plan normalization.")
-    fallback = _normalize_plan({}, text_input, flash_mode)
-    return fallback
-
-    last_err = None
-    for model_name in model_names:
-        try:
-            print(f"Planner: trying model '{model_name}'")
-            model = genai.GenerativeModel(model_name)
-            if flash_mode:
-                # Flash mode: không timeout
-                response = await asyncio.to_thread(model.generate_content, prompt)
-            else:
-                # Normal mode: có timeout 30s
-                response = await asyncio.wait_for(
-                    asyncio.to_thread(model.generate_content, prompt),
-                    timeout=30.0
-                )
-            text = getattr(response, 'text', None)
-            if text is None and hasattr(response, 'candidates') and response.candidates:
-                parts = getattr(response.candidates[0], 'content', None)
-                text = str(parts)
-            if not text:
-                raise RuntimeError("LLM trả về rỗng")
-            plan_json = _parse_json_from_text(text)
+            
+            # If we got text, try to parse it
+            plan_json = _parse_json_from_text(text) if text else {}
             plan_json = _normalize_plan(plan_json, text_input, flash_mode)
             if plan_json:
+                print(f"Planner: Successfully generated plan with model '{fallback_model}'")
                 return plan_json
-        except asyncio.TimeoutError:
-            print(f"Planner: Timeout calling model '{model_name}'")
-            last_err = "Timeout"
+        except Exception as exc:
+            last_error = exc
+            print(f"Planner: Error using model '{fallback_model}': {exc}")
             continue
-        except Exception as e:
-            last_err = e
-            print(f"Planner: Error with model '{model_name}': {e}")
-            continue
-
-    print(f"Error calling Agent 1 (Planner): {last_err}")
-    # Trả về kế hoạch dự phòng: tạo search + weather queries nếu có thể
+    
+    # If all models failed, use heuristic fallback
+    print("Planner: All models failed, falling back to heuristic plan normalization.")
     fallback = _normalize_plan({}, text_input, flash_mode)
     return fallback

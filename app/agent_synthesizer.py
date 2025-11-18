@@ -407,6 +407,31 @@ def _normalize_agent2_model(model_key: str | None) -> str:
         "openai/gpt-oss-120b": "openai/gpt-oss-120b",
         "meta-llama/llama-3.3-70b-instruct": "meta-llama/llama-3.3-70b-instruct",
         "qwen/qwen-2.5-72b-instruct": "qwen/qwen-2.5-72b-instruct",
+        "gemma-3-1b": "models/gemma-3-1b-it",
+        "gemma-3-1b-it": "models/gemma-3-1b-it",
+        "gemma-3-2b": "models/gemma-3-4b-it",  # 2B not available, fallback to 4B
+        "gemma-3-4b": "models/gemma-3-4b-it",
+        "gemma-3-4b-it": "models/gemma-3-4b-it",
+        "gemma-3-12b": "models/gemma-3-12b-it",
+        "gemma-3-12b-it": "models/gemma-3-12b-it",
+        "gemma-3-27b": "models/gemma-3-27b-it",
+        "gemma-3-27b-it": "models/gemma-3-27b-it",
+        "google/gemma-3-1b": "models/gemma-3-1b-it",
+        "google/gemma-3-2b": "models/gemma-3-4b-it",
+        "google/gemma-3-4b": "models/gemma-3-4b-it",
+        "google/gemma-3-12b": "models/gemma-3-12b-it",
+        "google/gemma-3-27b": "models/gemma-3-27b-it",
+        "models/gemma-3-1b": "models/gemma-3-1b-it",
+        "models/gemma-3-2b": "models/gemma-3-4b-it",
+        "models/gemma-3-4b": "models/gemma-3-4b-it",
+        "models/gemma-3-12b": "models/gemma-3-12b-it",
+        "models/gemma-3-27b": "models/gemma-3-27b-it",
+        "models/gemma-3-1b-it": "models/gemma-3-1b-it",
+        "models/gemma-3-4b-it": "models/gemma-3-4b-it",
+        "models/gemma-3-12b-it": "models/gemma-3-12b-it",
+        "models/gemma-3-27b-it": "models/gemma-3-27b-it",
+        "models/gemma-3n-e2b-it": "models/gemma-3n-e2b-it",
+        "models/gemma-3n-e4b-it": "models/gemma-3n-e4b-it",
     }
     return mapping.get(model_key, model_key)
 
@@ -416,10 +441,10 @@ def _detect_agent2_provider(model_name: str) -> str:
     if not model_name:
         return "gemini"
     lowered = model_name.lower()
-    if "gemini" in lowered or model_name.startswith("models/"):
+    if "gemini" in lowered or "gemma" in lowered or model_name.startswith("models/"):
         return "gemini"
-    # All other models (including openai/, meta-llama/, qwen/, etc.) go through OpenRouter
-    return "openrouter"
+    # All Agent 2 models now use Gemini API
+    return "gemini"
 
 
 async def execute_final_analysis(
@@ -446,65 +471,51 @@ async def execute_final_analysis(
     prompt = prompt.replace("{current_date}", current_date)
 
     model_name = _normalize_agent2_model(model_key)
-    provider = _detect_agent2_provider(model_name)
-    print(f"Synthesizer: generating verdict with model '{model_name}' (provider={provider})")
-
+    
+    # Fallback chain for Agent 2: gemini pro -> flash -> gemma 3-27B -> gemma 3-12B -> gemma 3-4B
+    fallback_chain = [
+        model_name,  # Try user's selected model first
+        "models/gemini-2.5-pro",
+        "models/gemini-2.5-flash",
+        "models/gemma-3-27b-it",
+        "models/gemma-3-12b-it",
+        "models/gemma-3-4b-it",
+    ]
+    # Remove duplicates while preserving order
+    seen = set()
+    fallback_chain = [x for x in fallback_chain if not (x in seen or seen.add(x))]
+    
+    if not GEMINI_API_KEY:
+        raise ModelClientError("GEMINI_API_KEY is not configured.")
+    
     text_response = ""
-    try:
-        if provider == "gemini":
-            if not GEMINI_API_KEY:
-                raise ModelClientError("GEMINI_API_KEY is not configured.")
+    last_error = None
+    
+    for fallback_model in fallback_chain:
+        try:
+            provider = _detect_agent2_provider(fallback_model)
+            if provider != "gemini":
+                continue  # Skip non-gemini models
+            
+            print(f"Synthesizer: trying model '{fallback_model}' (provider={provider})")
             timeout = None if flash_mode else 45.0
             text_response = await call_gemini_model(
-                model_name,
+                fallback_model,
                 prompt,
                 timeout=timeout,
                 safety_settings=SAFETY_SETTINGS,
             )
-        elif provider == "openrouter":
-            system_prompt = (
-                "You are ZeroFake Agent 2 (Synthesizer). "
-                "Read the evidence bundle and user's news claim. "
-                "Respond ONLY with a valid JSON object that matches the required schema."
-            )
-            text_response = await call_openrouter_chat_completion(
-                model_name,
-                prompt,
-                timeout=60.0,
-                temperature=0.1,
-                system_prompt=system_prompt,
-            )
-        else:
-            raise ModelClientError(f"Unsupported provider '{provider}' for Agent 2.")
-    except RateLimitError as exc:
-        print(f"Synthesizer: Rate limit when using model '{model_name}': {exc}")
-        if provider == "openrouter":
-            fallback_model = "anthropic/claude-3.5-haiku"
-            if model_name != fallback_model:
-                print(f"Synthesizer: Retrying with fallback OpenRouter model '{fallback_model}'")
-                try:
-                    text_response = await call_openrouter_chat_completion(
-                        fallback_model,
-                        prompt,
-                        timeout=60.0,
-                        temperature=0.1,
-                        system_prompt=(
-                            "You are ZeroFake Agent 2 (Synthesizer). "
-                            "Read the evidence bundle and user's news claim. "
-                            "Respond ONLY with a valid JSON object that matches the required schema."
-                        ),
-                    )
-                    model_name = fallback_model
-                except ModelClientError as fallback_exc:
-                    print(f"Synthesizer: Fallback OpenRouter model '{fallback_model}' failed: {fallback_exc}")
-                    text_response = ""
-            else:
-                text_response = ""
-        else:
+            
+            # If we got text, try to parse it
+            result_json = _parse_json_from_text(text_response or "")
+            if result_json:
+                print(f"Synthesizer: Successfully generated verdict with model '{fallback_model}'")
+                break  # Success, exit loop
+        except Exception as exc:
+            last_error = exc
+            print(f"Synthesizer: Error using model '{fallback_model}': {exc}")
             text_response = ""
-    except ModelClientError as exc:
-        print(f"Synthesizer: Error using model '{model_name}': {exc}")
-        text_response = ""
+            continue
 
     result_json = _parse_json_from_text(text_response or "")
     if result_json:
