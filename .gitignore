@@ -6,6 +6,10 @@ data/
 *.faiss
 *.db
 
+# Node.js (root level - frontend has its own)
+node_modules/
+package-lock.json
+
 # Python
 __pycache__/
 *.py[cod]
