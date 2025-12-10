@@ -979,22 +979,34 @@ body {
 /* Responsive cho màn hình nhỏ (mobile) */
 @media (max-width: 768px) {
   .header {
-    flex-direction: column;
-    align-items: flex-start;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    position: relative;
     gap: 16px;
   }
 
   .header-left {
-    width: 100%;
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    text-align: center;
+    width: auto;
+  }
+
+  .header-left .subtitle {
+    display: none;
   }
 
   .header h1 {
     font-size: 2rem;
+    margin-bottom: 0;
   }
 
   .history-button {
-    width: 100%;
-    justify-content: center;
+    width: auto;
+    margin-left: auto;
+    flex-shrink: 0;
   }
 
   .model-selection {
