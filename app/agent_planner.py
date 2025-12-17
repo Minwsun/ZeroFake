@@ -874,7 +874,7 @@ def _normalize_agent1_model(model_key: str | None) -> str:
         "compound": "groq/compound",
         "gemma-3-1b": "models/gemma-3-1b-it",
         "gemma-3-1b-it": "models/gemma-3-1b-it",
-        "gemma-3-2b": "models/gemma-3-4b-it",  # 2B not available, fallback to 4B
+        "gemma-3-2b": "models/gemma-2-2b-it",  # 2B not available in Gemma 3, fallback to Gemma 2 2B
         "gemma-3-4b": "models/gemma-3-4b-it",
         "gemma-3-4b-it": "models/gemma-3-4b-it",
         "gemma-3-12b": "models/gemma-3-12b-it",
@@ -939,12 +939,11 @@ async def create_action_plan(
 
     model_name = _normalize_agent1_model(model_key)
     
-    # Fallback chain for Agent 1: gemini flash -> gemma 3-4B -> gemma 3-1B
-    # Note: gemma 3-2B is not available, so we skip it
+    # Fallback chain for Agent 1: user_model -> gemma 4b -> gemma 2b -> gemma 1b
     fallback_chain = [
         model_name,  # Try user's selected model first
-        "models/gemini-2.5-flash",
         "models/gemma-3-4b-it",
+        "models/gemma-2-2b-it",
         "models/gemma-3-1b-it",
     ]
     # Remove duplicates while preserving order

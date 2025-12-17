@@ -202,6 +202,7 @@ def _heuristic_summarize(text_input: str, bundle: Dict[str, Any], current_date: 
                                 "style_analysis": "",
                                 "key_evidence_snippet": _as_str(weather_item.get("snippet")),
                                 "key_evidence_source": _as_str(weather_item.get("source")),
+                                "evidence_link": _as_str(weather_item.get("url") or weather_item.get("link")),
                                 "cached": False
                             }
                     else:
@@ -212,6 +213,7 @@ def _heuristic_summarize(text_input: str, bundle: Dict[str, Any], current_date: 
                             "style_analysis": "",
                             "key_evidence_snippet": _as_str(weather_item.get("snippet")),
                             "key_evidence_source": _as_str(weather_item.get("source")),
+                            "evidence_link": _as_str(weather_item.get("url") or weather_item.get("link")),
                             "cached": False
                         }
             # Kiểm tra nắng
@@ -223,6 +225,7 @@ def _heuristic_summarize(text_input: str, bundle: Dict[str, Any], current_date: 
                         "style_analysis": "",
                         "key_evidence_snippet": _as_str(weather_item.get("snippet")),
                         "key_evidence_source": _as_str(weather_item.get("source")),
+                        "evidence_link": _as_str(weather_item.get("url") or weather_item.get("link")),
                         "cached": False
                     }
             # Nếu không khớp điều kiện cụ thể, vẫn trả về dữ liệu từ OpenWeather
@@ -232,6 +235,7 @@ def _heuristic_summarize(text_input: str, bundle: Dict[str, Any], current_date: 
                 "style_analysis": "",
                 "key_evidence_snippet": _as_str(weather_item.get("snippet")),
                 "key_evidence_source": _as_str(weather_item.get("source")),
+                "evidence_link": _as_str(weather_item.get("url") or weather_item.get("link")),
                 "cached": False
             }
 
@@ -244,6 +248,7 @@ def _heuristic_summarize(text_input: str, bundle: Dict[str, Any], current_date: 
             "style_analysis": "",
             "key_evidence_snippet": _as_str(top.get("snippet")),
             "key_evidence_source": _as_str(top.get("source")),
+            "evidence_link": _as_str(top.get("url") or top.get("link")),
             "cached": False
         }
 
@@ -257,6 +262,7 @@ def _heuristic_summarize(text_input: str, bundle: Dict[str, Any], current_date: 
                 "style_analysis": "",
                 "key_evidence_snippet": _as_str(top.get("snippet")),
                 "key_evidence_source": _as_str(top.get("source")),
+                "evidence_link": _as_str(top.get("url") or top.get("link")),
                 "cached": False
             }
 
@@ -271,6 +277,7 @@ def _heuristic_summarize(text_input: str, bundle: Dict[str, Any], current_date: 
                 "style_analysis": "",
                 "key_evidence_snippet": _as_str(top.get("snippet")),
                 "key_evidence_source": _as_str(top.get("source")),
+                "evidence_link": _as_str(top.get("url") or top.get("link")),
                 "cached": False
             }
 
@@ -315,6 +322,7 @@ def _heuristic_summarize(text_input: str, bundle: Dict[str, Any], current_date: 
                 "style_analysis": "",
                 "key_evidence_snippet": latest_snippet,
                 "key_evidence_source": _as_str(old_source),
+                "evidence_link": _as_str(reference_old.get("url") or reference_old.get("link")),
                 "cached": False
             }
 
@@ -332,6 +340,7 @@ def _heuristic_summarize(text_input: str, bundle: Dict[str, Any], current_date: 
                 "style_analysis": "",
                 "key_evidence_snippet": _as_str(latest_item.get("snippet")),
                 "key_evidence_source": _as_str(latest_source),
+                "evidence_link": _as_str(latest_item.get("url") or latest_item.get("link")),
                 "cached": False
             }
 
@@ -356,6 +365,7 @@ def _heuristic_summarize(text_input: str, bundle: Dict[str, Any], current_date: 
                 "style_analysis": "",
                 "key_evidence_snippet": _as_str(old_item.get("snippet")),
                 "key_evidence_source": _as_str(older_source),
+                "evidence_link": _as_str(old_item.get("url") or old_item.get("link")),
                 "cached": False
             }
 
@@ -377,6 +387,7 @@ def _heuristic_summarize(text_input: str, bundle: Dict[str, Any], current_date: 
                     "style_analysis": "",
                     "key_evidence_snippet": _as_str(item.get("snippet")),
                     "key_evidence_source": _as_str(source),
+                    "evidence_link": _as_str(item.get("url") or item.get("link")),
                     "cached": False
                 }
 
@@ -387,6 +398,7 @@ def _heuristic_summarize(text_input: str, bundle: Dict[str, Any], current_date: 
         "style_analysis": "",
         "key_evidence_snippet": "",
         "key_evidence_source": "",
+        "evidence_link": "",
         "cached": False
     }
 
@@ -472,14 +484,12 @@ async def execute_final_analysis(
 
     model_name = _normalize_agent2_model(model_key)
     
-    # Fallback chain for Agent 2: gemini pro -> flash -> gemma 3-27B -> gemma 3-12B -> gemma 3-4B
+    # Fallback chain for Agent 2: user_model -> gemini flash -> gemma 27B -> gemma 12B
     fallback_chain = [
         model_name,  # Try user's selected model first
-        "models/gemini-2.5-pro",
         "models/gemini-2.5-flash",
         "models/gemma-3-27b-it",
         "models/gemma-3-12b-it",
-        "models/gemma-3-4b-it",
     ]
     # Remove duplicates while preserving order
     seen = set()
@@ -625,7 +635,16 @@ async def execute_final_analysis(
                         # Remove additional_search_queries from final result (internal use only)
                         updated_result.pop("additional_search_queries", None)
                         updated_result["cached"] = False
-                        print(f"Synthesizer: Re-analysis complete with additional evidence")
+
+                        # (NEW) Extract evidence_link from the best evidence item
+                        top_link = ""
+                        if evidence_bundle.get("layer_2_high_trust"):
+                            top_link = evidence_bundle["layer_2_high_trust"][0].get("url") or ""
+                        elif evidence_bundle.get("layer_3_general"):
+                            top_link = evidence_bundle["layer_3_general"][0].get("url") or ""
+                        updated_result["evidence_link"] = top_link
+
+                        print(f"Synthesizer: Re-analysis complete with additional evidence (link: {top_link})")
                         return updated_result
                 except Exception as e:
                     print(f"Synthesizer: Error during re-analysis: {e}")
@@ -634,6 +653,15 @@ async def execute_final_analysis(
         # Remove additional_search_queries from final result (internal use only)
         result_json.pop("additional_search_queries", None)
         result_json["cached"] = False
+
+        # (NEW) Extract evidence_link from the best evidence item
+        top_link = ""
+        if evidence_bundle.get("layer_2_high_trust"):
+            top_link = evidence_bundle["layer_2_high_trust"][0].get("url") or ""
+        elif evidence_bundle.get("layer_3_general"):
+            top_link = evidence_bundle["layer_3_general"][0].get("url") or ""
+        result_json["evidence_link"] = top_link
+
         return result_json
 
     print("Lỗi khi gọi Agent 2 (Synthesizer): Model response invalid or empty.")

@@ -59,7 +59,7 @@ def _sanitize_check_response(obj: dict) -> dict:
     """Ensure CheckResponse fields are strings, avoid None causing Pydantic errors."""
     if obj is None:
         obj = {}
-    for k in ["conclusion", "reason", "style_analysis", "key_evidence_snippet", "key_evidence_source"]:
+    for k in ["conclusion", "reason", "style_analysis", "key_evidence_snippet", "key_evidence_source", "evidence_link"]:
         v = obj.get(k)
         if v is None:
             obj[k] = ""
@@ -257,6 +257,7 @@ class CheckResponse(BaseModel):
     style_analysis: str
     key_evidence_snippet: str
     key_evidence_source: str
+    evidence_link: str = ""
     cached: bool = False
 
 

@@ -401,7 +401,7 @@ Chỉ trả về JSON với schema:
 
   "key_evidence_snippet": "Snippet quan trọng nhất (ưu tiên LỚP 2; nếu không có thì LỚP 3; cuối cùng mới đến LỚP 4)",
 
-  "key_evidence_source": "Nguồn bằng chứng (ví dụ: 'Lớp 2: vnexpress.net')",
+  "key_evidence_source": "Nguồn bằng chứng (ví dụ: 'Lớp 2: https://vnexpress.net/le-ra-mat-iphone-17-4936942-tong-thuat.html')",
 
   "additional_search_queries": ["query1", "query2", ...] hoặc [] nếu không cần
 
