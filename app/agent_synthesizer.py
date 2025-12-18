@@ -9,12 +9,11 @@ from typing import Dict, Any, List
 from app.weather import classify_claim
 from app.model_clients import (
     call_gemini_model,
-    call_openrouter_chat_completion,
     call_agent_with_capability_fallback,
     ModelClientError,
     RateLimitError,
 )
-
+from app.tool_executor import execute_tool_plan  # Import for Re-Search
 
 load_dotenv()
 
@@ -52,28 +51,42 @@ WEATHER_SOURCE_KEYWORDS = [
 def normalize_conclusion(conclusion: str) -> str:
     """
     Normalize conclusion to BINARY classification: TIN THẬT or TIN GIẢ only.
-    No "GÂY HIỂU LẦM" - misleading info is treated as TIN GIẢ.
+    
+    🟢 NGUYÊN TẮC MỚI: PRESUMPTION OF TRUTH
+    - Mặc định là TIN THẬT nếu không có dấu hiệu TIN GIẢ rõ ràng
+    - Chỉ trả về TIN GIẢ khi có keywords chỉ định rõ ràng
     """
     if not conclusion:
-        return "TIN GIẢ"
+        return "TIN THẬT"  # ĐỔI: Mặc định TIN THẬT nếu không có kết luận
     
     conclusion_upper = conclusion.upper().strip()
     
-    # TIN THẬT (with and without diacritics)
-    # Only return TIN THẬT if explicitly confirmed as true/verified
-    if any(x in conclusion_upper for x in [
-        "TIN THẬT", "TIN THAT", 
-        "TRUE", "REAL", "VERIFIED", 
-        "CHINH XAC", "CHÍNH XÁC",
-        "CÓ CƠ SỞ", "CO CO SO",
-        "XÁC NHẬN", "XAC NHAN",
-        "ĐÃ XÁC MINH", "DA XAC MINH"
-    ]):
-        return "TIN THẬT"
+    # 🔴 CHỈ TIN GIẢ KHI CÓ DẤU HIỆU RÕ RÀNG
+    fake_indicators = [
+        # Vietnamese fake indicators
+        "TIN GIẢ", "TIN GIA", "GIẢ MẠO", "FAKE", "FALSE",
+        "BỊA ĐẶT", "BIA DAT", "LỪA ĐẢO", "LUA DAO", "SCAM",
+        "ZOMBIE", "OUTDATED", "LỖI THỜI", "LOI THOI",
+        "KHÔNG ĐÚNG", "KHONG DUNG", "SAI SỰ THẬT", "SAI SU THAT",
+        "KHÔNG CÓ CƠ SỞ", "KHONG CO CO SO", "VÔ CĂN CỨ", "VO CAN CU",
+        "ALMOST CERTAINLY FALSE", "HIGHLY UNLIKELY",
+        "BÁC BỎ", "BAC BO", "KHÔNG XÁC NHẬN", "KHONG XAC NHAN",
+        # Y tế sai
+        "Y TẾ SAI", "Y TE SAI", "MISLEADING",
+        # Số liệu phi thực tế
+        "PHI THỰC TẾ", "PHI THUC TE", "UNREALISTIC",
+        # GÂY HIỂU LẦM - vẫn coi là TIN GIẢ
+        "GÂY HIỂU LẦM", "GAY HIEU LAM",
+    ]
     
-    # Everything else -> TIN GIẢ 
-    # Including: GÂY HIỂU LẦM, CHƯA KIỂM CHỨNG, TIN ĐỒN, FALSE, FAKE, OUTDATED, etc.
-    return "TIN GIẢ"
+    # Nếu có bất kỳ indicator TIN GIẢ nào -> TIN GIẢ
+    for indicator in fake_indicators:
+        if indicator in conclusion_upper:
+            return "TIN GIẢ"
+    
+    # 🟢 TẤT CẢ CÁC TRƯỜNG HỢP KHÁC -> TIN THẬT
+    # Bao gồm: TIN THẬT, CHƯA KIỂM CHỨNG, TRUE, PROBABLE, LIKELY, etc.
+    return "TIN THẬT"
 
 
 # Product version database for outdated information detection
@@ -214,7 +227,6 @@ def load_critic_prompt(prompt_path="prompts/critic_prompt.txt"):
         print(f"LỖI: không thể tải {prompt_path}: {e}")
 
 
-
 def _parse_json_from_text(text: str) -> dict:
     """Trích xuất JSON an toàn từ text trả về của LLM"""
     if not text:
@@ -242,17 +254,16 @@ def _parse_json_from_text(text: str) -> dict:
         return {}
 
 
-
-def _trim_snippet(s: str, max_len: int = 280) -> str:
+def _trim_snippet(s: str, max_len: int = 500) -> str:
+    """Tăng max_len từ 280 lên 500 để giữ nhiều context hơn cho models."""
     if not s:
         return ""
     s = s.replace("\n", " ").strip()
     return s[:max_len]
 
 
-
-def _trim_evidence_bundle(bundle: Dict[str, Any], cap_l2: int = 5, cap_l3: int = 5, cap_l4: int = 2) -> Dict[str, Any]:
-    """Cắt gọn gói bằng chứng để giảm kích thước prompt gửi sang LLM"""
+def _trim_evidence_bundle(bundle: Dict[str, Any], cap_l2: int = 10, cap_l3: int = 10, cap_l4: int = 5) -> Dict[str, Any]:
+    """Tăng cap từ 5/5/2 lên 10/10/5 để gửi nhiều evidence hơn cho CRITIC và JUDGE."""
     if not bundle:
         return {"layer_1_tools": [], "layer_2_high_trust": [], "layer_3_general": [], "layer_4_social_low": []}
     out = {
@@ -303,13 +314,11 @@ def _trim_evidence_bundle(bundle: Dict[str, Any], cap_l2: int = 5, cap_l3: int =
     return out
 
 
-
 def _as_str(x: Any) -> str:
     try:
         return x if isinstance(x, str) else ("" if x is None else str(x))
     except Exception:
         return ""
-
 
 
 def _heuristic_summarize(text_input: str, bundle: Dict[str, Any], current_date: str) -> Dict[str, Any]:
@@ -513,8 +522,8 @@ def _heuristic_summarize(text_input: str, bundle: Dict[str, Any], current_date: 
             if is_relevant:
                 relevant_l2.append(item)
     
-    # Yêu cầu chặt chẽ: cần >=2 nguồn Lớp 2 LIÊN QUAN THỰC SỰ để kết luận TIN THẬT
-    if len(relevant_l2) >= 2:
+    # Giảm yêu cầu từ 2 xuống 1: Chỉ cần 1 nguồn uy tín LIÊN QUAN THỰC SỰ để hỗ trợ TIN THẬT
+    if len(relevant_l2) >= 1:
         top = relevant_l2[0]
         return {
             "conclusion": "TIN THẬT",
@@ -703,17 +712,23 @@ def _heuristic_summarize(text_input: str, bundle: Dict[str, Any], current_date: 
                     "cached": False
                 }
 
-    # Không đủ điều kiện → TIN GIẢ (không có bằng chứng xác nhận)
+    # FIX: Mặc định TIN THẬT khi không có bằng chứng BÁC BỎ (innocent until proven guilty)
+    # Trước đây mặc định TIN GIẢ gây false positive cao
     return {
-        "conclusion": "TIN GIẢ",
-        "reason": _as_str("Heuristic fallback: Không tìm thấy đủ nguồn LỚP 2 hoặc LỚP 3 (Search-Only) để xác nhận thông tin."),
+        "conclusion": "TIN THẬT",
+        "confidence_score": 60,
+        "reason": _as_str("Không tìm thấy bằng chứng BÁC BỎ thông tin này. Dựa trên nguyên tắc 'innocent until proven guilty'."),
+        "debate_log": {
+            "red_team_argument": "Không tìm thấy bằng chứng phản bác rõ ràng.",
+            "blue_team_argument": "Không có nguồn nào bác bỏ thông tin này.",
+            "judge_reasoning": "Khi không có bằng chứng bác bỏ, tin được coi là có thể đúng."
+        },
         "style_analysis": "",
         "key_evidence_snippet": "",
         "key_evidence_source": "",
         "evidence_link": "",
         "cached": False
     }
-
 
 
 def _normalize_agent2_model(model_key: str | None) -> str:
@@ -770,394 +785,460 @@ def _detect_agent2_provider(model_name: str) -> str:
     # All Agent 2 models now use Gemini API
     return "gemini"
 
-
 async def execute_final_analysis(
     text_input: str,
     evidence_bundle: dict,
     current_date: str,
     model_key: str | None = None,
     flash_mode: bool = False,
+    site_query_string: str = "",  # Added for re-search
 ) -> dict:
     """
     Pipeline: Input → Planner → Search → CRITIC → JUDGE → (RE-SEARCH nếu cần)
     
     1. CRITIC (Biện lý) - Phản biện mạnh, tìm điểm yếu trong bằng chứng
     2. JUDGE (Thẩm phán) - Ra phán quyết dựa trên bằng chứng VÀ ý kiến CRITIC
-    3. RE-SEARCH - Chỉ khi JUDGE yêu cầu thêm bằng chứng (không double-check)
-    
-    Fallback chain: GPT-OSS-120B → Gemma-27B → Llama-3.3-70B
+    3. RE-SEARCH - Chỉ khi JUDGE yêu cầu thêm bằng chứng (Self-Correction)
     """
     if not SYNTHESIS_PROMPT:
         raise ValueError("Synthesis prompt (prompt 2) chưa được tải.")
+    if not CRITIC_PROMPT:
+        print("WARNING: Critic prompt chưa được tải, dùng mặc định.")
 
-    # Trim evidence before sending
+    # Trim evidence before sending to models
     trimmed_bundle = _trim_evidence_bundle(evidence_bundle)
     evidence_bundle_json = json.dumps(trimmed_bundle, indent=2, ensure_ascii=False)
 
-    # ========== BƯỚC 1: CRITIC (BIỆN LÝ ĐỐI LẬP) ==========
-    critic_feedback = ""
+    # =========================================================================
+    # PHASE 1: CRITIC AGENT (BIỆN LÝ ĐỐI LẬP)
+    # =========================================================================
+    critic_report = "Không có phản biện."
     try:
-        # Sử dụng CRITIC_PROMPT từ file 
-        if CRITIC_PROMPT:
-            critic_prompt = CRITIC_PROMPT
-            critic_prompt = critic_prompt.replace("{text_input}", text_input)
-            critic_prompt = critic_prompt.replace("{current_date}", current_date)
-            critic_prompt = critic_prompt.replace("{evidence_bundle_json}", evidence_bundle_json[:4000])
-        else:
-            # Fallback prompt mạnh mẽ
-            critic_prompt = (
-                f"[VAI TRÒ]: Bạn là BIỆN LÝ ĐỐI LẬP (Devil's Advocate).\n"
-                f"[NHIỆM VỤ]: TÌM MỌI LỖI, PHẢN BIỆN MẠNH MẼ, CHỈ RA ĐIỂM YẾU.\n\n"
-                f"TIN CẦN KIỂM TRA: {text_input}\n"
-                f"NGÀY HIỆN TẠI: {current_date}\n"
-                f"BẰNG CHỨNG: {evidence_bundle_json[:3000]}...\n\n"
-                f"GÓC TẤN CÔNG:\n"
-                f"1. Nguồn có uy tín không? (Tier 0/1/2)\n"
-                f"2. Thời gian có khớp không? Tin cũ được đào lại?\n"
-                f"3. Sản phẩm/thông tin đã lỗi thời?\n"
-                f"4. Ngữ cảnh bị cắt xén?\n"
-                f"5. Có phải satire/châm biếm?\n"
-                f"6. Có xác nhận chính thức hay chỉ là tin đồn?\n\n"
-                f"CHỈ RA 3 ĐIỂM YẾU LỚN NHẤT VÀ KẾT LUẬN SƠ BỘ!"
-            )
+        print(f"\n[CRITIC] Bắt đầu phản biện (Model: {model_key})...")
+        critic_prompt_filled = CRITIC_PROMPT.replace("{text_input}", text_input)
+        critic_prompt_filled = critic_prompt_filled.replace("{evidence_bundle_json}", evidence_bundle_json)
+        critic_prompt_filled = critic_prompt_filled.replace("{current_date}", current_date)
         
-        print("\n[CRITIC] Dang phan bien bang chung...")
-        critic_feedback = await call_agent_with_capability_fallback(
+        critic_report = await call_agent_with_capability_fallback(
             role="CRITIC",
-            prompt=critic_prompt,
-            temperature=0.3,
-            timeout=60.0,
+            prompt=critic_prompt_filled,
+            temperature=0.7, # Cần creativity để tìm lỗi
+            timeout=60.0
         )
-        if critic_feedback:
-            print(f"[CRITIC] Ý kiến: {critic_feedback[:200]}...")
+        print(f"[CRITIC] Report:\n{critic_report[:200]}...")
+        
     except Exception as e:
-        print(f"[CRITIC] WARNING: Bo qua phan bien do loi: {e}")
+        print(f"[CRITIC] Gặp lỗi: {e}")
+        critic_report = "Lỗi khi chạy Critic Agent."
 
-    # ========== BƯỚC 2: JUDGE (THẨM PHÁN) ==========
-    # Build prompt với ý kiến CRITIC
-    base_prompt = SYNTHESIS_PROMPT
-    base_prompt = base_prompt.replace("{evidence_bundle_json}", evidence_bundle_json)
-    base_prompt = base_prompt.replace("{text_input}", text_input)
-    base_prompt = base_prompt.replace("{current_date}", current_date)
-    
-    # Thêm ý kiến CRITIC vào prompt cho JUDGE
-    if critic_feedback:
-        base_prompt += (
-            f"\n\n══════════════════════════════════════════════════════════════\n"
-            f"[Ý KIẾN TỪ BIỆN LÝ ĐỐI LẬP - BẮT BUỘC THAM KHẢO]:\n"
-            f"{critic_feedback[:1500]}\n"
-            f"══════════════════════════════════════════════════════════════\n"
-            f"Hay can nhac KY cac diem yeu tren truoc khi ket luan.\n"
-            f"Nếu CRITIC đúng, hãy điều chỉnh kết luận tương ứng."
-        )
-
-    text_response = ""
+    # =========================================================================
+    # PHASE 2: JUDGE AGENT (THẨM PHÁN) - Round 1
+    # =========================================================================
+    judge_result = {}
     try:
-        print("\n[JUDGE] Dang ra phan quyet cuoi cung...")
-        text_response = await call_agent_with_capability_fallback(
+        print(f"\n[JUDGE] Bắt đầu phán quyết Round 1...")
+        judge_prompt_filled = SYNTHESIS_PROMPT.replace("{text_input}", text_input)
+        judge_prompt_filled = judge_prompt_filled.replace("{evidence_bundle_json}", evidence_bundle_json) # Dùng lại json cũ
+        judge_prompt_filled = judge_prompt_filled.replace("{current_date}", current_date)
+        judge_prompt_filled += f"\n\n[Ý KIẾN BIỆN LÝ (CRITIC)]:\n{critic_report}"
+        
+        judge_text = await call_agent_with_capability_fallback(
             role="JUDGE",
-            prompt=base_prompt,
-            temperature=0.2,
-            timeout=90.0,
+            prompt=judge_prompt_filled,
+            temperature=0.1, # Cần strict logic
+            timeout=80.0
         )
-    except Exception as e:
-        print(f"[JUDGE] Lỗi: {e}")
-    
-    result_json = _parse_json_from_text(text_response or "")
-    
-    # ========== RE-SEARCH (CHỈ KHI JUDGE YÊU CẦU THÊM BẰNG CHỨNG) ==========
-    # Kích hoạt khi: needs_more_evidence=true HOẶC confidence < 70
-    needs_research = False
-    confidence = 0
-    
-    if result_json:
-        try:
-            confidence = int(str(result_json.get("confidence_score", 0)).strip('% '))
-        except:
-            confidence = 0
         
-        if result_json.get("needs_more_evidence"):
-            needs_research = True
-            print(f"\n[JUDGE] Yêu cầu tìm thêm bằng chứng...")
-        elif confidence < 70 and confidence > 0:
-            needs_research = True
-            print(f"\n[JUDGE] Độ tin cậy thấp ({confidence}%), tìm thêm bằng chứng...")
-    
-    if needs_research and not flash_mode:
-        suggested_queries = result_json.get("suggested_queries", [])
-        
-        # Nếu không có suggested_queries, tạo queries mặc định
-        if not suggested_queries:
-            suggested_queries = [
-                f"{text_input[:100]} xác minh",
-                f"{text_input[:100]} tin thật hay giả",
-            ]
-        
-        print(f"[RE-SEARCH] Tìm kiếm với {len(suggested_queries)} queries...")
-        
-        try:
-            from app.search import call_google_search
-            from app.ranker import get_rank_from_url, _extract_date
-            from app.article_scraper import scrape_multiple_articles, enrich_search_results_with_full_text
-            from datetime import datetime
-            import asyncio
-            
-            additional_evidence = []
-            seen_urls = set()
-            
-            # Lấy URLs đã có
-            for layer in ["layer_2_high_trust", "layer_3_general", "layer_4_social_low"]:
-                for item in evidence_bundle.get(layer, []):
-                    if item.get("url") or item.get("link"):
-                        seen_urls.add(item.get("url") or item.get("link"))
-            
-            # Search với suggested queries (giới hạn 2)
-            for query in suggested_queries[:2]:
-                print(f"  └── Searching: '{query}'")
-                search_items = await asyncio.to_thread(call_google_search, query, "")
-                
-                for item in search_items or []:
-                    link = item.get('link')
-                    if link and link not in seen_urls:
-                        seen_urls.add(link)
-                        rank = get_rank_from_url(link)
-                        date = _extract_date(item.get('snippet', ''), item.get('title', ''))
-                        is_old = False
-                        if date:
-                            try:
-                                date_obj = datetime.strptime(date[:10], '%Y-%m-%d')
-                                days_diff = (datetime.now() - date_obj).days
-                                is_old = days_diff > 365
-                            except:
-                                pass
-                        
-                        additional_evidence.append({
-                            'title': item.get('title', ''),
-                            'link': link,
-                            'url': link,
-                            'snippet': item.get('snippet', ''),
-                            'source': link,
-                            'rank_score': rank,
-                            'date': date,
-                            'is_old': is_old
-                        })
-            
-            # Scrape top 3 URLs từ re-search
-            if additional_evidence:
-                top_urls = [item["link"] for item in additional_evidence[:3]]
-                scraped = await scrape_multiple_articles(top_urls, max_articles=3)
-                additional_evidence = enrich_search_results_with_full_text(additional_evidence, scraped)
-            
-            print(f"  └── Tìm thấy {len(additional_evidence)} bằng chứng mới")
-            
-            if additional_evidence:
-                # Merge vào evidence bundle
-                for item in additional_evidence:
-                    rank = item.get('rank_score', 0)
-                    if rank >= 0.7:
-                        if 'layer_2_high_trust' not in evidence_bundle:
-                            evidence_bundle['layer_2_high_trust'] = []
-                        evidence_bundle['layer_2_high_trust'].append(item)
-                    else:
-                        if 'layer_3_general' not in evidence_bundle:
-                            evidence_bundle['layer_3_general'] = []
-                        evidence_bundle['layer_3_general'].append(item)
-                
-                # Re-call JUDGE với evidence mới
-                print("\n[JUDGE] Danh gia lai voi bang chung bo sung...")
-                trimmed_bundle = _trim_evidence_bundle(evidence_bundle)
-                evidence_bundle_json = json.dumps(trimmed_bundle, indent=2, ensure_ascii=False)
-                
-                re_prompt = SYNTHESIS_PROMPT
-                re_prompt = re_prompt.replace("{evidence_bundle_json}", evidence_bundle_json)
-                re_prompt = re_prompt.replace("{text_input}", text_input)
-                re_prompt = re_prompt.replace("{current_date}", current_date)
-                
-                # Thêm CRITIC feedback vào re-prompt
-                if critic_feedback:
-                    re_prompt += (
-                        f"\n\n══════════════════════════════════════════════════════════════\n"
-                        f"[Ý KIẾN TỪ BIỆN LÝ ĐỐI LẬP]:\n{critic_feedback[:1000]}\n"
-                        f"══════════════════════════════════════════════════════════════"
-                    )
-                
-                re_prompt += "\n\n[LƯU Ý]: Đây là lần đánh giá thứ 2 với bằng chứng bổ sung. Không được yêu cầu thêm bằng chứng nữa."
-                
-                re_response = await call_agent_with_capability_fallback(
-                    role="JUDGE",
-                    prompt=re_prompt,
-                    temperature=0.2,
-                    timeout=90.0,
-                )
-                
-                re_result = _parse_json_from_text(re_response or "")
-                if re_result:
-                    result_json = re_result
-                    result_json["re_searched"] = True
-                    print(f"[JUDGE] Kết luận sau re-search: {result_json.get('conclusion', 'N/A')}")
-                        
-        except Exception as e:
-            print(f"[RE-SEARCH] Lỗi: {e}")
+        judge_result = _parse_json_from_text(judge_text)
 
-    if result_json:
-        # Check if Agent 2 requested additional search queries
-        additional_queries = result_json.get("additional_search_queries", [])
-        if additional_queries and isinstance(additional_queries, list) and len(additional_queries) > 0:
-            # Limit to max 3 queries
-            additional_queries = additional_queries[:3]
-            print(f"Synthesizer: Agent 2 requested {len(additional_queries)} additional search queries: {additional_queries}")
+        # ---------------------------------------------------------------------
+        # ADAPTER: Convert New "Cognitive Architecture" JSON to Flat Schema
+        # ---------------------------------------------------------------------
+        verdict_meta = judge_result.get("verdict_metadata")
+        if verdict_meta:
+            # CONCLUSION
+            judge_result["conclusion"] = verdict_meta.get("conclusion")
+            judge_result["confidence_score"] = verdict_meta.get("probability_score")
             
-            # Perform additional searches
-            from app.search import call_google_search
-            from app.ranker import get_rank_from_url, _extract_date
-            from datetime import datetime
-            import asyncio
+            # REASON (Combine BLUF + Synthesis)
+            exec_summary = judge_result.get("executive_summary") or {}
+            dialectical = judge_result.get("dialectical_analysis") or {}
             
-            additional_evidence = []
-            seen_urls = set(evidence_bundle.get("seen_urls", set()))
+            bluf = exec_summary.get("bluf")
+            synthesis = dialectical.get("synthesis")
             
-            for query in additional_queries:
-                try:
-                    print(f"Synthesizer: Searching additional query: '{query}'")
-                    search_items = await asyncio.to_thread(call_google_search, query, "")
+            combined_reason = ""
+            if bluf:
+                combined_reason += f"{bluf}\n\n"
+            if synthesis:
+                combined_reason += f"ANALYSIS: {synthesis}"
+            
+            judge_result["reason"] = combined_reason.strip() or "No rationale provided."
+            
+            # DEBATE LOG
+            judge_result["debate_log"] = {
+                "red_team_argument": dialectical.get("antithesis", "N/A"),
+                "blue_team_argument": dialectical.get("thesis", "N/A"),
+                "judge_reasoning": dialectical.get("synthesis", "N/A")
+            }
+            
+            # STYLE / WEP
+            judge_result["style_analysis"] = verdict_meta.get("wep_label") or "N/A"
+            
+            # KEY EVIDENCE
+            citations = judge_result.get("key_evidence_citations") or []
+            if citations and isinstance(citations, list) and len(citations) > 0:
+                first_cit = citations[0]
+                judge_result["key_evidence_snippet"] = first_cit.get("quote") or "N/A"
+                judge_result["key_evidence_source"] = first_cit.get("source") or "N/A"
+                judge_result["evidence_link"] = first_cit.get("url") or ""
+                
+            print(f"[JUDGE] Round 1 (Cognitive Schema): {judge_result.get('conclusion')} ({judge_result.get('confidence_score')}%)")
+        else:
+            # FIX: Handle FLAT SCHEMA (fallback models may return simpler JSON)
+            # Fallback models có thể trả về nhiều format khác nhau
+            
+            # 1. Tìm conclusion từ nhiều field có thể
+            if not judge_result.get("conclusion"):
+                for key in ["final_conclusion", "verdict", "result", "classification", "判定"]:
+                    if judge_result.get(key):
+                        judge_result["conclusion"] = judge_result[key]
+                        break
+            
+            # 2. Tìm confidence_score từ nhiều field có thể
+            if not judge_result.get("confidence_score"):
+                for key in ["probability_score", "confidence", "score", "probability", "certainty", "độ_tin_cậy"]:
+                    val = judge_result.get(key)
+                    if val is not None:
+                        try:
+                            judge_result["confidence_score"] = int(val) if isinstance(val, (int, float)) else int(str(val).replace("%", ""))
+                        except:
+                            pass
+                        break
+                        
+                # Nếu vẫn không có, thử tìm trong nested objects
+                if not judge_result.get("confidence_score"):
+                    for nested_key in ["metadata", "verdict_info", "analysis"]:
+                        nested = judge_result.get(nested_key)
+                        if isinstance(nested, dict):
+                            for key in ["probability_score", "confidence", "score", "confidence_score"]:
+                                val = nested.get(key)
+                                if val is not None:
+                                    try:
+                                        judge_result["confidence_score"] = int(val) if isinstance(val, (int, float)) else int(str(val).replace("%", ""))
+                                    except:
+                                        pass
+                                    break
+            
+            # 3. Tìm reason từ nhiều field có thể (mở rộng danh sách)
+            if not judge_result.get("reason"):
+                reason_keys = [
+                    "reasoning", "explanation", "rationale", "analysis", 
+                    "lý_do", "giải_thích", "bluf", "summary", "message",
+                    "judgment", "verdict_reason", "conclusion_reason", 
+                    "justification", "evidence_analysis", "finding",
+                    "key_judgment", "final_analysis", "assessment"
+                ]
+                for key in reason_keys:
+                    if judge_result.get(key):
+                        judge_result["reason"] = str(judge_result[key])
+                        print(f"[JUDGE] Found reason in field '{key}'")
+                        break
+                        
+                # Nếu vẫn không có, thử tìm trong nested objects
+                if not judge_result.get("reason"):
+                    nested_searches = [
+                        ("executive_summary", ["bluf", "summary", "key_judgment", "message"]),
+                        ("analysis", ["reasoning", "explanation", "summary", "text"]),
+                        ("verdict_info", ["reason", "explanation", "analysis"]),
+                        ("verdict_metadata", ["reason", "explanation", "temporal_reason"]),
+                        ("dialectical_analysis", ["synthesis", "thesis", "antithesis"]),
+                    ]
+                    for nested_key, sub_keys in nested_searches:
+                        nested = judge_result.get(nested_key)
+                        if isinstance(nested, dict):
+                            for key in sub_keys:
+                                if nested.get(key):
+                                    judge_result["reason"] = str(nested[key])
+                                    print(f"[JUDGE] Found reason in '{nested_key}.{key}'")
+                                    break
+                            if judge_result.get("reason"):
+                                break
+                
+                # FIX: Thử lấy từ temporal_analysis TRƯỚC (fallback model thường trả về field này)
+                if not judge_result.get("reason"):
+                    temporal = judge_result.get("temporal_analysis")
+                    if isinstance(temporal, dict):
+                        # Ưu tiên currency_reason vì đây là field được định nghĩa trong schema
+                        for key in ["currency_reason", "reason", "explanation", "analysis", "currency_status"]:
+                            val = temporal.get(key)
+                            if val and isinstance(val, str) and len(val) > 5:
+                                # Combine với currency_status nếu có để tạo reason đầy đủ hơn
+                                currency_status = temporal.get("currency_status", "")
+                                if key == "currency_reason":
+                                    judge_result["reason"] = f"[{currency_status}] {val}" if currency_status else val
+                                else:
+                                    judge_result["reason"] = str(val)
+                                print(f"[JUDGE] Found reason in 'temporal_analysis.{key}'")
+                                break
+                    elif isinstance(temporal, str) and len(temporal) > 20:
+                        judge_result["reason"] = temporal
+                        print(f"[JUDGE] Using 'temporal_analysis' string as reason")
+                
+                # Nếu vẫn không có, dùng wep_label + conclusion làm reason
+                if not judge_result.get("reason"):
+                    wep = judge_result.get("wep_label", "")
+                    conclusion = judge_result.get("conclusion", "")
+                    if wep:
+                        judge_result["reason"] = f"Đánh giá: {wep}. Kết luận: {conclusion}."
+                        print(f"[JUDGE] Using wep_label as fallback reason")
+                
+                # Thử lấy bất kỳ string field nào có độ dài > 50 làm reason
+                if not judge_result.get("reason"):
+                    for key, val in judge_result.items():
+                        if isinstance(val, str) and len(val) > 50 and key not in ["conclusion", "text_input"]:
+                            judge_result["reason"] = val
+                            print(f"[JUDGE] Using field '{key}' as reason")
+                            break
+                
+                # CHỈ log DEBUG nếu sau tất cả các phương pháp vẫn không tìm được reason
+                if not judge_result.get("reason"):
+                    print(f"[JUDGE] DEBUG: Could not find reason after all attempts. Available keys: {list(judge_result.keys())}")
+                    # Fallback cuối cùng: tạo reason từ conclusion
+                    judge_result["reason"] = f"Kết luận: {judge_result.get('conclusion', 'N/A')}. Xem bằng chứng chi tiết bên dưới."
+            
+            # 4. Log kết quả
+            if judge_result.get("conclusion"):
+                conf = judge_result.get("confidence_score")
+                conf_str = f"{conf}%" if conf is not None else "N/A"
+                print(f"[JUDGE] Round 1 (Flat Schema): {judge_result.get('conclusion')} ({conf_str})")
+            else:
+                # JSON parse được nhưng không có conclusion hợp lệ
+                print(f"[JUDGE] WARNING: JSON parsed but no valid conclusion found. Keys: {list(judge_result.keys())}")
+                # FIX: LUÔN dùng heuristic fallback khi không có conclusion
+                print(f"[JUDGE] Fallback to heuristic analyzer...")
+                return _heuristic_summarize(text_input, evidence_bundle, current_date)
+
+        # ---------------------------------------------------------------------
+    except Exception as e:
+        print(f"[JUDGE] Gặp lỗi Round 1: {e}")
+        return _heuristic_summarize(text_input, evidence_bundle, current_date)
+
+    # =========================================================================
+    # PHASE 3: SELF-CORRECTION (RE-SEARCH LOOP)
+    # =========================================================================
+    
+    # FIX: Parse confidence an toàn - default 50 (neutral) thay vì 0 để tránh trigger re-search sai
+    confidence = 50  # Neutral default
+    raw_confidence = judge_result.get("confidence_score")
+    if raw_confidence is not None:
+        try:
+            confidence = int(raw_confidence)
+        except (ValueError, TypeError):
+            confidence = 50  # Keep neutral if parse fails
+            print(f"[SELF-CORRECTION] Warning: Could not parse confidence '{raw_confidence}', using default 50")
+    else:
+        print(f"[SELF-CORRECTION] Warning: No confidence_score in judge result, using default 50")
+    
+    # FIX: needs_more_evidence phải là True EXPLICIT, không phải chỉ vì confidence thấp do parse lỗi    
+    needs_more = judge_result.get("needs_more_evidence", False)
+    if not isinstance(needs_more, bool):
+        needs_more = str(needs_more).lower() == "true"
+    
+    # Kích hoạt Re-search nếu:
+    # 1. Judge YÊU CẦU EXPLICIT (needs_more_evidence = True) - ưu tiên cao nhất
+    # 2. Hoặc Confidence < 40 (rất thấp, không phải do parse fail)
+    # 3. VÀ chưa phải là tin thời tiết (thời tiết thường check 1 lần là đủ)
+    # 4. VÀ judge_result không rỗng (có kết quả thực sự)
+    is_weather = "thời tiết" in judge_result.get("claim_type", "").lower()
+    has_valid_result = bool(judge_result.get("conclusion"))
+    
+    # FIX: Chỉ trigger re-search khi THỰC SỰ cần, không phải do parse error
+    should_research = (
+        needs_more  # Judge yêu cầu explicit
+        or (confidence < 40 and has_valid_result)  # Confidence thấp thật sự
+    ) and not is_weather and has_valid_result
+    
+    if should_research:
+        print(f"\n[SELF-CORRECTION] Kích hoạt Re-Search (Confidence: {confidence}%, Needs More: {needs_more}, Has Result: {has_valid_result})")
+        
+        new_queries = judge_result.get("additional_search_queries", [])
+        if not new_queries:
+            # Fallback nếu Judge không đưa query
+            new_queries = [f"{text_input} sự thật", f"{text_input} fact check"]
+            
+        print(f"[SELF-CORRECTION] Queries mới: {new_queries}")
+        
+        if new_queries:
+            # Thực hiện search bổ sung
+            re_search_plan = {
+                "required_tools": [{
+                    "tool_name": "search",
+                    "parameters": {"queries": new_queries}
+                }]
+            }
+            
+            # Execute search
+            new_evidence = await execute_tool_plan(re_search_plan, site_query_string, flash_mode)
+            
+            # FIX: Safe initialization - đảm bảo các layer keys tồn tại trước khi merge
+            for layer_key in ["layer_2_high_trust", "layer_3_general", "layer_4_social_low"]:
+                if layer_key not in evidence_bundle:
+                    evidence_bundle[layer_key] = []
+                if not isinstance(evidence_bundle[layer_key], list):
+                    evidence_bundle[layer_key] = []
+            
+            # Merge vào bundle cũ (now safe)
+            evidence_bundle["layer_2_high_trust"].extend(new_evidence.get("layer_2_high_trust", []))
+            evidence_bundle["layer_3_general"].extend(new_evidence.get("layer_3_general", []))
+            evidence_bundle["layer_4_social_low"].extend(new_evidence.get("layer_4_social_low", []))
+            
+            # Remove duplicates based on URL
+            seen_urls = set()
+            for layer in ["layer_2_high_trust", "layer_3_general", "layer_4_social_low"]:
+                unique_items = []
+                for item in evidence_bundle[layer]:
+                    url = item.get("url")
+                    if url and url not in seen_urls:
+                        seen_urls.add(url)
+                        unique_items.append(item)
+                evidence_bundle[layer] = unique_items
+                
+            print(f"[SELF-CORRECTION] Đã merge evidence mới. Tổng L2: {len(evidence_bundle['layer_2_high_trust'])}")
+            
+            # Re-Generate Critic (Nhanh) - Optional, but good for completeness
+            # Để tiết kiệm thời gian, có thể bỏ qua Critic R2 hoặc chạy nhanh
+            # Ở đây ta update lại Critic Report với bằng chứng mới
+            evidence_bundle_json_v2 = json.dumps(_trim_evidence_bundle(evidence_bundle), indent=2, ensure_ascii=False)
+            
+            # Re-Run Judge Round 2
+            print(f"[JUDGE] Bắt đầu phán quyết Round 2 (Final)...")
+            judge_prompt_filled_v2 = SYNTHESIS_PROMPT.replace("{text_input}", text_input)
+            judge_prompt_filled_v2 = judge_prompt_filled_v2.replace("{evidence_bundle_json}", evidence_bundle_json_v2)
+            judge_prompt_filled_v2 = judge_prompt_filled_v2.replace("{current_date}", current_date)
+            judge_prompt_filled_v2 += f"\n\n[Ý KIẾN BIỆN LÝ (CRITIC - ROUND 1)]:\n{critic_report}\n(Lưu ý: Bằng chứng đã được cập nhật thêm sau vòng 1)"
+            
+            # FIX: Lưu kết quả Round 1 làm backup
+            judge_result_r1_backup = judge_result.copy() if judge_result else {}
+            
+            try:
+                judge_text_v2 = await call_agent_with_capability_fallback(
+                    role="JUDGE",
+                    prompt=judge_prompt_filled_v2,
+                    temperature=0.1,
+                    timeout=80.0
+                )
+                judge_result_r2 = _parse_json_from_text(judge_text_v2)
+                
+                # ---------------------------------------------------------------------
+                # ADAPTER ROUND 2: Convert "Cognitive Architecture" JSON to Flat Schema
+                # ---------------------------------------------------------------------
+                verdict_meta = judge_result_r2.get("verdict_metadata")
+                if verdict_meta:
+                    # CONCLUSION
+                    judge_result_r2["conclusion"] = verdict_meta.get("conclusion")
+                    judge_result_r2["confidence_score"] = verdict_meta.get("probability_score")
                     
-                    for item in search_items or []:
-                        link = item.get('link')
-                        if link and link not in seen_urls:
-                            seen_urls.add(link)
-                            # Rank and classify the item
-                            rank = get_rank_from_url(link)
-                            date = _extract_date(item.get('snippet', ''), item.get('title', ''))
-                            is_old = False
-                            if date:
+                    # REASON (Combine BLUF + Synthesis)
+                    exec_summary = judge_result_r2.get("executive_summary") or {}
+                    dialectical = judge_result_r2.get("dialectical_analysis") or {}
+                    
+                    bluf = exec_summary.get("bluf")
+                    synthesis = dialectical.get("synthesis")
+                    
+                    combined_reason = ""
+                    if bluf:
+                        combined_reason += f"{bluf}\n\n"
+                    if synthesis:
+                        combined_reason += f"ANALYSIS: {synthesis}"
+                    
+                    judge_result_r2["reason"] = combined_reason.strip() or "No rationale provided."
+                    
+                    # DEBATE LOG
+                    judge_result_r2["debate_log"] = {
+                        "red_team_argument": dialectical.get("antithesis", "N/A"),
+                        "blue_team_argument": dialectical.get("thesis", "N/A"),
+                        "judge_reasoning": dialectical.get("synthesis", "N/A")
+                    }
+                    
+                    # STYLE / WEP
+                    judge_result_r2["style_analysis"] = verdict_meta.get("wep_label") or "N/A"
+                    
+                    # KEY EVIDENCE
+                    citations = judge_result_r2.get("key_evidence_citations") or []
+                    if citations and isinstance(citations, list) and len(citations) > 0:
+                        first_cit = citations[0]
+                        judge_result_r2["key_evidence_snippet"] = first_cit.get("quote") or "N/A"
+                        judge_result_r2["key_evidence_source"] = first_cit.get("source") or "N/A"
+                        judge_result_r2["evidence_link"] = first_cit.get("url") or ""
+                        
+                    print(f"[JUDGE] Round 2 (Cognitive Schema): {judge_result_r2.get('conclusion')} ({judge_result_r2.get('confidence_score')}%)")
+                else:
+                    # FIX: Handle FLAT SCHEMA for Round 2 (same logic as Round 1)
+                    
+                    # 1. Tìm conclusion từ nhiều field có thể
+                    if not judge_result_r2.get("conclusion"):
+                        for key in ["final_conclusion", "verdict", "result", "classification"]:
+                            if judge_result_r2.get(key):
+                                judge_result_r2["conclusion"] = judge_result_r2[key]
+                                break
+                    
+                    # 2. Tìm confidence_score từ nhiều field có thể
+                    if not judge_result_r2.get("confidence_score"):
+                        for key in ["probability_score", "confidence", "score", "probability", "certainty"]:
+                            val = judge_result_r2.get(key)
+                            if val is not None:
                                 try:
-                                    date_obj = datetime.strptime(date[:10], '%Y-%m-%d')
-                                    days_diff = (datetime.now() - date_obj).days
-                                    is_old = days_diff > 365
+                                    judge_result_r2["confidence_score"] = int(val) if isinstance(val, (int, float)) else int(str(val).replace("%", ""))
                                 except:
                                     pass
-                            
-                            additional_evidence.append({
-                                'title': item.get('title', ''),
-                                'link': link,
-                                'snippet': item.get('snippet', ''),
-                                'source': link,
-                                'rank': rank,
-                                'date': date,
-                                'is_old': is_old
-                            })
-                except Exception as e:
-                    print(f"Synthesizer: Error searching additional query '{query}': {e}")
-                    continue
-            
-            # If we found additional evidence, merge it into evidence bundle and re-analyze
-            if additional_evidence:
-                print(f"Synthesizer: Found {len(additional_evidence)} additional evidence items, re-analyzing...")
-                
-                # Merge additional evidence into appropriate layers
-                # Add to layer_3_general (or layer_2 if high rank)
-                for item in additional_evidence:
-                    rank = item.get('rank', 0)
-                    if rank >= 0.7:
-                        if 'layer_2_trusted' not in evidence_bundle:
-                            evidence_bundle['layer_2_trusted'] = []
-                        evidence_bundle['layer_2_trusted'].append(item)
-                    else:
-                        if 'layer_3_general' not in evidence_bundle:
-                            evidence_bundle['layer_3_general'] = []
-                        evidence_bundle['layer_3_general'].append(item)
-                
-                # Update seen_urls
-                evidence_bundle['seen_urls'] = seen_urls
-                
-                # Re-trim and re-analyze with updated evidence
-                trimmed_bundle = _trim_evidence_bundle(evidence_bundle)
-                evidence_bundle_json = json.dumps(trimmed_bundle, indent=2, ensure_ascii=False)
-                
-                # Update prompt with new evidence
-                updated_prompt = SYNTHESIS_PROMPT
-                updated_prompt = updated_prompt.replace("{evidence_bundle_json}", evidence_bundle_json)
-                updated_prompt = updated_prompt.replace("{text_input}", text_input)
-                updated_prompt = updated_prompt.replace("{current_date}", current_date)
-                
-                # Call Agent 2 again with updated evidence (only once to avoid infinite loop)
-                try:
-                    if provider == "gemini":
-                        text_response = await call_gemini_model(
-                            model_name, updated_prompt, timeout=None if flash_mode else 45.0
-                        )
-                    elif provider == "openrouter":
-                        text_response = await call_openrouter_chat_completion(
-                            model_name,
-                            updated_prompt,
-                            timeout=60.0,
-                            temperature=0.1,
-                            system_prompt=(
-                                "You are ZeroFake Agent 2 (Synthesizer). "
-                                "Read the evidence bundle and user's news claim. "
-                                "Respond ONLY with a valid JSON object that matches the required schema. "
-                                "Do NOT request additional_search_queries again - use the provided evidence."
-                            ),
-                        )
+                                break
                     
-                    # Parse the updated response
-                    updated_result = _parse_json_from_text(text_response or "")
-                    if updated_result:
-                        # Remove additional_search_queries from final result (internal use only)
-                        updated_result.pop("additional_search_queries", None)
-                        updated_result["cached"] = False
+                    # 3. Tìm reason từ nhiều field có thể
+                    if not judge_result_r2.get("reason"):
+                        for key in ["reasoning", "explanation", "rationale", "analysis", "summary", "bluf"]:
+                            if judge_result_r2.get(key):
+                                judge_result_r2["reason"] = str(judge_result_r2[key])
+                                break
+                    
+                    # 4. Log kết quả
+                    if judge_result_r2.get("conclusion"):
+                        conf = judge_result_r2.get("confidence_score")
+                        conf_str = f"{conf}%" if conf is not None else "N/A"
+                        print(f"[JUDGE] Round 2 (Flat Schema): {judge_result_r2.get('conclusion')} ({conf_str})")
+                    else:
+                        print(f"[JUDGE] WARNING Round 2: No valid conclusion. Keys: {list(judge_result_r2.keys())}")
+                
+                # FIX: Chỉ sử dụng Round 2 nếu có kết quả hợp lệ
+                if judge_result_r2.get("conclusion"):
+                    judge_result = judge_result_r2
+                    judge_result["cached"] = False
+                    print(f"[JUDGE] Kết quả Round 2: {judge_result.get('conclusion')} ({judge_result.get('confidence_score')}%)")
+                    
+                    # FIX: Đảm bảo reason và evidence_link được copy từ R2
+                    if not judge_result.get("reason"):
+                        judge_result["reason"] = judge_result_r1_backup.get("reason", "Xem bằng chứng bên dưới.")
+                    if not judge_result.get("evidence_link"):
+                        judge_result["evidence_link"] = judge_result_r1_backup.get("evidence_link", "")
+                else:
+                    # Round 2 không có kết quả hợp lệ - giữ Round 1
+                    print(f"[JUDGE] Round 2 failed to produce valid result. Keeping Round 1 result.")
+                    judge_result = judge_result_r1_backup
+                    
+            except Exception as e:
+                print(f"[JUDGE] Lỗi Round 2: {e}. Giữ nguyên kết quả Round 1.")
+                judge_result = judge_result_r1_backup  # FIX: Ensure we use backup
+        else:
+             print("[SELF-CORRECTION] Không có query mới, bỏ qua Round 2.")
 
-                        # (NEW) Extract evidence_link from the best evidence item
-                        top_link = ""
-                        if evidence_bundle.get("layer_2_high_trust"):
-                            top_link = evidence_bundle["layer_2_high_trust"][0].get("url") or ""
-                        elif evidence_bundle.get("layer_3_general"):
-                            top_link = evidence_bundle["layer_3_general"][0].get("url") or ""
-                        updated_result["evidence_link"] = top_link
+    # Post-processing normalization
+    if judge_result:
+        # Map old schema keys if needed (fallback)
+        if "final_conclusion" in judge_result and "conclusion" not in judge_result:
+            judge_result["conclusion"] = judge_result["final_conclusion"]
+            
+        judge_result["conclusion"] = normalize_conclusion(judge_result.get("conclusion"))
+        return judge_result
 
-                        # Normalize conclusion to only 3 categories
-                        updated_result["conclusion"] = normalize_conclusion(updated_result.get("conclusion", ""))
-                        
-                        print(f"Synthesizer: Re-analysis complete with additional evidence (link: {top_link})")
-                        return updated_result
-                except Exception as e:
-                    print(f"Synthesizer: Error during re-analysis: {e}")
-                    # Fall through to return original result
-        
-        # Remove additional_search_queries from final result (internal use only)
-        result_json.pop("additional_search_queries", None)
-        result_json["cached"] = False
-
-        # Extract evidence_link from the best evidence item (check both 'url' and 'link')
-        top_link = ""
-        for layer in ["layer_2_high_trust", "layer_3_general", "layer_4_social_low"]:
-            if evidence_bundle.get(layer) and len(evidence_bundle[layer]) > 0:
-                item = evidence_bundle[layer][0]
-                top_link = item.get("url") or item.get("link") or ""
-                if top_link:
-                    break
-        result_json["evidence_link"] = top_link
-
-        # Add debate_log with CRITIC feedback (for evaluation metrics)
-        result_json["debate_log"] = {
-            "red_team_argument": critic_feedback[:500] if critic_feedback else "",
-            "blue_team_argument": result_json.get("final_message", result_json.get("reason", ""))[:500]
-        }
-
-        # Normalize conclusion to only 3 categories
-        result_json["conclusion"] = normalize_conclusion(result_json.get("conclusion", ""))
-
-        # Ensure 'reason' field is populated for evaluation metrics
-        if not result_json.get("reason"):
-            # Try to extract from final_message or judge_reasoning
-            result_json["reason"] = result_json.get("final_message", "") or \
-                                    result_json.get("judge_reasoning", {}).get("final_logic", "")
-
-        return result_json
-
-    print("Lỗi khi gọi Agent 2 (Synthesizer): Model response invalid or empty.")
-    # (SỬA ĐỔI) Gọi hàm fallback đã được cập nhật
-    heuristic_result = _heuristic_summarize(text_input, trimmed_bundle, current_date)
-    # Normalize conclusion for heuristic result too
-    heuristic_result["conclusion"] = normalize_conclusion(heuristic_result.get("conclusion", ""))
-    return heuristic_result
+    # Fallback final
+    return _heuristic_summarize(text_input, evidence_bundle, current_date)

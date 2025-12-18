@@ -1,0 +1,112 @@
+[
+  {
+    "text": "[NÓNG] Facebook IPO lần đầu vừa xảy ra sáng nay! Cả thế giới đang chấn động. Mạng xã hội đang lan truyền rộng rãi.",
+    "expected": "TIN GIẢ",
+    "predicted": "TIN GIẢ",
+    "category": "Zombie News",
+    "reason": "[HISTORICAL] Facebook IPO occurred in 2012, not recently.",
+    "debate_log": {},
+    "evidence_link": "",
+    "latency": 64.05,
+    "cached": false
+  },
+  {
+    "text": "Báo cáo mới nhất cho thấy: Dân số Việt Nam mới nhất (2025) - cập nhật hằng ngày - DanSo.Org. Dân số hiện tại của Việt Nam là hơn 101 triệu người theo số liệu gần nhất theo số liệu mới nhất từ Liên Hợp Quốc. Dân số Việt Nam hiện …",
+    "expected": "TIN THẬT",
+    "predicted": "TIN THẬT",
+    "category": "Xã hội",
+    "reason": "Có từ 2 nguồn uy tín xác nhận thông tin này (tuoitre.vn).",
+    "debate_log": {},
+    "evidence_link": "https://tuoitre.vn/",
+    "latency": 89.23,
+    "cached": false
+  },
+  {
+    "text": "Brazil: key facts about the world’s fifth-largest country. 26 thg 11, 2024 · In our latest country profile, discover more about Brazil and its fascinating past with our succinct timeline, and browse through the most important facts about the nation in our fact file…",
+    "expected": "TIN THẬT",
+    "predicted": "TIN THẬT",
+    "category": "Chính trị",
+    "reason": "[HISTORICAL] The claim refers to a fact about Brazil's size, which is a stable geographical characteristic. While the claim's date is in the past, the fact remains valid as of the current date (2025-1",
+    "debate_log": {},
+    "evidence_link": "",
+    "latency": 131.38,
+    "cached": false
+  },
+  {
+    "text": "Danh sách ĐT Việt Nam dự AFF Cup 2024 - Thể thao & Văn hóa. 7 thg 12, 2024 · Mặc dù có khá nhiều thay đổi so với kỳ AFF Cup trước, khi các cựu binh như Quế Ngọc Hải, Đỗ Hùng Dũng và Đặng Văn Lâm đều vắng mặt vì các lý do khác nhau, song …",
+    "expected": "TIN THẬT",
+    "predicted": "TIN THẬT",
+    "category": "Thể thao",
+    "reason": "[HISTORICAL] The article reports on the 2024 AFF Cup, which occurred in 2024. As of December 19, 2025, the event is in the past. The article is not presented as current news.",
+    "debate_log": {},
+    "evidence_link": "",
+    "latency": 97.37,
+    "cached": false
+  },
+  {
+    "text": "KINH HOÀNG: Jeff Bezos vừa tuyên bố tặng toàn bộ tài sản cho Việt Nam! Mạng xã hội nổ tung. Các chuyên gia đang phân tích thông tin.",
+    "expected": "TIN GIẢ",
+    "predicted": "TIN GIẢ",
+    "category": "Bịa đặt",
+    "reason": "[HISTORICAL] Claim sử dụng từ ngữ 'vừa mới' để tạo ấn tượng về sự kiện hiện tại, nhưng không có bằng chứng xác nhận. Sự kiện này không xảy ra và claim là sai lệch về thời gian.",
+    "debate_log": {},
+    "evidence_link": "",
+    "latency": 87.23,
+    "cached": false
+  },
+  {
+    "text": "[CẬP NHẬT] Việt Nam vô địch AFF Cup 2018 đang diễn ra ngay lúc này! Mọi người theo dõi. Mạng xã hội đang lan truyền rộng rãi.",
+    "expected": "TIN GIẢ",
+    "predicted": "TIN GIẢ",
+    "category": "Zombie News",
+    "reason": "[HISTORICAL] AFF Cup 2018 đã kết thúc từ tháng 12/2018. Claim trình bày sự kiện này như đang diễn ra vào tháng 12/2025, tạo thành Zombie News.",
+    "debate_log": {},
+    "evidence_link": "",
+    "latency": 103.28,
+    "cached": false
+  },
+  {
+    "text": "Olympic Tiếng Anh Học sinh sinh viên toàn quốc. Email: Olympicenglishhssv@gmail.com Fanpage: OlympicTA.HSSV1 Đăng ký Đăng nhập THÔNG BÁO: Olympic tiếng Anh học sinh - sinh viên toàn quốc lần thứ VII - 2025 sẽ bắt đầu từ ngày 17/11/2025 đến …",
+    "expected": "TIN THẬT",
+    "predicted": "TIN GIẢ",
+    "category": "Thể thao",
+    "reason": "[HISTORICAL] The event is scheduled for the future, but no reliable source confirms its existence. Evidence provided is outdated and irrelevant.",
+    "debate_log": {},
+    "evidence_link": "",
+    "latency": 119.96,
+    "cached": false
+  },
+  {
+    "text": "Here are 9 Examples of the 'du' Command in Linux | Linux Today. 15 thg 9, 2021 · In this article, we will discuss another popular command for the Linux/Unix platform. du stands for “Disk …",
+    "expected": "TIN THẬT",
+    "predicted": "TIN THẬT",
+    "category": "Văn hóa",
+    "reason": "[HISTORICAL] The 'du' command is a fundamental Linux command; information from 2021 remains valid as a historical reference.",
+    "debate_log": {},
+    "evidence_link": "",
+    "latency": 127.52,
+    "cached": false
+  },
+  {
+    "text": "Theo nguồn tin từ các cơ quan chức năng, Xây dựng kịch bản biến đổi khí hậu cho Việt Nam. 21 thg 11, 2024 · Biến đổi khí hậu từ quy mô toàn cầu đến khu vực và quốc gia: Phương pháp luận và cách tiếp cận cho Việt Nam. Xây dựng kịch bản biến đổi khí hậu cho các yếu tố khí hậu, hiện tượng thời tiết …",
+    "expected": "TIN THẬT",
+    "predicted": "TIN THẬT",
+    "category": "Xã hội",
+    "reason": "[HISTORICAL] Claim refers to an event that occurred in the past (November 2024). The current date is December 2025, making it a historical event.",
+    "debate_log": {},
+    "evidence_link": "",
+    "latency": 103.73,
+    "cached": false
+  },
+  {
+    "text": "Cập nhật: General Facts about China: Flag, Population, Climate, Language. 14 thg 8, 2025 · As the third largest country in the world, occupying an area of 9,600,000 sq km, the People’s Republic of China spans 62 degrees of longitude and 49 degrees of latitude.",
+    "expected": "TIN THẬT",
+    "predicted": "TIN GIẢ",
+    "category": "Quốc tế",
+    "reason": "[HISTORICAL] The claim refers to static geographical facts that do not change over time. The 'update' date is irrelevant and misleading.",
+    "debate_log": {},
+    "evidence_link": "",
+    "latency": 130.38,
+    "cached": false
+  }
+]

@@ -397,6 +397,7 @@ async def _handle_check_news_internal(
             current_date,
             model_key=agent2_model,
             flash_mode=flash_mode,
+            site_query_string=SITE_QUERY_STRING,
         )
         gemini_result = _sanitize_check_response(gemini_result)
         

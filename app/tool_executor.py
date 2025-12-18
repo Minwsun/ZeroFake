@@ -177,7 +177,7 @@ async def _execute_search_tool(parameters: dict, site_query_string: str, flash_m
 			else:
 				search_items = await asyncio.wait_for(
 					asyncio.to_thread(call_google_search, query, site_query_string),
-					timeout=15.0
+					timeout=25.0  # Tăng từ 15s để có thời gian thu thập nhiều evidence
 				)
 			for item in search_items or []:
 				link = item.get('link')
@@ -259,9 +259,9 @@ async def _execute_search_tool(parameters: dict, site_query_string: str, flash_m
 	# Scrape full article content for top results using Crawl4ai
 	all_evidence = layer_2 + layer_3
 	if all_evidence:
-		urls_to_scrape = [item["url"] for item in all_evidence[:8]]  # Top 8 URLs
+		urls_to_scrape = [item["url"] for item in all_evidence[:15]]  # Top 15 URLs (tăng từ 8)
 		try:
-			scraped_articles = await scrape_multiple_articles(urls_to_scrape, max_articles=8)
+			scraped_articles = await scrape_multiple_articles(urls_to_scrape, max_articles=15)
 			if scraped_articles:
 				print(f"[CRAWL4AI] Ban đầu: Đã cào {len(scraped_articles)} bài viết")
 				# Enrich results with full text
@@ -420,6 +420,19 @@ async def execute_tool_plan(plan: dict, site_query_string: str, flash_mode: bool
 		"layer_4_social_low": []
 	}
 
+	# FIX: Đảm bảo LUÔN có search tool nếu không có tool nào được lập kế hoạch
+	has_search = any(m.get("tool_name") == "search" for m in required_tools)
+	if not has_search:
+		# Tạo search tool với main_claim hoặc text_input làm query
+		main_claim = plan.get("main_claim", "")
+		fallback_queries = [main_claim] if main_claim else []
+		if fallback_queries:
+			print(f"[TOOL_EXECUTOR] Không có search tool trong plan, tự động thêm với query: {main_claim[:50]}...")
+			required_tools.append({
+				"tool_name": "search",
+				"parameters": {"queries": fallback_queries + [f"{main_claim} tin tức"]}
+			})
+
 	tasks = []
 
 	for module in required_tools:
@@ -433,6 +446,18 @@ async def execute_tool_plan(plan: dict, site_query_string: str, flash_mode: bool
 
 	if not tasks:
 		print("Cảnh báo: Không có tool nào được lập kế hoạch.")
+		# FIX: Vẫn chạy search fallback với main_claim
+		main_claim = plan.get("main_claim", "")
+		if main_claim:
+			print(f"[TOOL_EXECUTOR] Chạy search fallback với main_claim...")
+			fallback_result = await _execute_search_tool(
+				{"queries": [main_claim, f"{main_claim} tin tức"]}, 
+				site_query_string, 
+				flash_mode
+			)
+			evidence_bundle["layer_2_high_trust"].extend(fallback_result.get("layer_2_high_trust", []))
+			evidence_bundle["layer_3_general"].extend(fallback_result.get("layer_3_general", []))
+			evidence_bundle["layer_4_social_low"].extend(fallback_result.get("layer_4_social_low", []))
 		return evidence_bundle
 
 	results = await asyncio.gather(*tasks)
@@ -458,11 +483,20 @@ async def execute_tool_plan(plan: dict, site_query_string: str, flash_mode: bool
 
 	# (Fallback) nếu bundle trống, chạy CSE batch
 	if not (evidence_bundle["layer_1_tools"] or evidence_bundle["layer_2_high_trust"] or evidence_bundle["layer_3_general"] or evidence_bundle["layer_4_social_low"]):
+		print("[TOOL_EXECUTOR] Bundle trống sau khi chạy tools, chạy FALLBACK SEARCH...")
+		
+		# FIX: Lấy TẤT CẢ queries có thể
 		all_queries = []
 		for module in required_tools:
 			if module.get("tool_name") == "search":
 				all_queries.extend(module.get("parameters", {}).get("queries", []))
-			break
+		
+		# Nếu không có queries, dùng main_claim
+		if not all_queries:
+			main_claim = plan.get("main_claim", "")
+			if main_claim:
+				all_queries = [main_claim, f"{main_claim} tin tức"]
+				
 		seen_urls = set()
 		layer_2, layer_3, layer_4 = [], [], []
 		for q in all_queries:
@@ -522,5 +556,7 @@ async def execute_tool_plan(plan: dict, site_query_string: str, flash_mode: bool
 		evidence_bundle["layer_2_high_trust"].extend(layer_2)
 		evidence_bundle["layer_3_general"].extend(layer_3)
 		evidence_bundle["layer_4_social_low"].extend(layer_4)
+		
+		print(f"[TOOL_EXECUTOR] Fallback search kết quả: L2={len(layer_2)}, L3={len(layer_3)}, L4={len(layer_4)}")
 
 	return evidence_bundle

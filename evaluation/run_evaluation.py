@@ -13,7 +13,7 @@ API_URL = "http://127.0.0.1:8000/check_news"
 DELAY_SECONDS = 0  # No rate limiting needed
 
 class EvaluationFramework:
-    def __init__(self, dataset_path="evaluation/dataset_test_10.json"):
+    def __init__(self, dataset_path="evaluation/test_dataset_1000.json"):
         with open(dataset_path, "r", encoding="utf-8") as f:
             self.dataset = json.load(f)
         self.results = []
@@ -88,16 +88,16 @@ class EvaluationFramework:
         # ══════════════════════════════════════════════════════════════════
         report.append("\n## TẦNG 1: HIỆU SUẤT PHÂN LOẠI (Quantitative Metrics)\n")
         
-        # Confusion Matrix
-        labels = ["TIN THẬT", "TIN GIẢ", "GÂY HIỂU LẦM"]
+        # Confusion Matrix (Binary Classification)
+        labels = ["TIN THẬT", "TIN GIẢ"]
         cm = self._confusion_matrix(labels)
         
         report.append("### Ma trận nhầm lẫn (Confusion Matrix)\n")
-        report.append("| Thực tế \\ Dự đoán | TIN THẬT | TIN GIẢ | GÂY HIỂU LẦM |")
-        report.append("|-------------------|----------|---------|--------------|")
+        report.append("| Thực tế \\ Dự đoán | TIN THẬT | TIN GIẢ |")
+        report.append("|-------------------|----------|---------|")
         for i, actual in enumerate(labels):
             row = f"| **{actual}** |"
-            for j in range(3):
+            for j in range(len(labels)):
                 row += f" {cm[i][j]} |"
             report.append(row)
         
@@ -265,9 +265,7 @@ class EvaluationFramework:
             pred = r.get("predicted", "")
             if pred == "TIN THẬT" and ("đúng" in reason or "xác nhận" in reason or "thật" in reason):
                 consistency_count += 1
-            elif pred == "TIN GIẢ" and ("sai" in reason or "giả" in reason or "không có" in reason):
-                consistency_count += 1
-            elif pred == "GÂY HIỂU LẦM" and ("lỗi thời" in reason or "cũ" in reason or "hiểu lầm" in reason):
+            elif pred == "TIN GIẢ" and ("sai" in reason or "giả" in reason or "không có" in reason or "lỗi thời" in reason or "cũ" in reason):
                 consistency_count += 1
         
         total = len(self.results)

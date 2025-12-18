@@ -9,7 +9,6 @@ from app.weather import classify_claim
 from app.model_clients import (
     call_gemini_model,
     call_groq_chat_completion,
-    call_openrouter_chat_completion,
     call_compound_model,
     call_agent_with_capability_fallback,
     ModelClientError,
@@ -548,28 +547,30 @@ def _generate_search_queries(text_input: str, plan_struct: dict) -> list[str]:
 
 def _normalize_plan(plan: dict, text_input: str, flash_mode: bool = False) -> dict:
     """
-    (ĐÃ SỬA ĐỔI - OPTIMIZED PROMPT)
-    Đảm bảo plan đủ schema.
-    Xử lý cả schema cũ (time_references) và mới (time_info, is_weather_forecast).
+    (ĐÃ SỬA ĐỔI - OPTIMIZED FOR ADVANCED COGNITIVE ARCHITECTURE)
+    Đảm bảo plan đủ schema, hỗ trợ cả schema cũ và mới (Tree of Thoughts / Case File).
     """
     import re
     plan = plan or {}
 
-    # Handle new schema fields from Popperian prompt
-    time_info = plan.get("time_info") or plan.get("target_date_str")  # Support both schemas
-    is_weather_forecast = plan.get("is_weather_forecast", False)
-    location = plan.get("location")
-    search_queries = plan.get("search_queries") or []
-    attack_vectors = plan.get("attack_vectors") or []  # New: Popperian attack vectors
+    # 1. Handle New Schema (Case File / ToT)
+    case_metadata = plan.get("case_metadata") or {}
+    tot_strategies = plan.get("tot_strategies") or []
+    entities_of_interest = plan.get("entities_of_interest") or {}
+    
+    # Map new schema to internal structure
+    main_claim = case_metadata.get("objective") or plan.get("main_claim") or text_input
+    
+    # Map 'tot_strategies' to 'attack_vectors'
+    attack_vectors = plan.get("attack_vectors") or []
+    if tot_strategies and not attack_vectors:
+        for branch in tot_strategies:
+            hypothesis = branch.get("hypothesis")
+            action = branch.get("action_plan")
+            if hypothesis:
+                attack_vectors.append(f"Hypothesis: {hypothesis}. Plan: {action}")
 
-    # Convert new schema to old schema for backward compatibility
-    time_references = plan.get("time_references") or {}
-    if time_info and not time_references.get("relative_time"):
-        time_references["relative_time"] = time_info
-    if not time_references.get("time_scope"):
-        time_references["time_scope"] = "present"
-
-    # Build entities_and_values
+    # Map 'entities_of_interest' to 'entities_and_values'
     entities = plan.get("entities_and_values") or {
         "locations": [],
         "persons": [],
@@ -577,47 +578,47 @@ def _normalize_plan(plan: dict, text_input: str, flash_mode: bool = False) -> di
         "events": [],
         "data_points": []
     }
-    # Add location from new schema if present
-    if location and location not in (entities.get("locations") or []):
-        entities.setdefault("locations", []).insert(0, location)
+    if entities_of_interest:
+        # Merge keys
+        for key in ["locations", "persons", "organizations", "events"]:
+            if key in entities_of_interest:
+                current_list = entities.get(key, [])
+                new_list = entities_of_interest.get(key, [])
+                # Extend distinct items
+                for item in new_list:
+                    if item not in current_list:
+                        current_list.append(item)
+                entities[key] = current_list
+    
+    # Handle old schema specific fields
+    time_info = plan.get("time_info") or plan.get("target_date_str")
+    time_references = plan.get("time_references") or {}
+    if time_info and not time_references.get("relative_time"):
+        time_references["relative_time"] = time_info
+    if not time_references.get("time_scope"):
+        time_references["time_scope"] = "present"
+
+    # Add location from old schema 'location' field if present
+    location_old = plan.get("location")
+    if location_old and location_old not in (entities.get("locations") or []):
+        entities.setdefault("locations", []).insert(0, location_old)
 
     # Khung chuẩn
     plan_struct = {
-        "main_claim": plan.get("main_claim") or text_input,
+        "main_claim": main_claim,
         "claim_type": plan.get("claim_type") or "unknown",
-        "volatility": plan.get("volatility") or "medium",
+        "volatility": plan.get("volatility") or "medium", # Default to medium if not provided
         "entities_and_values": entities,
         "time_references": time_references,
         "sub_questions": plan.get("sub_questions") or [],
         "comparison_logic": plan.get("comparison_logic"),
-        "attack_vectors": attack_vectors,  # New: Popperian Falsification
+        "attack_vectors": attack_vectors,
         "required_tools": plan.get("required_tools") if isinstance(plan.get("required_tools"), list) else [],
         "browse_findings": plan.get("browse_findings") if isinstance(plan.get("browse_findings"), list) else []
     }
     
-    
-    # QUAN TRỌNG: Hiệu chỉnh volatility cho tin lịch sử
-    time_scope = plan_struct.get("time_references", {}).get("time_scope", "present")
-    claim_type = plan_struct.get("claim_type", "").lower()
-    
-    # Danh sách claim_type liên quan đến lịch sử (không thể thay đổi)
-    historical_claim_types = [
-        "lịch sử", "history", "sự kiện lịch sử", "phân tích lịch sử",
-        "historical event", "historical analysis", "lịch sử & địa lý"
-    ]
-    
-    # Tin lịch sử (historical) → volatility = "low" (không thể thay đổi)
-    is_historical = (
-        time_scope == "historical" or 
-        any(ht in claim_type for ht in historical_claim_types)
-    )
-    
-    if is_historical:
-        plan_struct["volatility"] = "low"
-        print(f"Agent Planner: Adjusted volatility = 'low' for historical news (time_scope={time_scope}, claim_type={claim_type})")
-
-    # Trích data_points (ví dụ 40°C, mm mưa, %)
-    data_points = set(plan_struct["entities_and_values"]["data_points"] or [])
+    # Extract data_points from text input as fallback
+    data_points = set(plan_struct["entities_and_values"].get("data_points") or [])
     for m in re.findall(r"\b\d{1,3}\s?(?:°C|mm|%)\b", text_input):
         data_points.add(m.strip())
     plan_struct["entities_and_values"]["data_points"] = list(data_points)

@@ -11,7 +11,7 @@ load_dotenv()
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 GOOGLE_CSE_ID = os.getenv("GOOGLE_CSE_ID")
 
-MAX_RESULTS = 20
+MAX_RESULTS = 40  # Tăng từ 20 để thu thập nhiều evidence hơn
 _TRUSTED_DOMAINS_CACHE = None
 
 

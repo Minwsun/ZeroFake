@@ -13,10 +13,6 @@ load_dotenv()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-OPENROUTER_BASE_URL = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
-OPENROUTER_SITE_URL = os.getenv("OPENROUTER_SITE_URL", "https://zerofake.local")
-OPENROUTER_APP_NAME = os.getenv("OPENROUTER_APP_NAME", "ZeroFake Fact Checker")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GROQ_BASE_URL = os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1")
 
@@ -69,6 +65,10 @@ async def call_gemini_model(
     except asyncio.TimeoutError as exc:
         raise ModelClientError(f"Gemini model '{model_name}' timed out after {timeout} seconds.") from exc
     except Exception as exc:  # noqa: BLE001
+        exc_str = str(exc).lower()
+        # Detect quota exhausted / rate limit errors for immediate fallback
+        if "429" in str(exc) or "quota" in exc_str or "resource_exhausted" in exc_str or "resourceexhausted" in exc_str:
+            raise RateLimitError(f"Gemini model '{model_name}' quota exhausted (429): {exc}") from exc
         raise ModelClientError(f"Gemini model '{model_name}' failed: {exc}") from exc
 
     text = getattr(response, "text", None)
@@ -126,82 +126,6 @@ async def call_openai_chat_completion(
         raise ModelClientError(f"OpenAI model '{model_name}' request failed: {exc}") from exc
 
 
-async def call_openrouter_chat_completion(
-    model_name: str,
-    prompt: str,
-    *,
-    timeout: float = 60.0,
-    temperature: float = 0.2,
-    system_prompt: Optional[str] = None,
-    max_retries: int = 2,
-    backoff_seconds: float = 2.0,
-) -> str:
-    """
-    Call OpenRouter chat completion API and return the assistant message content.
-    Implements simple retry with exponential backoff on rate limiting.
-    """
-    if not OPENROUTER_API_KEY:
-        raise ModelClientError("OPENROUTER_API_KEY is not configured.")
-
-    url = f"{OPENROUTER_BASE_URL.rstrip('/')}/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-        "Content-Type": "application/json",
-        "HTTP-Referer": OPENROUTER_SITE_URL,
-        "X-Title": OPENROUTER_APP_NAME,
-    }
-    messages = []
-    if system_prompt:
-        messages.append({"role": "system", "content": system_prompt})
-    messages.append({"role": "user", "content": prompt})
-
-    payload = {
-        "model": model_name,
-        "messages": messages,
-        "temperature": temperature,
-        "stream": False,
-    }
-
-    def _post():
-        response = requests.post(url, headers=headers, json=payload, timeout=timeout)
-        if response.status_code == 429:
-            detail = response.text.strip()[:200]
-            raise RateLimitError(
-                f"OpenRouter model '{model_name}' hit the rate limit (429). "
-                f"Details: {detail or 'No body provided.'}"
-            )
-        response.raise_for_status()
-        data = response.json()
-        choices = data.get("choices") or []
-        if not choices:
-            raise ModelClientError(f"OpenRouter model '{model_name}' returned no choices.")
-        message = choices[0].get("message", {})
-        content = message.get("content")
-        if not content:
-            raise ModelClientError(f"OpenRouter model '{model_name}' returned empty content.")
-        return content
-
-    attempt = 0
-    while attempt <= max_retries:
-        try:
-            return await asyncio.to_thread(_post)
-        except RateLimitError as exc:
-            if attempt >= max_retries:
-                raise
-            delay = backoff_seconds * (attempt + 1)
-            print(
-                f"OpenRouter client: rate limit for '{model_name}', retrying in {delay:.1f}s "
-                f"(attempt {attempt + 1}/{max_retries + 1})"
-            )
-            await asyncio.sleep(delay)
-            attempt += 1
-        except requests.RequestException as exc:
-            raise ModelClientError(f"OpenRouter model '{model_name}' request failed: {exc}") from exc
-        except ModelClientError:
-            raise
-        except Exception as exc:  # noqa: BLE001
-            raise ModelClientError(f"OpenRouter model '{model_name}' unexpected error: {exc}") from exc
-
 
 async def call_groq_chat_completion(
     model_name: str,
@@ -221,6 +145,11 @@ async def call_groq_chat_completion(
     def _call_groq_sdk():
         try:
             from groq import Groq
+            # Import Groq's rate limit error for proper 429 detection
+            try:
+                from groq import RateLimitError as GroqRateLimitError
+            except ImportError:
+                GroqRateLimitError = None
         except ImportError:
             raise ModelClientError("Groq SDK not installed. Run: pip install groq")
         
@@ -231,11 +160,20 @@ async def call_groq_chat_completion(
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
         
-        completion = client.chat.completions.create(
-            model=model_name,
-            messages=messages,
-            temperature=temperature,
-        )
+        try:
+            completion = client.chat.completions.create(
+                model=model_name,
+                messages=messages,
+                temperature=temperature,
+            )
+        except Exception as e:
+            # Detect 429 rate limit from Groq SDK
+            exc_str = str(e).lower()
+            if GroqRateLimitError and isinstance(e, GroqRateLimitError):
+                raise RateLimitError(f"Groq model '{model_name}' hit rate limit (429): {e}")
+            if "429" in str(e) or "rate_limit" in exc_str or "quota" in exc_str:
+                raise RateLimitError(f"Groq model '{model_name}' hit rate limit (429): {e}")
+            raise  # Re-raise other exceptions
         
         if not completion.choices:
             raise ModelClientError(f"Groq model '{model_name}' returned no choices.")
@@ -253,7 +191,14 @@ async def call_groq_chat_completion(
         )
     except asyncio.TimeoutError:
         raise ModelClientError(f"Groq model '{model_name}' request timed out after {timeout}s")
+    except RateLimitError:
+        # FIX: RateLimitError nên được re-raise trực tiếp, không wrap
+        raise
+    except ModelClientError:
+        # Các lỗi từ bên trong _call_groq_sdk (như Groq SDK not installed)
+        raise
     except Exception as exc:
+        # Lỗi không xác định - wrap thành ModelClientError
         raise ModelClientError(f"Groq model '{model_name}' request failed: {exc}") from exc
 
 
@@ -284,16 +229,6 @@ async def call_compound_model(
             )
         attempts.append(("groq", _call_groq))
 
-    if OPENROUTER_API_KEY:
-        async def _call_openrouter() -> str:
-            return await call_openrouter_chat_completion(
-                "meta-llama/llama-3.1-70b-instruct",
-                prompt,
-                timeout=timeout or 60.0,
-                temperature=temperature,
-                system_prompt=system_prompt,
-            )
-        attempts.append(("openrouter", _call_openrouter))
 
     if GEMINI_API_KEY:
         async def _call_gemini() -> str:
@@ -366,7 +301,7 @@ async def call_agent_with_capability_fallback(
 ) -> str:
     """
     Hàm gọi Agent thông minh với cơ chế Fallback dựa trên Năng lực.
-    Tự động định tuyến (Routing) sang API phù hợp (Google/Groq/OpenRouter).
+    Tự động định tuyến (Routing) sang API phù hợp (Google/Groq).
     
     Args:
         role: Vai trò của agent (JUDGE, CRITIC, PLANNER)
@@ -420,20 +355,25 @@ async def call_agent_with_capability_fallback(
                     timeout=timeout,
                 )
             
-            # 3. Nhóm OpenRouter (các model khác) -> Gọi qua OpenRouter
+            # 3. Model không được nhận diện - Raise error rõ ràng
             else:
-                response_text = await call_openrouter_chat_completion(
-                    model_name,
-                    prompt,
-                    system_prompt=system_prompt,
-                    temperature=temperature,
-                    timeout=timeout,
+                raise ModelClientError(
+                    f"Model '{model_name}' không được hỗ trợ. "
+                    f"Chỉ hỗ trợ: Gemini/Gemma (Google) và Llama/Qwen/GPT-OSS (Groq)."
                 )
                 
             # Nếu chạy đến đây là thành công
             print("OK")
             return response_text
 
+        except RateLimitError as e:
+            # 429/Quota Exhausted - Chuyển ngay lập tức sang model dự phòng, KHÔNG retry
+            print(f"QUOTA HẾT (429)")
+            print(f"      ⚠️  {str(e)[:100]}")
+            print(f"      → Chuyển NGAY sang model dự phòng...")
+            errors.append(f"{model_name}: RATE_LIMIT_429 - {str(e)[:80]}")
+            continue  # Fallback ngay lập tức
+            
         except Exception as e:
             print(f"FAILED")
             print(f"      Lỗi: {str(e)[:150]}...")
