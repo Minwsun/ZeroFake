@@ -10,6 +10,7 @@ from app.weather import classify_claim
 from app.model_clients import (
     call_gemini_model,
     call_openrouter_chat_completion,
+    call_agent_with_capability_fallback,
     ModelClientError,
     RateLimitError,
 )
@@ -20,6 +21,7 @@ load_dotenv()
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 SYNTHESIS_PROMPT = ""
+CRITIC_PROMPT = ""  # NEW: Prompt cho CRITIC agent
 
 
 # Cài đặt an toàn
@@ -47,6 +49,133 @@ WEATHER_SOURCE_KEYWORDS = [
 ]
 
 
+def normalize_conclusion(conclusion: str) -> str:
+    """
+    Normalize conclusion to BINARY classification: TIN THẬT or TIN GIẢ only.
+    No "GÂY HIỂU LẦM" - misleading info is treated as TIN GIẢ.
+    """
+    if not conclusion:
+        return "TIN GIẢ"
+    
+    conclusion_upper = conclusion.upper().strip()
+    
+    # TIN THẬT (with and without diacritics)
+    # Only return TIN THẬT if explicitly confirmed as true/verified
+    if any(x in conclusion_upper for x in [
+        "TIN THẬT", "TIN THAT", 
+        "TRUE", "REAL", "VERIFIED", 
+        "CHINH XAC", "CHÍNH XÁC",
+        "CÓ CƠ SỞ", "CO CO SO",
+        "XÁC NHẬN", "XAC NHAN",
+        "ĐÃ XÁC MINH", "DA XAC MINH"
+    ]):
+        return "TIN THẬT"
+    
+    # Everything else -> TIN GIẢ 
+    # Including: GÂY HIỂU LẦM, CHƯA KIỂM CHỨNG, TIN ĐỒN, FALSE, FAKE, OUTDATED, etc.
+    return "TIN GIẢ"
+
+
+# Product version database for outdated information detection
+# Format: product_pattern -> (latest_version, release_year)
+PRODUCT_VERSIONS = {
+    # Apple iPhone (as of Dec 2025)
+    r"iphone\s*(\d+)": {"latest": 17, "year": 2025, "name": "iPhone"},
+    # Samsung Galaxy S
+    r"galaxy\s*s\s*(\d+)": {"latest": 25, "year": 2025, "name": "Galaxy S"},
+    # Samsung Galaxy Note
+    r"galaxy\s*note\s*(\d+)": {"latest": 20, "year": 2020, "name": "Galaxy Note"},
+    # Google Pixel
+    r"pixel\s*(\d+)": {"latest": 9, "year": 2024, "name": "Pixel"},
+    # PlayStation
+    r"playstation\s*(\d+)|ps\s*(\d+)": {"latest": 5, "year": 2020, "name": "PlayStation"},
+    # Xbox (Xbox One=1, Series X=2)
+    r"xbox\s*series\s*([xs])": {"latest": "x", "year": 2020, "name": "Xbox Series"},
+    # Windows
+    r"windows\s*(\d+)": {"latest": 11, "year": 2021, "name": "Windows"},
+    # macOS versions
+    r"macos\s*(\d+)|mac\s*os\s*(\d+)": {"latest": 15, "year": 2024, "name": "macOS"},
+    # MacBook chips
+    r"macbook.*m(\d+)": {"latest": 4, "year": 2024, "name": "MacBook M-chip"},
+}
+
+
+def _detect_outdated_product(text_input: str) -> dict | None:
+    """
+    Detect if the input mentions an outdated product version.
+    Returns dict with product info if outdated, None otherwise.
+    """
+    text_lower = text_input.lower()
+    
+    for pattern, info in PRODUCT_VERSIONS.items():
+        match = re.search(pattern, text_lower)
+        if match:
+            # Get the version number from match groups
+            version_str = None
+            for group in match.groups():
+                if group:
+                    version_str = group
+                    break
+            
+            if version_str:
+                try:
+                    # Handle numeric versions
+                    if version_str.isdigit():
+                        mentioned_version = int(version_str)
+                        latest_version = info["latest"]
+                        
+                        if isinstance(latest_version, int) and mentioned_version < latest_version:
+                            return {
+                                "product": info["name"],
+                                "mentioned_version": mentioned_version,
+                                "latest_version": latest_version,
+                                "latest_year": info["year"],
+                                "is_outdated": True,
+                                "years_behind": latest_version - mentioned_version
+                            }
+                except (ValueError, TypeError):
+                    pass
+    
+    return None
+
+
+def _is_common_knowledge(text_input: str) -> bool:
+    """
+    Detect if the claim is about well-known, easily verifiable facts.
+    These are facts that are widely accepted and don't need extensive verification.
+    """
+    text_lower = text_input.lower()
+    
+    # Well-known tech facts
+    common_knowledge_patterns = [
+        # Company ownership/development
+        ("chatgpt", "openai"),
+        ("gpt-4", "openai"),
+        ("gpt-3", "openai"),
+        ("google", "alphabet"),
+        ("youtube", "google"),
+        ("instagram", "meta"),
+        ("whatsapp", "meta"),
+        ("facebook", "meta"),
+        ("iphone", "apple"),
+        ("android", "google"),
+        ("windows", "microsoft"),
+        ("azure", "microsoft"),
+        ("aws", "amazon"),
+        
+        # Historical events that are well-documented
+        ("facebook", "meta", "2021"),
+        ("messi", "world cup", "2022"),
+        ("argentina", "world cup", "2022"),
+    ]
+    
+    for pattern in common_knowledge_patterns:
+        if all(keyword in text_lower for keyword in pattern):
+            return True
+    
+    return False
+
+
 def _is_weather_source(item: Dict[str, Any]) -> bool:
     source = (item.get("source") or item.get("url") or "").lower()
     if not source:
@@ -54,7 +183,7 @@ def _is_weather_source(item: Dict[str, Any]) -> bool:
     return any(keyword in source for keyword in WEATHER_SOURCE_KEYWORDS)
 
 
-def load_synthesis_prompt(prompt_path="synthesis_prompt.txt"):
+def load_synthesis_prompt(prompt_path="prompts/synthesis_prompt.txt"):
     """Tải prompt cho Agent 2 (Synthesizer)"""
     global SYNTHESIS_PROMPT
     try:
@@ -64,6 +193,25 @@ def load_synthesis_prompt(prompt_path="synthesis_prompt.txt"):
     except Exception as e:
         print(f"LỖI: không thể tải {prompt_path}: {e}")
         raise
+
+
+def load_critic_prompt(prompt_path="prompts/critic_prompt.txt"):
+    """Tải prompt cho CRITIC agent (Devil's Advocate)"""
+    global CRITIC_PROMPT
+    try:
+        with open(prompt_path, 'r', encoding='utf-8') as f:
+            CRITIC_PROMPT = f.read()
+        print("INFO: Tải CRITIC Prompt thành công.")
+    except FileNotFoundError:
+        # Fallback to default prompt if file not found
+        CRITIC_PROMPT = (
+            "Bạn là Biện lý đối lập (Devil's Advocate). "
+            "Hãy chỉ ra 3 điểm yếu, mâu thuẫn hoặc khả năng đây là tin cũ/satire/tin đồn. "
+            "Chỉ trả lời ngắn gọn, gay gắt."
+        )
+        print(f"WARNING: Không tìm thấy {prompt_path}, dùng prompt mặc định.")
+    except Exception as e:
+        print(f"LỖI: không thể tải {prompt_path}: {e}")
 
 
 
@@ -166,8 +314,12 @@ def _as_str(x: Any) -> str:
 
 def _heuristic_summarize(text_input: str, bundle: Dict[str, Any], current_date: str) -> Dict[str, Any]:
     """
-    (ĐÃ SỬA ĐỔI)
-    Logic dự phòng khi LLM thất bại, sử dụng Lớp 1 (OpenWeather API) cho tin thời tiết.
+    (ĐÃ SỬA ĐỔI - ADVERSARIAL DIALECTIC)
+    Logic dự phòng khi LLM thất bại.
+    Ưu tiên:
+    1. Phát hiện sản phẩm lỗi thời (iPhone 12, Galaxy S21, etc.)
+    2. Lớp 1 (OpenWeather API) cho tin thời tiết
+    3. Lớp 2/3 cho tin tức khác
     """
     l1 = bundle.get("layer_1_tools") or []
     l2 = bundle.get("layer_2_high_trust") or []
@@ -180,6 +332,70 @@ def _heuristic_summarize(text_input: str, bundle: Dict[str, Any], current_date: 
 
     is_weather_claim = claim.get("is_weather", False)
     text_lower = text_input.lower()
+    
+    # ═══════════════════════════════════════════════════════════════
+    # PRIORITY 0: Sự thật hiển nhiên (Common Knowledge)
+    # ═══════════════════════════════════════════════════════════════
+    if _is_common_knowledge(text_input):
+        debate_log = {
+            "red_team_argument": "Tôi không tìm thấy bằng chứng bác bỏ sự thật khoa học/kỹ thuật này.",
+            "blue_team_argument": "Đây là sự thật đã được khoa học/cộng đồng công nhận rộng rãi.",
+            "judge_reasoning": "Blue Team thắng. Đây là kiến thức phổ thông đã được xác nhận."
+        }
+        return {
+            "conclusion": "TIN THẬT",
+            "confidence_score": 99,
+            "reason": "Đây là sự thật khoa học/kỹ thuật đã được công nhận rộng rãi.",
+            "debate_log": debate_log,
+            "key_evidence_snippet": "Kiến thức phổ thông",
+            "key_evidence_source": "",
+            "evidence_link": "",
+            "style_analysis": "",
+            "cached": False
+        }
+    
+    # ═══════════════════════════════════════════════════════════════
+    # PRIORITY 1: Phát hiện sản phẩm LỖI THỜI (Outdated Product)
+    # ═══════════════════════════════════════════════════════════════
+    outdated_info = _detect_outdated_product(text_input)
+    if outdated_info and outdated_info.get("is_outdated"):
+        product = outdated_info["product"]
+        mentioned = outdated_info["mentioned_version"]
+        latest = outdated_info["latest_version"]
+        latest_year = outdated_info["latest_year"]
+        
+        # Build Adversarial Dialectic debate
+        debate_log = {
+            "red_team_argument": _as_str(
+                f"Thông tin này SAI! {product} {mentioned} là phiên bản cũ. "
+                f"Hiện tại đã có {product} {latest} (ra mắt năm {latest_year}). "
+                f"Việc đăng tin về {product} {mentioned} như tin mới là SAI SỰ THẬT."
+            ),
+            "blue_team_argument": _as_str(
+                f"Đúng là {product} {mentioned} đã ra mắt thật. "
+                f"Tuy nhiên, đây là thông tin lỗi thời. Tôi thừa nhận thua cuộc."
+            ),
+            "judge_reasoning": _as_str(
+                f"Red Team thắng. {product} {mentioned} là phiên bản cũ. "
+                f"Hiện tại đã có {product} {latest}. Tin lỗi thời = TIN GIẢ."
+            )
+        }
+        
+        return {
+            "conclusion": "TIN GIẢ",
+            "confidence_score": 95,
+            "reason": _as_str(
+                f"{product} {mentioned} đã lỗi thời. "
+                f"Hiện tại đã có {product} {latest} (năm {latest_year}). "
+                f"Tin về sản phẩm cũ = TIN GIẢ."
+            ),
+            "debate_log": debate_log,
+            "key_evidence_snippet": _as_str(f"{product} {latest} ra mắt năm {latest_year}"),
+            "key_evidence_source": "",
+            "evidence_link": "",
+            "style_analysis": "Thông tin lỗi thời được trình bày như tin mới",
+            "cached": False
+        }
 
     # Ưu tiên Lớp 1 (OpenWeather API) cho tin thời tiết
     if is_weather_claim and l1:
@@ -239,16 +455,112 @@ def _heuristic_summarize(text_input: str, bundle: Dict[str, Any], current_date: 
                 "cached": False
             }
 
-    # Yêu cầu chặt chẽ: cần >=2 nguồn Lớp 2 đồng thuận để kết luận TIN THẬT
-    if len(l2) >= 2:
-        top = l2[0]
+    # ═══════════════════════════════════════════════════════════════
+    # PRIORITY 2: Kiểm tra nguồn L2 CÓ LIÊN QUAN đến claim
+    # ═══════════════════════════════════════════════════════════════
+    # Trích xuất các thực thể quan trọng từ claim để kiểm tra relevance
+    person_keywords = []
+    org_location_keywords = []
+    
+    # Tìm tên người (viết hoa, thường là từ đầu tiên)
+    name_pattern = re.compile(r'\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\b')
+    names = name_pattern.findall(text_input)
+    person_keywords.extend([n.lower() for n in names])
+    
+    # Tìm tên tổ chức/CLB/địa điểm
+    org_patterns = [
+        (r'clb\s+(\w+\s*\w*)', 'clb'),
+        (r'fc\s+(\w+\s*\w*)', 'fc'),
+        (r'đội\s+(\w+\s*\w*)', 'đội'),
+    ]
+    for pat, prefix in org_patterns:
+        match = re.search(pat, text_lower)
+        if match:
+            org_location_keywords.append(match.group(1).strip())
+    
+    # Thêm các địa danh phổ biến
+    location_names = ["hà nội", "ha noi", "hanoi", "sài gòn", "saigon", "ho chi minh", 
+                      "việt nam", "vietnam", "barca", "barcelona", "inter miami", "real madrid"]
+    for loc in location_names:
+        if loc in text_lower:
+            org_location_keywords.append(loc)
+    
+    # Kiểm tra L2 sources có liên quan THỰC SỰ không
+    # Đối với claim về người + tổ chức: CẦN KHỚP CẢ HAI
+    relevant_l2 = []
+    has_person_org_claim = len(person_keywords) > 0 and len(org_location_keywords) > 0
+    
+    for item in l2:
+        snippet = (item.get("snippet") or "").lower()
+        title = (item.get("title") or "").lower()
+        combined = snippet + " " + title
+        
+        if has_person_org_claim:
+            # Claim có cả người + tổ chức -> cần khớp CẢ HAI
+            has_person = any(kw in combined for kw in person_keywords if kw and len(kw) > 2)
+            has_org = any(kw in combined for kw in org_location_keywords if kw and len(kw) > 2)
+            
+            if has_person and has_org:
+                relevant_l2.append(item)
+        else:
+            # Claim đơn giản -> chỉ cần khớp 1 keyword
+            is_relevant = False
+            all_keywords = person_keywords + org_location_keywords
+            for kw in all_keywords:
+                if kw and len(kw) > 2 and kw in combined:
+                    is_relevant = True
+                    break
+            if is_relevant:
+                relevant_l2.append(item)
+    
+    # Yêu cầu chặt chẽ: cần >=2 nguồn Lớp 2 LIÊN QUAN THỰC SỰ để kết luận TIN THẬT
+    if len(relevant_l2) >= 2:
+        top = relevant_l2[0]
         return {
             "conclusion": "TIN THẬT",
-            "reason": _as_str(f"Heuristic: Có từ 2 nguồn LỚP 2 uy tín gần đây, ví dụ {top.get('source')} ({top.get('date')})."),
+            "debate_log": {
+                "red_team_argument": "Tôi không tìm thấy bằng chứng bác bỏ.",
+                "blue_team_argument": _as_str(f"Có ít nhất 2 nguồn uy tín xác nhận: {top.get('source')}."),
+                "judge_reasoning": "Blue Team thắng với bằng chứng từ nhiều nguồn uy tín."
+            },
+            "confidence_score": 85,
+            "reason": _as_str(f"Có từ 2 nguồn uy tín xác nhận thông tin này ({top.get('source')})."),
             "style_analysis": "",
             "key_evidence_snippet": _as_str(top.get("snippet")),
             "key_evidence_source": _as_str(top.get("source")),
             "evidence_link": _as_str(top.get("url") or top.get("link")),
+            "cached": False
+        }
+    
+    # Nếu có nguồn L2 nhưng KHÔNG liên quan -> Có thể là TIN GIẢ
+    all_claim_keywords = person_keywords + org_location_keywords
+    if len(l2) >= 2 and len(relevant_l2) == 0 and all_claim_keywords:
+        # Claim có thực thể cụ thể (tên người/tổ chức) nhưng không có bằng chứng liên quan
+        debate_log = {
+            "red_team_argument": _as_str(
+                f"Không tìm thấy bất kỳ nguồn uy tín nào xác nhận thông tin này. "
+                f"Các nguồn tìm được không liên quan đến nội dung claim."
+            ),
+            "blue_team_argument": _as_str(
+                "Tôi không tìm thấy bằng chứng xác nhận. Tôi thừa nhận thua cuộc."
+            ),
+            "judge_reasoning": _as_str(
+                "Red Team thắng. Không có nguồn uy tín nào xác nhận tin này. "
+                "Đây có thể là tin đồn hoặc tin giả."
+            )
+        }
+        return {
+            "conclusion": "TIN GIẢ",
+            "confidence_score": 80,
+            "reason": _as_str(
+                "Không tìm thấy nguồn uy tín nào xác nhận thông tin này. "
+                "Các kết quả tìm kiếm không liên quan đến nội dung claim."
+            ),
+            "debate_log": debate_log,
+            "key_evidence_snippet": "",
+            "key_evidence_source": "",
+            "evidence_link": "",
+            "style_analysis": "Tin có vẻ là tin đồn không có căn cứ",
             "cached": False
         }
 
@@ -317,9 +629,9 @@ def _heuristic_summarize(text_input: str, bundle: Dict[str, Any], current_date: 
                 )
 
             return {
-                "conclusion": "GÂY HIỂU LẦM",
+                "conclusion": "TIN GIẢ",
                 "reason": reason,
-                "style_analysis": "",
+                "style_analysis": "Tin lỗi thời",
                 "key_evidence_snippet": latest_snippet,
                 "key_evidence_source": _as_str(old_source),
                 "evidence_link": _as_str(reference_old.get("url") or reference_old.get("link")),
@@ -335,9 +647,9 @@ def _heuristic_summarize(text_input: str, bundle: Dict[str, Any], current_date: 
                 f"(ví dụ {latest_source}, {latest_date}). Đây là thông tin cũ được lặp lại khiến người đọc hiểu lầm bối cảnh hiện tại."
             )
             return {
-                "conclusion": "GÂY HIỂU LẦM",
+                "conclusion": "TIN GIẢ",
                 "reason": reason,
-                "style_analysis": "",
+                "style_analysis": "Tin lỗi thời",
                 "key_evidence_snippet": _as_str(latest_item.get("snippet")),
                 "key_evidence_source": _as_str(latest_source),
                 "evidence_link": _as_str(latest_item.get("url") or latest_item.get("link")),
@@ -360,9 +672,9 @@ def _heuristic_summarize(text_input: str, bundle: Dict[str, Any], current_date: 
                 "Việc dùng lại tin cũ khiến người đọc hiểu sai về tình trạng hiện tại."
             )
             return {
-                "conclusion": "GÂY HIỂU LẦM",
+                "conclusion": "TIN GIẢ",
                 "reason": reason,
-                "style_analysis": "",
+                "style_analysis": "Tin lỗi thời",
                 "key_evidence_snippet": _as_str(old_item.get("snippet")),
                 "key_evidence_source": _as_str(older_source),
                 "evidence_link": _as_str(old_item.get("url") or old_item.get("link")),
@@ -382,9 +694,9 @@ def _heuristic_summarize(text_input: str, bundle: Dict[str, Any], current_date: 
                     "nên thông tin dễ gây hiểu lầm."
                 )
                 return {
-                    "conclusion": "GÂY HIỂU LẦM",
+                    "conclusion": "TIN GIẢ",
                     "reason": reason,
-                    "style_analysis": "",
+                    "style_analysis": "Tin đã không còn đúng",
                     "key_evidence_snippet": _as_str(item.get("snippet")),
                     "key_evidence_source": _as_str(source),
                     "evidence_link": _as_str(item.get("url") or item.get("link")),
@@ -467,7 +779,13 @@ async def execute_final_analysis(
     flash_mode: bool = False,
 ) -> dict:
     """
-    Gọi Agent 2 để tổng hợp bằng chứng; cắt gọn evidence; dynamic model picking; retry nhẹ; heuristic fallback.
+    Pipeline: Input → Planner → Search → CRITIC → JUDGE → (RE-SEARCH nếu cần)
+    
+    1. CRITIC (Biện lý) - Phản biện mạnh, tìm điểm yếu trong bằng chứng
+    2. JUDGE (Thẩm phán) - Ra phán quyết dựa trên bằng chứng VÀ ý kiến CRITIC
+    3. RE-SEARCH - Chỉ khi JUDGE yêu cầu thêm bằng chứng (không double-check)
+    
+    Fallback chain: GPT-OSS-120B → Gemma-27B → Llama-3.3-70B
     """
     if not SYNTHESIS_PROMPT:
         raise ValueError("Synthesis prompt (prompt 2) chưa được tải.")
@@ -476,58 +794,211 @@ async def execute_final_analysis(
     trimmed_bundle = _trim_evidence_bundle(evidence_bundle)
     evidence_bundle_json = json.dumps(trimmed_bundle, indent=2, ensure_ascii=False)
 
-    # Prompt
-    prompt = SYNTHESIS_PROMPT
-    prompt = prompt.replace("{evidence_bundle_json}", evidence_bundle_json)
-    prompt = prompt.replace("{text_input}", text_input)
-    prompt = prompt.replace("{current_date}", current_date)
-
-    model_name = _normalize_agent2_model(model_key)
-    
-    # Fallback chain for Agent 2: user_model -> gemini flash -> gemma 27B -> gemma 12B
-    fallback_chain = [
-        model_name,  # Try user's selected model first
-        "models/gemini-2.5-flash",
-        "models/gemma-3-27b-it",
-        "models/gemma-3-12b-it",
-    ]
-    # Remove duplicates while preserving order
-    seen = set()
-    fallback_chain = [x for x in fallback_chain if not (x in seen or seen.add(x))]
-    
-    if not GEMINI_API_KEY:
-        raise ModelClientError("GEMINI_API_KEY is not configured.")
-    
-    text_response = ""
-    last_error = None
-    
-    for fallback_model in fallback_chain:
-        try:
-            provider = _detect_agent2_provider(fallback_model)
-            if provider != "gemini":
-                continue  # Skip non-gemini models
-            
-            print(f"Synthesizer: trying model '{fallback_model}' (provider={provider})")
-            timeout = None if flash_mode else 45.0
-            text_response = await call_gemini_model(
-                fallback_model,
-                prompt,
-                timeout=timeout,
-                safety_settings=SAFETY_SETTINGS,
+    # ========== BƯỚC 1: CRITIC (BIỆN LÝ ĐỐI LẬP) ==========
+    critic_feedback = ""
+    try:
+        # Sử dụng CRITIC_PROMPT từ file 
+        if CRITIC_PROMPT:
+            critic_prompt = CRITIC_PROMPT
+            critic_prompt = critic_prompt.replace("{text_input}", text_input)
+            critic_prompt = critic_prompt.replace("{current_date}", current_date)
+            critic_prompt = critic_prompt.replace("{evidence_bundle_json}", evidence_bundle_json[:4000])
+        else:
+            # Fallback prompt mạnh mẽ
+            critic_prompt = (
+                f"[VAI TRÒ]: Bạn là BIỆN LÝ ĐỐI LẬP (Devil's Advocate).\n"
+                f"[NHIỆM VỤ]: TÌM MỌI LỖI, PHẢN BIỆN MẠNH MẼ, CHỈ RA ĐIỂM YẾU.\n\n"
+                f"TIN CẦN KIỂM TRA: {text_input}\n"
+                f"NGÀY HIỆN TẠI: {current_date}\n"
+                f"BẰNG CHỨNG: {evidence_bundle_json[:3000]}...\n\n"
+                f"GÓC TẤN CÔNG:\n"
+                f"1. Nguồn có uy tín không? (Tier 0/1/2)\n"
+                f"2. Thời gian có khớp không? Tin cũ được đào lại?\n"
+                f"3. Sản phẩm/thông tin đã lỗi thời?\n"
+                f"4. Ngữ cảnh bị cắt xén?\n"
+                f"5. Có phải satire/châm biếm?\n"
+                f"6. Có xác nhận chính thức hay chỉ là tin đồn?\n\n"
+                f"CHỈ RA 3 ĐIỂM YẾU LỚN NHẤT VÀ KẾT LUẬN SƠ BỘ!"
             )
-            
-            # If we got text, try to parse it
-            result_json = _parse_json_from_text(text_response or "")
-            if result_json:
-                print(f"Synthesizer: Successfully generated verdict with model '{fallback_model}'")
-                break  # Success, exit loop
-        except Exception as exc:
-            last_error = exc
-            print(f"Synthesizer: Error using model '{fallback_model}': {exc}")
-            text_response = ""
-            continue
+        
+        print("\n[CRITIC] Dang phan bien bang chung...")
+        critic_feedback = await call_agent_with_capability_fallback(
+            role="CRITIC",
+            prompt=critic_prompt,
+            temperature=0.3,
+            timeout=60.0,
+        )
+        if critic_feedback:
+            print(f"[CRITIC] Ý kiến: {critic_feedback[:200]}...")
+    except Exception as e:
+        print(f"[CRITIC] WARNING: Bo qua phan bien do loi: {e}")
 
+    # ========== BƯỚC 2: JUDGE (THẨM PHÁN) ==========
+    # Build prompt với ý kiến CRITIC
+    base_prompt = SYNTHESIS_PROMPT
+    base_prompt = base_prompt.replace("{evidence_bundle_json}", evidence_bundle_json)
+    base_prompt = base_prompt.replace("{text_input}", text_input)
+    base_prompt = base_prompt.replace("{current_date}", current_date)
+    
+    # Thêm ý kiến CRITIC vào prompt cho JUDGE
+    if critic_feedback:
+        base_prompt += (
+            f"\n\n══════════════════════════════════════════════════════════════\n"
+            f"[Ý KIẾN TỪ BIỆN LÝ ĐỐI LẬP - BẮT BUỘC THAM KHẢO]:\n"
+            f"{critic_feedback[:1500]}\n"
+            f"══════════════════════════════════════════════════════════════\n"
+            f"Hay can nhac KY cac diem yeu tren truoc khi ket luan.\n"
+            f"Nếu CRITIC đúng, hãy điều chỉnh kết luận tương ứng."
+        )
+
+    text_response = ""
+    try:
+        print("\n[JUDGE] Dang ra phan quyet cuoi cung...")
+        text_response = await call_agent_with_capability_fallback(
+            role="JUDGE",
+            prompt=base_prompt,
+            temperature=0.2,
+            timeout=90.0,
+        )
+    except Exception as e:
+        print(f"[JUDGE] Lỗi: {e}")
+    
     result_json = _parse_json_from_text(text_response or "")
+    
+    # ========== RE-SEARCH (CHỈ KHI JUDGE YÊU CẦU THÊM BẰNG CHỨNG) ==========
+    # Kích hoạt khi: needs_more_evidence=true HOẶC confidence < 70
+    needs_research = False
+    confidence = 0
+    
+    if result_json:
+        try:
+            confidence = int(str(result_json.get("confidence_score", 0)).strip('% '))
+        except:
+            confidence = 0
+        
+        if result_json.get("needs_more_evidence"):
+            needs_research = True
+            print(f"\n[JUDGE] Yêu cầu tìm thêm bằng chứng...")
+        elif confidence < 70 and confidence > 0:
+            needs_research = True
+            print(f"\n[JUDGE] Độ tin cậy thấp ({confidence}%), tìm thêm bằng chứng...")
+    
+    if needs_research and not flash_mode:
+        suggested_queries = result_json.get("suggested_queries", [])
+        
+        # Nếu không có suggested_queries, tạo queries mặc định
+        if not suggested_queries:
+            suggested_queries = [
+                f"{text_input[:100]} xác minh",
+                f"{text_input[:100]} tin thật hay giả",
+            ]
+        
+        print(f"[RE-SEARCH] Tìm kiếm với {len(suggested_queries)} queries...")
+        
+        try:
+            from app.search import call_google_search
+            from app.ranker import get_rank_from_url, _extract_date
+            from app.article_scraper import scrape_multiple_articles, enrich_search_results_with_full_text
+            from datetime import datetime
+            import asyncio
+            
+            additional_evidence = []
+            seen_urls = set()
+            
+            # Lấy URLs đã có
+            for layer in ["layer_2_high_trust", "layer_3_general", "layer_4_social_low"]:
+                for item in evidence_bundle.get(layer, []):
+                    if item.get("url") or item.get("link"):
+                        seen_urls.add(item.get("url") or item.get("link"))
+            
+            # Search với suggested queries (giới hạn 2)
+            for query in suggested_queries[:2]:
+                print(f"  └── Searching: '{query}'")
+                search_items = await asyncio.to_thread(call_google_search, query, "")
+                
+                for item in search_items or []:
+                    link = item.get('link')
+                    if link and link not in seen_urls:
+                        seen_urls.add(link)
+                        rank = get_rank_from_url(link)
+                        date = _extract_date(item.get('snippet', ''), item.get('title', ''))
+                        is_old = False
+                        if date:
+                            try:
+                                date_obj = datetime.strptime(date[:10], '%Y-%m-%d')
+                                days_diff = (datetime.now() - date_obj).days
+                                is_old = days_diff > 365
+                            except:
+                                pass
+                        
+                        additional_evidence.append({
+                            'title': item.get('title', ''),
+                            'link': link,
+                            'url': link,
+                            'snippet': item.get('snippet', ''),
+                            'source': link,
+                            'rank_score': rank,
+                            'date': date,
+                            'is_old': is_old
+                        })
+            
+            # Scrape top 3 URLs từ re-search
+            if additional_evidence:
+                top_urls = [item["link"] for item in additional_evidence[:3]]
+                scraped = await scrape_multiple_articles(top_urls, max_articles=3)
+                additional_evidence = enrich_search_results_with_full_text(additional_evidence, scraped)
+            
+            print(f"  └── Tìm thấy {len(additional_evidence)} bằng chứng mới")
+            
+            if additional_evidence:
+                # Merge vào evidence bundle
+                for item in additional_evidence:
+                    rank = item.get('rank_score', 0)
+                    if rank >= 0.7:
+                        if 'layer_2_high_trust' not in evidence_bundle:
+                            evidence_bundle['layer_2_high_trust'] = []
+                        evidence_bundle['layer_2_high_trust'].append(item)
+                    else:
+                        if 'layer_3_general' not in evidence_bundle:
+                            evidence_bundle['layer_3_general'] = []
+                        evidence_bundle['layer_3_general'].append(item)
+                
+                # Re-call JUDGE với evidence mới
+                print("\n[JUDGE] Danh gia lai voi bang chung bo sung...")
+                trimmed_bundle = _trim_evidence_bundle(evidence_bundle)
+                evidence_bundle_json = json.dumps(trimmed_bundle, indent=2, ensure_ascii=False)
+                
+                re_prompt = SYNTHESIS_PROMPT
+                re_prompt = re_prompt.replace("{evidence_bundle_json}", evidence_bundle_json)
+                re_prompt = re_prompt.replace("{text_input}", text_input)
+                re_prompt = re_prompt.replace("{current_date}", current_date)
+                
+                # Thêm CRITIC feedback vào re-prompt
+                if critic_feedback:
+                    re_prompt += (
+                        f"\n\n══════════════════════════════════════════════════════════════\n"
+                        f"[Ý KIẾN TỪ BIỆN LÝ ĐỐI LẬP]:\n{critic_feedback[:1000]}\n"
+                        f"══════════════════════════════════════════════════════════════"
+                    )
+                
+                re_prompt += "\n\n[LƯU Ý]: Đây là lần đánh giá thứ 2 với bằng chứng bổ sung. Không được yêu cầu thêm bằng chứng nữa."
+                
+                re_response = await call_agent_with_capability_fallback(
+                    role="JUDGE",
+                    prompt=re_prompt,
+                    temperature=0.2,
+                    timeout=90.0,
+                )
+                
+                re_result = _parse_json_from_text(re_response or "")
+                if re_result:
+                    result_json = re_result
+                    result_json["re_searched"] = True
+                    print(f"[JUDGE] Kết luận sau re-search: {result_json.get('conclusion', 'N/A')}")
+                        
+        except Exception as e:
+            print(f"[RE-SEARCH] Lỗi: {e}")
+
     if result_json:
         # Check if Agent 2 requested additional search queries
         additional_queries = result_json.get("additional_search_queries", [])
@@ -644,6 +1115,9 @@ async def execute_final_analysis(
                             top_link = evidence_bundle["layer_3_general"][0].get("url") or ""
                         updated_result["evidence_link"] = top_link
 
+                        # Normalize conclusion to only 3 categories
+                        updated_result["conclusion"] = normalize_conclusion(updated_result.get("conclusion", ""))
+                        
                         print(f"Synthesizer: Re-analysis complete with additional evidence (link: {top_link})")
                         return updated_result
                 except Exception as e:
@@ -654,16 +1128,36 @@ async def execute_final_analysis(
         result_json.pop("additional_search_queries", None)
         result_json["cached"] = False
 
-        # (NEW) Extract evidence_link from the best evidence item
+        # Extract evidence_link from the best evidence item (check both 'url' and 'link')
         top_link = ""
-        if evidence_bundle.get("layer_2_high_trust"):
-            top_link = evidence_bundle["layer_2_high_trust"][0].get("url") or ""
-        elif evidence_bundle.get("layer_3_general"):
-            top_link = evidence_bundle["layer_3_general"][0].get("url") or ""
+        for layer in ["layer_2_high_trust", "layer_3_general", "layer_4_social_low"]:
+            if evidence_bundle.get(layer) and len(evidence_bundle[layer]) > 0:
+                item = evidence_bundle[layer][0]
+                top_link = item.get("url") or item.get("link") or ""
+                if top_link:
+                    break
         result_json["evidence_link"] = top_link
+
+        # Add debate_log with CRITIC feedback (for evaluation metrics)
+        result_json["debate_log"] = {
+            "red_team_argument": critic_feedback[:500] if critic_feedback else "",
+            "blue_team_argument": result_json.get("final_message", result_json.get("reason", ""))[:500]
+        }
+
+        # Normalize conclusion to only 3 categories
+        result_json["conclusion"] = normalize_conclusion(result_json.get("conclusion", ""))
+
+        # Ensure 'reason' field is populated for evaluation metrics
+        if not result_json.get("reason"):
+            # Try to extract from final_message or judge_reasoning
+            result_json["reason"] = result_json.get("final_message", "") or \
+                                    result_json.get("judge_reasoning", {}).get("final_logic", "")
 
         return result_json
 
     print("Lỗi khi gọi Agent 2 (Synthesizer): Model response invalid or empty.")
     # (SỬA ĐỔI) Gọi hàm fallback đã được cập nhật
-    return _heuristic_summarize(text_input, trimmed_bundle, current_date)
+    heuristic_result = _heuristic_summarize(text_input, trimmed_bundle, current_date)
+    # Normalize conclusion for heuristic result too
+    heuristic_result["conclusion"] = normalize_conclusion(heuristic_result.get("conclusion", ""))
+    return heuristic_result

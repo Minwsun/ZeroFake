@@ -90,15 +90,23 @@ app/
   ranker.py            # Source ranker
   weather.py           # Geocoding + weather current/forecast (global)
   feedback.py          # Feedback loop (Relevant Retrieval)
-  trusted_domains.json  # Trusted domain tiers (tier0, tier1)
-planner_prompt.txt     # Prompt for Agent 1
-synthesis_prompt.txt   # Prompt for Agent 2
+  trusted_domains.json # Trusted domain tiers (tier0, tier1)
+prompts/
+  planner_prompt.txt   # Prompt for Agent 1
+  synthesis_prompt.txt # Prompt for Agent 2
+  critic_prompt.txt    # Prompt for CRITIC agent
+tools/
+  tool_executor.py     # Tool execution utilities (copy)
+scripts_bat/
+  run_server.bat       # Start backend server
+  run_gui.bat          # Start GUI
+  run_evaluation.bat   # Run evaluation
+scripts/
+  ow_cli.py            # OpenWeather CLI utility
 gui/main_gui.py        # PyQt6 GUI (Dark Mode)
-test/
-  generate_test_data.py    # Generate test samples using LLM
-  run_batch_test.py        # Batch testing and evaluation
-  generate_test_data.bat   # Windows batch file for test generation
-  run_batch_test.bat       # Windows batch file for batch testing
+evaluation/
+  run_evaluation.py    # Evaluation script
+  dataset_1200.json    # Test dataset
 ```
 
 ## 6) Key Features

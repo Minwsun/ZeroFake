@@ -11,4 +11,5 @@ PyQt6
 numpy
 duckduckgo-search
 geopy
-
+cloudscraper
+groq

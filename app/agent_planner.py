@@ -11,6 +11,7 @@ from app.model_clients import (
     call_groq_chat_completion,
     call_openrouter_chat_completion,
     call_compound_model,
+    call_agent_with_capability_fallback,
     ModelClientError,
 )
 
@@ -407,7 +408,7 @@ def _refine_city_name(candidate: str | None, text_input: str) -> str | None:
     return None
 
 
-def load_planner_prompt(prompt_path="planner_prompt.txt"):
+def load_planner_prompt(prompt_path="prompts/planner_prompt.txt"):
     """Load prompt for Agent 1 (Planner)"""
     global PLANNER_PROMPT
     try:
@@ -544,90 +545,56 @@ def _generate_search_queries(text_input: str, plan_struct: dict) -> list[str]:
     return candidates or [base or text_input]
 
 
-def _is_common_knowledge(text_input: str) -> bool:
-    """
-    Check if the input is common knowledge (sự thật hiển nhiên).
-    Common knowledge facts have volatility = "low" or "static".
-    """
-    text_lower = text_input.lower()
-    
-    # Common knowledge patterns
-    common_knowledge_patterns = [
-        # Scientific facts
-        r"mặt trời mọc phía đông",
-        r"sun rises in the east",
-        r"nước sôi ở 100 độ",
-        r"water boils at 100",
-        r"trái đất quay quanh mặt trời",
-        r"earth revolves around the sun",
-        r"nước đóng băng ở 0 độ",
-        r"water freezes at 0",
-        r"trọng lực",
-        r"gravity",
-        r"oxy cần thiết",
-        r"oxygen is necessary",
-        # Geographic facts
-        r"paris là thủ đô pháp",
-        r"paris is the capital of france",
-        r"london là thủ đô anh",
-        r"london is the capital of england",
-        r"hà nội là thủ đô việt nam",
-        r"hanoi is the capital of vietnam",
-        r"việt nam nằm ở đông nam á",
-        r"vietnam is in southeast asia",
-        r"sông nile là sông dài nhất",
-        r"nile is the longest river",
-        # Mathematical facts
-        r"2\s*\+\s*2\s*=\s*4",
-        r"1\s*\+\s*1\s*=\s*2",
-        # Historical facts (well-established)
-        r"thế chiến 2 kết thúc năm 1945",
-        r"world war 2 ended in 1945",
-        r"việt nam độc lập năm 1945",
-        r"vietnam gained independence in 1945",
-    ]
-    
-    for pattern in common_knowledge_patterns:
-        if re.search(pattern, text_lower):
-            return True
-    
-    return False
-
 
 def _normalize_plan(plan: dict, text_input: str, flash_mode: bool = False) -> dict:
     """
-    (ĐÃ SỬA ĐỔI)
+    (ĐÃ SỬA ĐỔI - OPTIMIZED PROMPT)
     Đảm bảo plan đủ schema.
-    Nếu là tin thời tiết -> tạo search query, KHÔNG gọi weather tool.
+    Xử lý cả schema cũ (time_references) và mới (time_info, is_weather_forecast).
     """
     import re
     plan = plan or {}
+
+    # Handle new schema fields from Popperian prompt
+    time_info = plan.get("time_info") or plan.get("target_date_str")  # Support both schemas
+    is_weather_forecast = plan.get("is_weather_forecast", False)
+    location = plan.get("location")
+    search_queries = plan.get("search_queries") or []
+    attack_vectors = plan.get("attack_vectors") or []  # New: Popperian attack vectors
+
+    # Convert new schema to old schema for backward compatibility
+    time_references = plan.get("time_references") or {}
+    if time_info and not time_references.get("relative_time"):
+        time_references["relative_time"] = time_info
+    if not time_references.get("time_scope"):
+        time_references["time_scope"] = "present"
+
+    # Build entities_and_values
+    entities = plan.get("entities_and_values") or {
+        "locations": [],
+        "persons": [],
+        "organizations": [],
+        "events": [],
+        "data_points": []
+    }
+    # Add location from new schema if present
+    if location and location not in (entities.get("locations") or []):
+        entities.setdefault("locations", []).insert(0, location)
 
     # Khung chuẩn
     plan_struct = {
         "main_claim": plan.get("main_claim") or text_input,
         "claim_type": plan.get("claim_type") or "unknown",
         "volatility": plan.get("volatility") or "medium",
-        "entities_and_values": plan.get("entities_and_values") or {
-            "locations": [],
-            "persons": [],
-            "organizations": [],
-            "events": [],
-            "data_points": []
-        },
-        "time_references": plan.get("time_references") or {
-            "explicit_date": None,
-            "relative_time": None,
-            "time_scope": "present"
-        },
+        "entities_and_values": entities,
+        "time_references": time_references,
+        "sub_questions": plan.get("sub_questions") or [],
+        "comparison_logic": plan.get("comparison_logic"),
+        "attack_vectors": attack_vectors,  # New: Popperian Falsification
         "required_tools": plan.get("required_tools") if isinstance(plan.get("required_tools"), list) else [],
         "browse_findings": plan.get("browse_findings") if isinstance(plan.get("browse_findings"), list) else []
     }
     
-    # QUAN TRỌNG: Hiệu chỉnh volatility cho sự thật hiển nhiên (common knowledge) - ƯU TIÊN CAO NHẤT
-    if _is_common_knowledge(text_input):
-        plan_struct["volatility"] = "low"  # or "static" - using "low" for consistency
-        print(f"Agent Planner: Adjusted volatility = 'low' for common knowledge fact: {text_input[:100]}")
     
     # QUAN TRỌNG: Hiệu chỉnh volatility cho tin lịch sử
     time_scope = plan_struct.get("time_references", {}).get("time_scope", "present")
@@ -919,7 +886,10 @@ async def create_action_plan(
     unlimit_mode: bool = False,
 ) -> dict:
     """
-    Gọi Agent 1 để phân tích tin và tạo kế hoạch thực thi chi tiết theo model đã chọn.
+    Gọi Agent PLANNER để phân tích tin và tạo kế hoạch thực thi.
+    Sử dụng hệ thống Multi-Agent Council với capability-based fallback.
+    
+    Fallback chain: Gemma-12B -> Llama-8B -> Compound-mini
     """
     if not PLANNER_PROMPT:
         raise ValueError("Planner prompt (prompt 1) chưa được tải.")
@@ -937,53 +907,30 @@ async def create_action_plan(
             "công nghệ, khoa học, y tế, thể thao) để xây dựng kế hoạch thu thập bằng chứng toàn diện."
         )
 
-    model_name = _normalize_agent1_model(model_key)
-    
-    # Fallback chain for Agent 1: user_model -> gemma 4b -> gemma 2b -> gemma 1b
-    fallback_chain = [
-        model_name,  # Try user's selected model first
-        "models/gemma-3-4b-it",
-        "models/gemma-2-2b-it",
-        "models/gemma-3-1b-it",
-    ]
-    # Remove duplicates while preserving order
-    seen = set()
-    fallback_chain = [x for x in fallback_chain if not (x in seen or seen.add(x))]
-    
-    if not GEMINI_API_KEY:
-        raise ModelClientError("GEMINI_API_KEY is not configured.")
-    
-    text = ""
-    last_error = None
-    
-    for fallback_model in fallback_chain:
-        try:
-            provider = _detect_agent1_provider(fallback_model)
-            if provider != "gemini":
-                continue  # Skip non-gemini models
+    try:
+        # GỌI AGENT PLANNER qua hệ thống Council
+        # Hệ thống tự động chọn: Gemma-12B -> Llama-8B -> Compound-mini
+        print(f"[PLANNER] Analyzing input: '{text_input[:50]}...'")
+        
+        text = await call_agent_with_capability_fallback(
+            role="PLANNER",
+            prompt=prompt,
+            temperature=0.1,  # Cần độ chính xác cao cho JSON
+            timeout=60.0,
+        )
+        
+        # Parse JSON từ kết quả
+        plan_json = _parse_json_from_text(text) if text else {}
+        plan_json = _normalize_plan(plan_json, text_input, flash_mode)
+        
+        if plan_json:
+            print(f"[PLANNER] Successfully generated plan")
+            return plan_json
             
-            print(f"Planner: trying model '{fallback_model}' (provider={provider})")
-            timeout = None if flash_mode else 30.0
-            enable_browse = "gemini" in (fallback_model or "").lower()
-            text = await call_gemini_model(
-                fallback_model,
-                prompt,
-                timeout=timeout,
-                enable_browse=enable_browse,
-            )
-            
-            # If we got text, try to parse it
-            plan_json = _parse_json_from_text(text) if text else {}
-            plan_json = _normalize_plan(plan_json, text_input, flash_mode)
-            if plan_json:
-                print(f"Planner: Successfully generated plan with model '{fallback_model}'")
-                return plan_json
-        except Exception as exc:
-            last_error = exc
-            print(f"Planner: Error using model '{fallback_model}': {exc}")
-            continue
+    except Exception as exc:
+        print(f"[PLANNER] Error: {exc}")
     
-    # If all models failed, use heuristic fallback
-    print("Planner: All models failed, falling back to heuristic plan normalization.")
+    # Fallback về plan tĩnh (Heuristic) nếu AI sập hoàn toàn
+    print("[PLANNER] All models failed, falling back to heuristic plan normalization.")
     fallback = _normalize_plan({}, text_input, flash_mode)
     return fallback

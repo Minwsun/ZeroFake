@@ -39,10 +39,13 @@ def extract_weather_info(text: str) -> Optional[Dict]:
     Detect weather news and extract location NAME, no geocoding needed.
     """
     text_lower = text.lower()
+    # IMPORTANT: 'mua' (no diacritics) = BUY, NOT rain!
+    # Only 'mưa' (with diacritics) = RAIN
     weather_keywords = [
-        "tuyet", "snow", "mua", "rain", "nang", "sunny", "nong", "hot",
+        "tuyet", "snow", "rain", "nang", "sunny", "nong", "hot",
         "lanh", "cold", "bao", "storm", "gio", "wind", "suong mu", "fog",
-        "nhiet do", "temperature", "thoi tiet", "weather", "nhiệt độ", "thời tiết", "mưa", "gió", "bão"
+        "nhiet do", "temperature", "thoi tiet", "weather", "nhiệt độ", "thời tiết", "mưa", "gió", "bão",
+        "du bao", "forecast", "dự báo"
         ]
     if not any(kw in _norm(text_lower) for kw in weather_keywords):
         return None
@@ -125,8 +128,64 @@ def extract_weather_info(text: str) -> Optional[Dict]:
     if not location_name:
         return {"city": None, "original_text": text, "is_weather_keyword": True}
 
+    # QUAN TRỌNG: Validate location bằng geopy để đảm bảo đây là địa danh hành chính thật
+    # Tránh nhầm lẫn với tên người, tổ chức, etc.
+    validated_location = None
+    try:
+        from geopy.geocoders import Nominatim
+        from geopy.exc import GeocoderTimedOut, GeocoderServiceError
+        
+        geolocator = Nominatim(user_agent="ZeroFake-LocationValidator/1.1")
+        result = geolocator.geocode(location_name, timeout=5, language='en', exactly_one=True)
+        
+        if result:
+            # Kiểm tra type của location - chỉ chấp nhận các loại địa danh hành chính
+            address_type = result.raw.get('type', '') if hasattr(result, 'raw') else ''
+            valid_types = ['city', 'town', 'village', 'municipality', 'county', 'state', 
+                          'administrative', 'district', 'province', 'country', 'region',
+                          'suburb', 'neighbourhood', 'quarter', 'hamlet', 'borough']
+            
+            # Cũng kiểm tra class
+            address_class = result.raw.get('class', '') if hasattr(result, 'raw') else ''
+            valid_classes = ['place', 'boundary', 'landuse']
+            
+            if any(vt in address_type.lower() for vt in valid_types) or address_class in valid_classes:
+                validated_location = location_name
+                print(f"Geopy: Validated '{location_name}' as administrative location (type={address_type}, class={address_class})")
+            else:
+                # Nếu type không rõ ràng nhưng có lat/lon, vẫn chấp nhận nếu không phải tên người/org
+                if result.latitude and result.longitude:
+                    # Loại bỏ các pattern tên người/tổ chức phổ biến
+                    non_location_patterns = ['FIFA', 'UEFA', 'World Cup', 'Olympic', 'Corporation', 
+                                            'Company', 'Inc', 'Ltd', 'Foundation', 'Organization',
+                                            'President', 'Minister', 'Director', 'CEO', 'Mr', 'Mrs', 'Dr']
+                    if not any(nlp in location_name for nlp in non_location_patterns):
+                        validated_location = location_name
+                        print(f"Geopy: Accepted '{location_name}' (has coordinates, no org/person pattern)")
+                    else:
+                        print(f"Geopy: Rejected '{location_name}' - matches organization/person pattern")
+                else:
+                    print(f"Geopy: Rejected '{location_name}' - type={address_type}, class={address_class} not in valid types")
+        else:
+            print(f"Geopy: Location '{location_name}' not found in OpenStreetMap")
+    except ImportError:
+        # geopy không có sẵn, fallback về logic cũ
+        validated_location = location_name
+        print(f"Geopy: Not available, using unvalidated location '{location_name}'")
+    except (GeocoderTimedOut, GeocoderServiceError) as e:
+        # Lỗi mạng, fallback về logic cũ
+        validated_location = location_name
+        print(f"Geopy: Service error ({e}), using unvalidated location '{location_name}'")
+    except Exception as e:
+        print(f"Geopy: Error validating location '{location_name}': {e}")
+        # Không có validated location → không phải weather claim
+    
+    if not validated_location:
+        # Location không hợp lệ → không phải weather claim (chỉ có keyword thời tiết nhưng không có địa điểm rõ ràng)
+        return {"city": None, "original_text": text, "is_weather_keyword": True}
+
     return {
-        "city": location_name,
+        "city": validated_location,
         "original_text": text,
         "is_weather_keyword": True
     }

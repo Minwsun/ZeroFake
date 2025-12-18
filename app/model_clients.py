@@ -211,42 +211,49 @@ async def call_groq_chat_completion(
     temperature: float = 0.2,
     system_prompt: Optional[str] = None,
 ) -> str:
-    """Call Groq's OpenAI-compatible chat completion endpoint."""
+    """
+    Call Groq's chat completion using official Groq SDK.
+    Supports models like: llama-3.3-70b-versatile, openai/gpt-oss-120b, qwen/qwen3-32b
+    """
     if not GROQ_API_KEY:
         raise ModelClientError("GROQ_API_KEY is not configured.")
 
-    url = f"{GROQ_BASE_URL.rstrip('/')}/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {GROQ_API_KEY}",
-        "Content-Type": "application/json",
-    }
-    messages = []
-    if system_prompt:
-        messages.append({"role": "system", "content": system_prompt})
-    messages.append({"role": "user", "content": prompt})
-    payload = {
-        "model": model_name,
-        "messages": messages,
-        "temperature": temperature,
-        "stream": False,
-    }
-
-    def _post():
-        response = requests.post(url, headers=headers, json=payload, timeout=timeout)
-        response.raise_for_status()
-        data = response.json()
-        choices = data.get("choices") or []
-        if not choices:
+    def _call_groq_sdk():
+        try:
+            from groq import Groq
+        except ImportError:
+            raise ModelClientError("Groq SDK not installed. Run: pip install groq")
+        
+        client = Groq(api_key=GROQ_API_KEY)
+        
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+        
+        completion = client.chat.completions.create(
+            model=model_name,
+            messages=messages,
+            temperature=temperature,
+        )
+        
+        if not completion.choices:
             raise ModelClientError(f"Groq model '{model_name}' returned no choices.")
-        message = choices[0].get("message", {})
-        content = message.get("content")
+        
+        content = completion.choices[0].message.content
         if not content:
             raise ModelClientError(f"Groq model '{model_name}' returned empty content.")
+        
         return content
 
     try:
-        return await asyncio.to_thread(_post)
-    except requests.RequestException as exc:
+        return await asyncio.wait_for(
+            asyncio.to_thread(_call_groq_sdk),
+            timeout=timeout
+        )
+    except asyncio.TimeoutError:
+        raise ModelClientError(f"Groq model '{model_name}' request timed out after {timeout}s")
+    except Exception as exc:
         raise ModelClientError(f"Groq model '{model_name}' request failed: {exc}") from exc
 
 
@@ -317,3 +324,123 @@ async def call_compound_model(
 
     raise ModelClientError(f"Compound planner failed: {last_error}") from last_error
 
+
+# ==============================================================================
+# MULTI-AGENT COUNCIL: CAPABILITY MATRIX AND FALLBACK LOGIC
+# ==============================================================================
+
+# MA TRẬN PHÂN VAI (AGENT ROSTER) - NUCLEAR UPGRADE
+# High-Level Cognitive Concepts: Bayesian Inference, Logical Fallacy Detection, Lateral Thinking
+# JUDGE: Thẩm phán Tối cao - Suy diễn Bayes & Cân chỉnh sắc thái
+# CRITIC: Biện lý Đối lập - Phát hiện ngụy biện logic  
+# PLANNER: Chiến lược gia Tình báo - Tư duy đa chiều & Định vị thông tin
+AGENT_ROSTER = {
+    "JUDGE": [
+        "llama-3.3-70b-versatile",       # ƯU TIÊN 1: Llama 3.3 70B (Groq) - Complex Nuance Handling
+        "models/gemma-3-27b-it",         # DỰ PHÒNG 1: Gemma 27B (Google) - Epistemic Uncertainty Expert
+        "llama-3.1-70b-versatile",       # DỰ PHÒNG 2: Llama 3.1 70B (Groq) - Solid backup
+        "openai/gpt-oss-120b"            # DỰ PHÒNG 3: GPT-OSS 120B (Groq) - Bayesian Inference Master
+    ],
+    "CRITIC": [
+        "qwen/qwen3-32b",                # ƯU TIÊN 1: Qwen 32B (Groq) - Logical Fallacy Detection Master
+        "models/gemma-3-27b-it",         # DỰ PHÒNG 1: Gemma 27B (Google) - Strong logic analysis
+        "meta-llama/llama-4-scout-17b-16e-instruct",  # DỰ PHÒNG 2: Llama 4 Scout 17B (Groq)
+        "openai/gpt-oss-20b"             # DỰ PHÒNG 3: GPT-OSS 20B (Groq) - Fast fallback
+    ],
+    "PLANNER": [
+        "models/gemma-3-12b-it",         # ƯU TIÊN 1: Gemma 12B (Google) - Lateral Thinking Expert
+        "llama-3.1-8b-instant",          # DỰ PHÒNG 1: Llama 8B (Groq) - Information Triangulation
+        "compound-beta",                 # DỰ PHÒNG 2: Compound Beta (Groq) - Multi-provider resilience
+        "compound-beta-mini"             # DỰ PHÒNG 3: Compound Mini (Groq) - Ultra-fast fallback
+    ],
+}
+
+
+async def call_agent_with_capability_fallback(
+    role: str,
+    prompt: str,
+    system_prompt: Optional[str] = None,
+    temperature: float = 0.2,
+    timeout: float = 90.0,
+    **kwargs
+) -> str:
+    """
+    Hàm gọi Agent thông minh với cơ chế Fallback dựa trên Năng lực.
+    Tự động định tuyến (Routing) sang API phù hợp (Google/Groq/OpenRouter).
+    
+    Args:
+        role: Vai trò của agent (JUDGE, CRITIC, PLANNER)
+        prompt: Nội dung prompt
+        system_prompt: System prompt (optional)
+        temperature: Nhiệt độ sinh text
+        timeout: Thời gian chờ tối đa
+    
+    Returns:
+        str: Kết quả từ model
+    """
+    role_key = role.upper()
+    # Lấy danh sách model cho vai trò này, mặc định dùng Gemini Flash nếu không tìm thấy
+    candidate_models = AGENT_ROSTER.get(role_key, ["models/gemini-2.5-flash"])
+    
+    errors = []
+    print(f"\n[ORCHESTRATOR] Kich hoat Agent: {role_key}")
+    
+    # Vòng lặp thử từng model trong danh sách ưu tiên
+    for i, model_name in enumerate(candidate_models):
+        priority_label = "PRIMARY (MẠNH NHẤT)" if i == 0 else f"FALLBACK {i}"
+        print(f"  --> [{priority_label}] Thu model: {model_name}...", end=" ")
+        
+        try:
+            response_text = ""
+            
+            # --- LOGIC ĐỊNH TUYẾN (ROUTING) ---
+            
+            # 1. Nhóm Google (Gemma/Gemini) -> Gọi qua Gemini API
+            if "gemma" in model_name.lower() or "gemini" in model_name.lower():
+                # Google thường gộp system prompt vào prompt chính
+                full_prompt = f"{system_prompt}\n\n{prompt}" if system_prompt else prompt
+                response_text = await call_gemini_model(
+                    model_name, 
+                    full_prompt, 
+                    timeout=timeout
+                )
+                
+            # 2. Nhóm Groq (Llama, Compound, GPT-OSS, Qwen, meta-llama) -> Gọi qua Groq API
+            # Groq hỗ trợ: llama-3.x, llama-4, compound, gpt-oss, qwen/qwen3-32b
+            elif any(x in model_name.lower() for x in [
+                "llama-3", "llama-4", "compound", "groq", "gpt-oss", 
+                "qwen", "meta-llama"
+            ]):
+                # Giữ nguyên model name (Groq SDK hỗ trợ format openai/gpt-oss-120b, qwen/qwen3-32b)
+                response_text = await call_groq_chat_completion(
+                    model_name,
+                    prompt,
+                    system_prompt=system_prompt,
+                    temperature=temperature,
+                    timeout=timeout,
+                )
+            
+            # 3. Nhóm OpenRouter (các model khác) -> Gọi qua OpenRouter
+            else:
+                response_text = await call_openrouter_chat_completion(
+                    model_name,
+                    prompt,
+                    system_prompt=system_prompt,
+                    temperature=temperature,
+                    timeout=timeout,
+                )
+                
+            # Nếu chạy đến đây là thành công
+            print("OK")
+            return response_text
+
+        except Exception as e:
+            print(f"FAILED")
+            print(f"      Lỗi: {str(e)[:150]}...")
+            errors.append(f"{model_name}: {str(e)}")
+            continue  # Chuyển sang model tiếp theo trong danh sách ưu tiên
+            
+    # Nếu tất cả đều lỗi
+    raise ModelClientError(
+        f"CRITICAL FAILURE: Tất cả model cho vai trò {role_key} đều thất bại. Chi tiết: {errors}"
+    )
