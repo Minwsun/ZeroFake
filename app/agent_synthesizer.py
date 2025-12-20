@@ -22,6 +22,12 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 SYNTHESIS_PROMPT = ""
 CRITIC_PROMPT = ""  # NEW: Prompt cho CRITIC agent
 
+# ==============================================================================
+# SPEED OPTIMIZATION FLAGS - Tắt các tính năng thừa để tăng tốc
+# ==============================================================================
+ENABLE_COUNTER_SEARCH = False  # Tắt Counter-Search (tiết kiệm ~20s)
+ENABLE_SELF_CORRECTION = False  # Tắt Self-Correction/Re-Search (tiết kiệm ~30s)
+
 
 # Cài đặt an toàn
 SAFETY_SETTINGS = [
@@ -252,6 +258,101 @@ def _is_common_knowledge(text_input: str) -> bool:
     return False
 
 
+def _detect_zombie_news(text_input: str, current_date: str) -> dict | None:
+    """
+    Detect ZOMBIE NEWS: News about past events presented as if they just happened.
+    
+    Examples:
+    - "Việt Nam vô địch AFF Cup 2018 đêm qua" (AFF 2018 but "last night")
+    - "Steve Jobs vừa qua đời" (Steve Jobs died in 2011)
+    - "Samsung Galaxy Note 7 bị thu hồi" (Note 7 was recalled in 2016)
+    
+    Returns dict with zombie news info if detected, None otherwise.
+    """
+    import re
+    from datetime import datetime
+    
+    text_lower = text_input.lower()
+    
+    # Get current year from current_date or system
+    try:
+        if current_date and len(current_date) >= 4:
+            current_year = int(current_date[:4])
+        else:
+            current_year = datetime.now().year
+    except:
+        current_year = datetime.now().year
+    
+    # Words indicating "just happened" / "breaking news" / "recent"
+    recency_indicators = [
+        "đêm qua", "sáng nay", "vừa", "mới", "hôm nay", "hôm qua", "tuần này",
+        "breaking", "nóng", "khẩn cấp", "mới nhất", "cập nhật", "tin sốc",
+        "vừa xảy ra", "vừa mới", "sáng sớm", "chiều nay", "tối nay",
+        "xem ngay", "share ngay", "chia sẻ ngay"
+    ]
+    
+    has_recency_indicator = any(indicator in text_lower for indicator in recency_indicators)
+    
+    if not has_recency_indicator:
+        return None
+    
+    # Pattern 1: Detect year in the text (e.g., "2018", "2019", etc.)
+    # Only consider years that are significantly in the past (at least 1 year ago)
+    year_pattern = re.search(r'\b(19\d{2}|20[0-2]\d)\b', text_input)
+    if year_pattern:
+        mentioned_year = int(year_pattern.group(1))
+        years_ago = current_year - mentioned_year
+        
+        # If the mentioned year is at least 1 year ago, this is zombie news
+        if years_ago >= 1:
+            return {
+                "is_zombie_news": True,
+                "mentioned_year": mentioned_year,
+                "current_year": current_year,
+                "years_ago": years_ago,
+                "recency_indicator": next((ind for ind in recency_indicators if ind in text_lower), "unknown")
+            }
+    
+    # Pattern 2: Known past events database (famous events that can't "just happen")
+    # These are events that definitively happened in the past and cannot happen again
+    known_past_events = [
+        # Deaths of famous people
+        ("steve jobs", "qua đời", 2011),
+        ("steve jobs", "died", 2011),
+        ("michael jackson", "qua đời", 2009),
+        ("michael jackson", "died", 2009),
+        ("kobe bryant", "qua đời", 2020),
+        ("kobe bryant", "died", 2020),
+        
+        # Product recalls/launches that are old
+        ("galaxy note 7", "thu hồi", 2016),
+        ("galaxy note 7", "recall", 2016),
+        ("galaxy note 7", "cháy nổ", 2016),
+        
+        # Aviation incidents
+        ("mh370", "mất tích", 2014),
+        ("mh370", "missing", 2014),
+        
+        # Specific tournaments with years (AFF Cup 2018 was in past)
+        # Sports events follow: {event} + {year} + recency = zombie
+    ]
+    
+    for keywords_year in known_past_events:
+        *keywords, event_year = keywords_year
+        if all(kw in text_lower for kw in keywords):
+            years_ago = current_year - event_year
+            if years_ago >= 1:
+                return {
+                    "is_zombie_news": True,
+                    "mentioned_year": event_year,
+                    "current_year": current_year,
+                    "years_ago": years_ago,
+                    "recency_indicator": next((ind for ind in recency_indicators if ind in text_lower), "unknown"),
+                    "known_event": " ".join(keywords)
+                }
+    return None
+
+
 def _is_weather_source(item: Dict[str, Any]) -> bool:
     source = (item.get("source") or item.get("url") or "").lower()
     if not source:
@@ -473,6 +574,49 @@ def _heuristic_summarize(text_input: str, bundle: Dict[str, Any], current_date: 
             "key_evidence_source": "",
             "evidence_link": "",
             "style_analysis": "Thông tin lỗi thời được trình bày như tin mới",
+            "cached": False
+        }
+
+    # ═══════════════════════════════════════════════════════════════
+    # PRIORITY 3: Phát hiện ZOMBIE NEWS (tin cũ trình bày như tin mới)
+    # ═══════════════════════════════════════════════════════════════
+    zombie_info = _detect_zombie_news(text_input, current_date)
+    if zombie_info and zombie_info.get("is_zombie_news"):
+        mentioned_year = zombie_info["mentioned_year"]
+        years_ago = zombie_info["years_ago"]
+        recency_indicator = zombie_info.get("recency_indicator", "vừa xảy ra")
+        known_event = zombie_info.get("known_event", "")
+        
+        # Build Adversarial Dialectic debate
+        debate_log = {
+            "red_team_argument": _as_str(
+                f"Đây là ZOMBIE NEWS! Sự kiện năm {mentioned_year} ({years_ago} năm trước) "
+                f"nhưng được trình bày như vừa xảy ra ('{recency_indicator}'). "
+                f"Đây là thủ thuật clickbait phổ biến để lừa người đọc."
+            ),
+            "blue_team_argument": _as_str(
+                f"Đúng là sự kiện năm {mentioned_year} đã xảy ra thật. "
+                f"Nhưng việc dùng ngôn ngữ '{recency_indicator}' là gây hiểu lầm. Tôi thua."
+            ),
+            "judge_reasoning": _as_str(
+                f"Red Team thắng. Sự kiện năm {mentioned_year} KHÔNG THỂ '{recency_indicator}' được. "
+                f"Đây là tin cũ được tái sử dụng = ZOMBIE NEWS = TIN GIẢ."
+            )
+        }
+        
+        return {
+            "conclusion": "TIN GIẢ",
+            "confidence_score": 95,
+            "reason": _as_str(
+                f"ZOMBIE NEWS: Sự kiện năm {mentioned_year} ({years_ago} năm trước) "
+                f"được trình bày như vừa xảy ra ('{recency_indicator}'). "
+                f"Đây là tin cũ được lặp lại để lừa người đọc."
+            ),
+            "debate_log": debate_log,
+            "key_evidence_snippet": _as_str(f"Sự kiện xảy ra năm {mentioned_year}, không phải '{recency_indicator}'"),
+            "key_evidence_source": "",
+            "evidence_link": "",
+            "style_analysis": "ZOMBIE NEWS - Tin cũ trình bày như tin mới",
             "cached": False
         }
 
@@ -890,7 +1034,7 @@ async def execute_final_analysis(
     # =========================================================================
     critic_report = "Không có phản biện."
     try:
-        print(f"\n[CRITIC] Bắt đầu phản biện (Model: {model_key})...")
+        print(f"\n[CRITIC] Bắt đầu phản biện...")
         critic_prompt_filled = CRITIC_PROMPT.replace("{text_input}", text_input)
         critic_prompt_filled = critic_prompt_filled.replace("{evidence_bundle_json}", evidence_bundle_json)
         critic_prompt_filled = critic_prompt_filled.replace("{current_date}", current_date)
@@ -899,7 +1043,7 @@ async def execute_final_analysis(
             role="CRITIC",
             prompt=critic_prompt_filled,
             temperature=0.5,
-            timeout=20.0  # 20s - balanced for Gemma 27B
+            timeout=120.0  # Tăng lên 120s theo yêu cầu user
         )
         print(f"[CRITIC] Report: {critic_report[:150]}...")
         
@@ -925,7 +1069,7 @@ async def execute_final_analysis(
             role="JUDGE",
             prompt=judge_prompt_filled,
             temperature=0.1,  # Strict logic
-            timeout=25.0  # 25s - enough for complex reasoning
+            timeout=120.0  # Tăng lên 120s theo yêu cầu user
         )
         
         judge_result = _parse_json_from_text(judge_text)
@@ -946,13 +1090,29 @@ async def execute_final_analysis(
             bluf = exec_summary.get("bluf")
             synthesis = dialectical.get("synthesis")
             
+            # Build reason CỤ THỂ - KHÔNG dùng "ANALYSIS:" chung chung
             combined_reason = ""
-            if bluf:
-                combined_reason += f"{bluf}\n\n"
-            if synthesis:
-                combined_reason += f"ANALYSIS: {synthesis}"
             
-            judge_result["reason"] = combined_reason.strip() or "No rationale provided."
+            # Ưu tiên 1: Lấy citations để tạo lý do cụ thể
+            citations = judge_result.get("key_evidence_citations") or []
+            if citations and len(citations) > 0:
+                cite = citations[0]
+                source = cite.get('source', 'nguồn')
+                quote = cite.get('quote', '')[:150] if cite.get('quote') else ''
+                if quote:
+                    combined_reason = f"Nguồn {source} cho biết: \"{quote}...\". "
+            
+            # Thêm synthesis (không có prefix "ANALYSIS:")
+            if synthesis:
+                combined_reason += synthesis
+            elif bluf:
+                combined_reason += bluf
+            
+            # Fallback nếu vẫn rỗng
+            if not combined_reason.strip():
+                combined_reason = f"Kết luận {judge_result.get('conclusion', 'N/A')} dựa trên phân tích bằng chứng."
+            
+            judge_result["reason"] = combined_reason.strip()
             
             # DEBATE LOG
             judge_result["debate_log"] = {
@@ -1111,7 +1271,8 @@ async def execute_final_analysis(
     
     conclusion_r1 = normalize_conclusion(judge_result.get("conclusion", ""))
     
-    if conclusion_r1 == "TIN GIẢ":
+    # SPEED OPTIMIZATION: Bỏ qua COUNTER-SEARCH nếu flag tắt
+    if ENABLE_COUNTER_SEARCH and conclusion_r1 == "TIN GIẢ":
         print(f"\n[COUNTER-SEARCH] JUDGE Round 1 kết luận TIN GIẢ → Tìm dẫn chứng BẢO VỆ claim...")
         
         try:
@@ -1229,7 +1390,8 @@ async def execute_final_analysis(
     has_valid_result = bool(judge_result.get("conclusion"))
     
     # FIX: Chỉ trigger re-search khi THỰC SỰ cần, không phải do parse error
-    should_research = (
+    # SPEED OPTIMIZATION: Bỏ qua SELF-CORRECTION nếu flag tắt
+    should_research = ENABLE_SELF_CORRECTION and (
         needs_more  # Judge yêu cầu explicit
         or (confidence < 40 and has_valid_result)  # Confidence thấp thật sự
     ) and not is_weather and has_valid_result
@@ -1321,13 +1483,25 @@ async def execute_final_analysis(
                     bluf = exec_summary.get("bluf")
                     synthesis = dialectical.get("synthesis")
                     
+                    # Build reason CỤ THỂ (same logic as Round 1)
                     combined_reason = ""
-                    if bluf:
-                        combined_reason += f"{bluf}\n\n"
-                    if synthesis:
-                        combined_reason += f"ANALYSIS: {synthesis}"
+                    citations = judge_result_r2.get("key_evidence_citations") or []
+                    if citations and len(citations) > 0:
+                        cite = citations[0]
+                        source = cite.get('source', 'nguồn')
+                        quote = cite.get('quote', '')[:150] if cite.get('quote') else ''
+                        if quote:
+                            combined_reason = f"Nguồn {source} cho biết: \"{quote}...\". "
                     
-                    judge_result_r2["reason"] = combined_reason.strip() or "No rationale provided."
+                    if synthesis:
+                        combined_reason += synthesis
+                    elif bluf:
+                        combined_reason += bluf
+                    
+                    if not combined_reason.strip():
+                        combined_reason = f"Kết luận {judge_result_r2.get('conclusion', 'N/A')} dựa trên phân tích bằng chứng."
+                    
+                    judge_result_r2["reason"] = combined_reason.strip()
                     
                     # DEBATE LOG
                     judge_result_r2["debate_log"] = {

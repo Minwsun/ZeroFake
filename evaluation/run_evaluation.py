@@ -39,9 +39,9 @@ class EvaluationFramework:
                 
                 self.results.append({
                     "text": sample["text"],
-                    "expected": sample["expected"],
+                    "expected": sample["label"],
                     "predicted": result.get("conclusion", "ERROR"),
-                    "category": sample["category"],
+                    "category": sample.get("category", "other"),
                     "reason": result.get("reason", "")[:200],
                     "debate_log": result.get("debate_log", {}),
                     "evidence_link": result.get("evidence_link", ""),
@@ -49,15 +49,15 @@ class EvaluationFramework:
                     "cached": result.get("cached", False)
                 })
                 
-                status = "✓" if sample["expected"] == result.get("conclusion") else "✗"
+                status = "✓" if sample["label"] == result.get("conclusion") else "✗"
                 print(f"[{i}/{len(samples)}] {status} {sample['text'][:40]}... => {result.get('conclusion')} ({elapsed:.1f}s)")
                 
             except Exception as e:
                 self.results.append({
                     "text": sample["text"],
-                    "expected": sample["expected"],
+                    "expected": sample["label"],
                     "predicted": "ERROR",
-                    "category": sample["category"],
+                    "category": sample.get("category", "other"),
                     "reason": str(e)[:200],
                     "debate_log": {},
                     "evidence_link": "",

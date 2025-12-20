@@ -14,7 +14,20 @@ load_dotenv()
 # API KEYS CONFIGURATION - MULTI-KEY FALLBACK SYSTEM
 # ==============================================================================
 
+# Gemini API Keys Pool (multi-key for rate limit handling)
+GEMINI_API_KEYS = [
+    os.getenv("GEMINI_API_KEY_1"),
+    os.getenv("GEMINI_API_KEY_2"),
+    os.getenv("GEMINI_API_KEY_3"),
+    os.getenv("GEMINI_API_KEY_4"),
+]
+GEMINI_API_KEYS = [k for k in GEMINI_API_KEYS if k]  # Filter None values
+
+# Legacy single key support (fallback)
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+if GEMINI_API_KEY and GEMINI_API_KEY not in GEMINI_API_KEYS:
+    GEMINI_API_KEYS.insert(0, GEMINI_API_KEY)
+
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
 
@@ -42,6 +55,7 @@ if GROQ_API_KEY and GROQ_API_KEY not in GROQ_API_KEYS:
     GROQ_API_KEYS.insert(0, GROQ_API_KEY)
 
 # Key rotation state (global indices)
+_gemini_key_index = 0
 _cerebras_key_index = 0
 _groq_key_index = 0
 
@@ -239,7 +253,7 @@ async def call_groq_chat_completion(
 
 
 # ==============================================================================
-# GEMINI CLIENT - Google AI
+# GEMINI CLIENT - Google AI with Multi-Key Rotation
 # ==============================================================================
 
 async def call_gemini_model(
@@ -250,48 +264,73 @@ async def call_gemini_model(
     safety_settings: Optional[list] = None,
     enable_browse: bool = False,
 ) -> str:
-    """Call a Gemini model and return the raw text response."""
-    if not GEMINI_API_KEY:
-        raise ModelClientError("GEMINI_API_KEY is not configured.")
-
-    genai.configure(api_key=GEMINI_API_KEY)
-    model_kwargs = {}
+    """
+    Call a Gemini model with multi-key fallback.
+    Automatically rotates through GEMINI_API_KEYS when hitting rate limits.
+    """
+    global _gemini_key_index
     
-    if enable_browse:
-        browse_supported_models = ["gemini-1.5-pro", "gemini-pro"]
-        model_name_clean = model_name.replace("models/", "").lower()
-        if any(supported in model_name_clean for supported in browse_supported_models):
-            model_kwargs["tools"] = [{"googleSearchRetrieval": {}}]
-            print(f"Gemini Client: enabling built-in browse for model '{model_name}'.")
-        else:
-            print(f"Gemini Client: browse not supported for '{model_name}', skipping.")
+    if not GEMINI_API_KEYS:
+        raise ModelClientError("No GEMINI_API_KEY configured. Set GEMINI_API_KEY or GEMINI_API_KEY_1..4 in .env")
     
-    model = genai.GenerativeModel(model_name, **model_kwargs)
-
-    def _generate():
+    def _generate_with_key(api_key: str):
+        genai.configure(api_key=api_key)
+        model_kwargs = {}
+        
+        if enable_browse:
+            browse_supported_models = ["gemini-1.5-pro", "gemini-pro"]
+            model_name_clean = model_name.replace("models/", "").lower()
+            if any(supported in model_name_clean for supported in browse_supported_models):
+                model_kwargs["tools"] = [{"googleSearchRetrieval": {}}]
+        
+        model = genai.GenerativeModel(model_name, **model_kwargs)
+        
         if safety_settings is not None:
             return model.generate_content(prompt, safety_settings=safety_settings)
         return model.generate_content(prompt)
-
-    try:
-        if timeout is None:
-            response = await asyncio.to_thread(_generate)
-        else:
-            response = await asyncio.wait_for(asyncio.to_thread(_generate), timeout=timeout)
-    except asyncio.TimeoutError as exc:
-        raise ModelClientError(f"Gemini model '{model_name}' timed out after {timeout} seconds.") from exc
-    except Exception as exc:
-        exc_str = str(exc).lower()
-        if "429" in str(exc) or "quota" in exc_str or "resource_exhausted" in exc_str or "resourceexhausted" in exc_str:
-            raise RateLimitError(f"Gemini model '{model_name}' quota exhausted (429): {exc}") from exc
-        raise ModelClientError(f"Gemini model '{model_name}' failed: {exc}") from exc
-
-    text = getattr(response, "text", None)
-    if not text and hasattr(response, "candidates") and response.candidates:
-        text = str(response.candidates[0].content)
-    if not text:
-        raise ModelClientError(f"Gemini model '{model_name}' returned empty response.")
-    return text
+    
+    errors = []
+    # Try all keys before giving up
+    for attempt in range(len(GEMINI_API_KEYS)):
+        current_index = (_gemini_key_index + attempt) % len(GEMINI_API_KEYS)
+        current_key = GEMINI_API_KEYS[current_index]
+        
+        try:
+            if timeout is None:
+                response = await asyncio.to_thread(_generate_with_key, current_key)
+            else:
+                response = await asyncio.wait_for(
+                    asyncio.to_thread(_generate_with_key, current_key),
+                    timeout=timeout
+                )
+            
+            # Success - update the global index for next call
+            _gemini_key_index = current_index
+            
+            text = getattr(response, "text", None)
+            if not text and hasattr(response, "candidates") and response.candidates:
+                text = str(response.candidates[0].content)
+            if not text:
+                raise ModelClientError(f"Gemini model '{model_name}' returned empty response.")
+            return text
+            
+        except asyncio.TimeoutError:
+            print(f"[Gemini] Key #{current_index + 1} timeout, rotating...")
+            errors.append(f"Key #{current_index + 1}: timeout after {timeout}s")
+            continue
+        except Exception as exc:
+            exc_str = str(exc).lower()
+            if "429" in str(exc) or "quota" in exc_str or "resource_exhausted" in exc_str or "resourceexhausted" in exc_str:
+                print(f"[Gemini] Key #{current_index + 1} rate limited, rotating...")
+                errors.append(f"Key #{current_index + 1}: rate_limit")
+                continue
+            # Other error - try next key
+            errors.append(f"Key #{current_index + 1}: {str(exc)[:100]}")
+            continue
+    
+    # All keys exhausted
+    _gemini_key_index = (_gemini_key_index + 1) % len(GEMINI_API_KEYS)
+    raise RateLimitError(f"All {len(GEMINI_API_KEYS)} Gemini API keys exhausted. Errors: {errors}")
 
 
 # ==============================================================================
@@ -422,14 +461,13 @@ AGENT_ROSTER = {
         "models/gemma-3-12b-it",                  # Gemini - FINAL FALLBACK
     ],
     
-    # PLANNER: Chiến Lược Gia (Phân tích ngữ cảnh & Lên kế hoạch)
-    # Timeout: 20s | Fallback: Gemma 27B → Gemma 12B → qwen-3-32b → llama3.1-8b
+    # PLANNER: qwen-3-32b -> llama3.1-8b -> Gemma 12B -> Gemma 27B -> Gemma 4B
     "PLANNER": [
-        "models/gemma-3-27b-it",                  # Gemini API PRIMARY
-        "models/gemma-3-12b-it",                  # Gemini API - Fast fallback
-        "qwen-3-32b",                             # Cerebras/Groq
-        "llama3.1-8b",
-        "llama-3.1-8b-instant",                   # Cerebras (lightweight)
+        "qwen-3-32b",                             # Cerebras/Groq PRIMARY
+        "llama3.1-8b",                            # Cerebras fallback
+        "models/gemma-3-12b-it",                  # Gemini
+        "models/gemma-3-27b-it",                  # Gemini
+        "models/gemma-3-4b-it",                   # Gemini - Last resort
     ],
     
     # INTERNAL GUARD 1: Giám Sát Kế Hoạch (Đảm bảo Planner không bịa đặt)
@@ -441,13 +479,13 @@ AGENT_ROSTER = {
         "models/gemma-3-12b-it",                  # Gemini - FINAL FALLBACK
     ],
     
-    # CRITIC: Biện Lý Phản Biện (Soi lỗ hổng logic & Tranh biện)
-    # Timeout: 30s | Fallback: Gemma 27B → Gemma 12B → qwen-3-32b → llama3.1-8b
+    # CRITIC: qwen-3-32b -> llama3.1-8b -> Gemma 12B -> Gemma 27B -> Gemma 4B
     "CRITIC": [
-        "models/gemma-3-27b-it",                  # Gemini API PRIMARY
-        "models/gemma-3-12b-it",                  # Gemini API - Fast fallback
-        "qwen-3-32b",                             # Cerebras/Groq
-        "llama3.1-8b",                            # Cerebras (lightweight)
+        "qwen-3-32b",                             # Cerebras/Groq PRIMARY
+        "llama3.1-8b",                            # Cerebras fallback
+        "models/gemma-3-12b-it",                  # Gemini
+        "models/gemma-3-27b-it",                  # Gemini
+        "models/gemma-3-4b-it",                   # Gemini - Last resort
     ],
     
     # INTERNAL GUARD 2: Giám Sát Tranh Biện (Đảm bảo Critic không cực đoan)
@@ -458,13 +496,13 @@ AGENT_ROSTER = {
         "models/gemma-3-12b-it",                  # Gemini - FINAL FALLBACK
     ],
     
-    # JUDGE: Thẩm Phán Tối Cao (Ra phán quyết cuối cùng)
-    # Timeout: 30s | Fallback: llama-3.3-70b → qwen-3-235b → gpt-oss-120b → llama-3.3-70b-versatile
+    # JUDGE: llama-3.3-70b (Cerebras) -> llama-3.3-70b-versatile (Groq) -> gpt-oss-120b -> Gemma 27B -> Gemma 12B
     "JUDGE": [
         "llama-3.3-70b",                          # Cerebras PRIMARY
-        "qwen-3-235b-instruct",                   # Cerebras - Qwen 235B
-        "openai/gpt-oss-120b",                    # Cerebras
         "llama-3.3-70b-versatile",                # Groq (cross-provider)
+        "openai/gpt-oss-120b",                    # Cerebras
+        "models/gemma-3-27b-it",                  # Gemini
+        "models/gemma-3-12b-it",                  # Gemini
     ],
     
     # OUTPUT GUARD: Kiểm Duyệt Xuất Bản (Chốt chặn an toàn cuối cùng)

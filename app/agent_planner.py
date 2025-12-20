@@ -541,7 +541,8 @@ def _generate_search_queries(text_input: str, plan_struct: dict) -> list[str]:
                 add(f"tình hình chiến sự {loc}")
                 add(f"chiến sự {loc} mới nhất")
 
-    return candidates or [base or text_input]
+    # SPEED OPTIMIZATION: Giới hạn 1 query để giảm thời gian search
+    return (candidates or [base or text_input])[:1]
 
 
 
@@ -917,7 +918,7 @@ async def create_action_plan(
             role="PLANNER",
             prompt=prompt,
             temperature=0.1,  # Cần độ chính xác cao cho JSON
-            timeout=60.0,
+            timeout=120.0,  # Tăng lên 120s theo yêu cầu user
         )
         
         # Parse JSON từ kết quả
