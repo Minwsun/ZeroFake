@@ -1,147 +1,164 @@
-# ZeroFake v1.1
+# ZeroFake v2.0
 
-Real-time fake news detection and verification system, prioritizing trusted sources and global weather API data.
+Advanced AI-powered Fake News Detection System with Multi-Agent Architecture.
 
 ---
 
 ## 1) Objective
-ZeroFake helps quickly verify whether a news article/post is: "TIN THẬT" (TRUE NEWS) | "TIN GIẢ" (FAKE NEWS) | "GÂY HIỂU LẦM" (MISLEADING). The system operates fully API-Native, requiring no local training.
+ZeroFake is a real-time fact-checking system that verifies news claims as: **"TIN THẬT" (TRUE)** or **"TIN GIẢ" (FAKE)**. The system uses a multi-agent cognitive architecture with adversarial debate to ensure accurate verification.
 
 ## 2) Architecture Overview
+
+### Core Pipeline
+```
+INPUT → PLANNER → SEARCH → CRITIC → JUDGE → OUTPUT
+```
+
+### Components
 - **Frontend**: PyQt6 GUI (Dark Mode), non-blocking with QThread
-- **Backend**: FastAPI (Python), asynchronous pipeline
-- **Integrated Services**:
-  - DuckDuckGo Search (web search for news articles with enhanced query logic)
-  - AI Agent System (multi-agent architecture for planning and synthesis)
-  - OpenWeatherMap API (global weather: current + forecast, with global geocoding)
+- **Backend**: FastAPI (Python), fully asynchronous
+- **AI Agents**:
+  - **PLANNER**: Analyzes claims, generates search queries
+  - **CRITIC**: Adversarial agent that challenges evidence
+  - **JUDGE**: Final verdict using Bayesian reasoning
 - **AI Models**:
-  - **Agent 1 (Planner)**: Gemini Flash, Gemma 3 (1B, 4B) with automatic fallback
-  - **Agent 2 (Synthesizer)**: Gemini Pro, Gemini Flash, Gemma 3 (4B, 12B, 27B) with automatic fallback
-  - All models use Google AI Studio (Gemini API)
-- **Storage/Learning**:
-  - KB Cache: SQLite + FAISS (remembers verified results)
-  - Feedback loop: SQLite + FAISS (Relevant Retrieval: automatically retrieves similar error examples for prompts)
+  - Groq API: Llama 3.1/3.3 (8B, 70B), Llama Guard
+  - Google AI: Gemini Flash, Gemma 3 (4B, 12B, 27B)
+  - Cerebras API: Llama 3.1/3.3 (for high-speed inference)
+- **Search**: DuckDuckGo + Google Search with source ranking
+- **Weather**: OpenWeatherMap API (global coverage)
+- **Storage**: SQLite + FAISS (KB Cache + Feedback Learning)
 
-## 3) Workflow
-1. GUI sends news text to FastAPI for verification
-2. Backend checks KB Cache (FAISS) – if found, returns immediately
-3. **Agent 1 (Planner)**: Analyzes input and creates execution plan:
-   - Classifies claim type (Politics, Economy, Health, Weather, Sports, etc.)
-   - Identifies entities (locations, persons, organizations)
-   - Determines time scope (present/future/historical)
-   - Generates diverse search queries (original input + enriched queries)
-   - Selects appropriate tools (weather API, web search)
-   - **Automatic Fallback**: If selected model fails, automatically tries: Gemini Flash → Gemma 3-4B → Gemma 3-1B
-4. **Tool Executor**: Executes planned tools:
-   - Weather claims: Calls OpenWeather API for current/forecast data
-   - Other claims: Performs DuckDuckGo web search with enhanced query logic
-   - Prioritizes trusted domains (official sources, mainstream news)
-   - Removes tool results if web search finds evidence
-5. **Agent 2 (Synthesizer)**: Analyzes evidence and generates final conclusion:
-   - Compares input with collected evidence
-   - Applies verification rules (including temporal misleading detection)
-   - Can request additional search queries if evidence is insufficient
-   - Returns conclusion with reasoning
-   - **Automatic Fallback**: If selected model fails, automatically tries: Gemini Pro → Gemini Flash → Gemma 3-27B → Gemma 3-12B → Gemma 3-4B
-6. Results are saved to KB Cache (background) and returned to GUI
-7. Users can provide feedback; system logs and learns from errors
+## 3) Key Features
 
-## 4) Installation & Running
+### Multi-Agent Cognitive Architecture
+- **Popperian Falsification**: CRITIC attempts to falsify claims
+- **Adversarial Dialectic**: Red Team vs Blue Team debate
+- **Presumption of Truth**: Claims are true unless proven false
+- **Internal Reasoning**: KNOWLEDGE claims can use AI's internal knowledge
+
+### Source Trust System
+| Source Type | Trust Score | Status |
+|-------------|-------------|--------|
+| Government (.gov) | 0.95 | ✅ Trusted |
+| Tier 0 (Major News) | 0.95 | ✅ Trusted |
+| Tier 1 (Quality News) | 0.90 | ✅ Trusted |
+| Education (.edu) | 0.85 | ✅ Trusted |
+| Default Sources | 0.55 | ✅ Accepted |
+| Social Media | 0.30 | ⚠️ Low Trust |
+| Tabloids | 0.10 | ❌ Rejected |
+
+### Claim Classification
+- **KNOWLEDGE**: Facts, history, science → Can use internal reasoning
+- **NEWS**: Current events, breaking news → Requires external evidence
+
+### Robust Fallback System
+- Multi-key API rotation for rate limit handling
+- Automatic model fallback (Groq → Gemini → Cerebras)
+- 429 error recovery with exponential backoff
+
+## 4) Installation
+
 ### Requirements
-- Python 3.10+ (recommended 3.11/3.12/3.13)
+- Python 3.10+ (recommended 3.11/3.12)
 
-### Installation
+### Setup
 ```bash
+# Clone repository
+git clone https://github.com/Minwsun/ZeroFake.git
+cd ZeroFake
+
+# Install dependencies
 pip install -r requirements.txt
+
+# Configure API keys
+cp .env.example .env
+# Edit .env with your API keys
 ```
 
-### API Keys Configuration (.env)
-Create a `.env` file in the root directory:
+### API Keys (.env)
+```env
+GROQ_API_KEY=...           # Groq API (Llama models)
+GEMINI_API_KEY=...         # Google AI (Gemini/Gemma)
+OPENWEATHER_API_KEY=...    # Weather verification
 ```
-GEMINI_API_KEY=...                  # Google AI Studio API key (required for Gemini & Gemma models)
-OPENWEATHER_API_KEY=...             # OpenWeather API Key (required for weather verification)
+
+## 5) Running
+
+### Quick Start (Windows)
+```bash
+# Double-click run_app.bat
+# Or use scripts_bat/run_gui.bat
 ```
-**Note**: All AI models (Gemini Flash, Gemini Pro, Gemma 3) use the same `GEMINI_API_KEY` from Google AI Studio.
 
-### Running the Application
-- **Windows**: Double-click `run_app.bat` (launches both server and GUI)
-- **Or manually**:
-  ```bash
-  # Terminal 1: Start server
-  python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
-  
-  # Terminal 2: Start GUI
-  python gui/main_gui.py
-  ```
-- **Health check**: http://127.0.0.1:8000/
-- **API docs**: http://127.0.0.1:8000/docs
+### Manual Start
+```bash
+# Terminal 1: Backend server
+python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 
-## 5) Directory Structure (simplified)
+# Terminal 2: GUI
+python gui/main_gui.py
+```
+
+### Endpoints
+- Health check: http://127.0.0.1:8000/
+- API docs: http://127.0.0.1:8000/docs
+
+## 6) Directory Structure
 ```
 app/
-  __init__.py
-  main.py              # FastAPI orchestrator
-  agent_planner.py     # Agent 1: Planning agent with fallback
-  agent_synthesizer.py # Agent 2: Synthesis agent with fallback
-  tool_executor.py     # Tool execution engine
-  model_clients.py     # Model client utilities (Gemini, etc.)
-  kb.py                # KB Cache (SQLite + FAISS)
-  search.py            # DuckDuckGo search with enhanced queries
-  ranker.py            # Source ranker
-  weather.py           # Geocoding + weather current/forecast (global)
-  feedback.py          # Feedback loop (Relevant Retrieval)
-  trusted_domains.json # Trusted domain tiers (tier0, tier1)
+  main.py              # FastAPI server
+  agent_planner.py     # PLANNER agent
+  agent_synthesizer.py # CRITIC + JUDGE agents
+  model_clients.py     # Multi-API model clients
+  ranker.py            # Source trust ranking
+  search.py            # DuckDuckGo + Google search
+  weather.py           # Weather API integration
+  trusted_domains.json # 380+ trusted domains
+
 prompts/
-  planner_prompt.txt   # Prompt for Agent 1
-  synthesis_prompt.txt # Prompt for Agent 2
-  critic_prompt.txt    # Prompt for CRITIC agent
-tools/
-  tool_executor.py     # Tool execution utilities (copy)
-scripts_bat/
-  run_server.bat       # Start backend server
-  run_gui.bat          # Start GUI
-  run_evaluation.bat   # Run evaluation
-scripts/
-  ow_cli.py            # OpenWeather CLI utility
-gui/main_gui.py        # PyQt6 GUI (Dark Mode)
+  planner_prompt.txt   # PLANNER instructions
+  critic_prompt.txt    # CRITIC adversarial prompt
+  synthesis_prompt.txt # JUDGE Bayesian reasoning
+
+gui/
+  main_gui.py          # PyQt6 Dark Mode GUI
+
 evaluation/
-  run_evaluation.py    # Evaluation script
-  dataset_1200.json    # Test dataset
+  test_dataset_1000.json  # 1000 realistic test samples
+  run_evaluation.py       # Evaluation script
 ```
 
-## 6) Key Features
-- **Multi-Agent Architecture**: Two-agent system for planning and synthesis
-- **Automatic Model Fallback**: Robust fallback mechanism ensures system continues working even if a model fails
-- **Model Selection**: 
-  - Agent 1: Gemini Flash, Gemma 3 (1B, 4B)
-  - Agent 2: Gemini Pro, Gemini Flash, Gemma 3 (4B, 12B, 27B)
-- **Trusted Source Prioritization**: System prioritizes official and mainstream sources using tiered domain classification
-- **Enhanced Search Logic**: 
-  - Multiple query variants (original + enriched queries)
-  - Enhanced DuckDuckGo queries with fallback mechanisms
-  - Prioritizes recent and trusted sources
-- **Temporal Misleading Detection**: Identifies outdated but factually correct information as "GÂY HIỂU LẦM"
-- **Global Weather Support**: OpenWeatherMap API with geocoding for worldwide locations
-- **Intelligent Caching**: FAISS-based knowledge base for fast retrieval
-- **Feedback Learning**: System learns from user corrections
-- **Comprehensive Claim Types**: Supports 11+ news categories (Politics, Economy, Health, Weather, Sports, etc.)
-- **Bilingual Input**: Supports both English and Vietnamese input
-- **Testing Framework**: Automated test data generation and batch testing scripts
+## 7) Evaluation
 
-## 7) Testing
-The system includes automated testing tools:
-- **Test Data Generation**: `test/generate_test_data.py` - Generates 1000 test samples using LLM
-- **Batch Testing**: `test/run_batch_test.py` - Runs batch tests and calculates metrics (ACC, F1, FNR, FPR, Confusion Matrix)
+### Test Dataset
+- 500 TRUE news (real events 2024-2025)
+- 500 FAKE news (zombie news, fabrication, scams, conspiracy)
 
-Run tests:
+### Run Evaluation
 ```bash
-# Generate test data
-python test/generate_test_data.py
-
-# Run batch tests (ensure server is running)
-python test/run_batch_test.py
+# Ensure server is running first
+python evaluation/run_evaluation.py
 ```
+
+### Metrics
+- Accuracy, Precision, Recall, F1 Score
+- Confusion Matrix (TIN THẬT vs TIN GIẢ)
+- False Positive/Negative Rate
+
+## 8) Recent Updates (v2.0)
+
+### December 2024
+- ✅ Removed all guard systems (FAST_CLASSIFIER, CRITIC_GUARD, OUTPUT_GUARD)
+- ✅ Added CRITIC agent with adversarial capabilities
+- ✅ JUDGE uses Bayesian reasoning with Presumption of Truth
+- ✅ KNOWLEDGE vs NEWS claim classification
+- ✅ Internal reasoning for KNOWLEDGE claims
+- ✅ Expanded trusted sources (380+ domains worldwide)
+- ✅ Source ranking: Accept normal sources, reject tabloids/UGC
+- ✅ Realistic test dataset (1000 samples)
 
 ---
 
-Author: Nguyễn Nhật Minh
+**Author**: Nguyễn Nhật Minh  
+**Repository**: https://github.com/Minwsun/ZeroFake

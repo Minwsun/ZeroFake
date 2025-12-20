@@ -222,13 +222,25 @@ def get_rank_from_url(url: str) -> float:
         if score is None and any(keyword in domain for keyword in HIGH_TRUST_KEYWORDS):
             score = 0.78
 
+        # TABLOIDS - Báo lá cải, nguồn kém uy tín → LOẠI BỎ (score rất thấp)
+        TABLOID_DOMAINS = [
+            'tinmoi.vn', 'eva.vn', 'afamily.vn', 'ngoisao.net', '2sao.vn', 'gamek.vn',
+            'yan.vn', 'yeah1.com', 'docbao.vn', 'tintuconline.com.vn', 'webtretho.com',
+            'dailymail.co.uk', 'thesun.co.uk', 'mirror.co.uk', 'nypost.com', 'nationalenquirer.com',
+            'buzzfeed.com', 'tmz.com', 'huffpost.com'
+        ]
+        if any(keyword in domain for keyword in TABLOID_DOMAINS):
+            return 0.1  # Báo lá cải → loại
+
+        # SOCIAL MEDIA - KHÔNG UY TÍN (do người dùng tự đăng lên)
         SOCIAL_DOMAINS = ['facebook.com', 'twitter.com', 'x.com', 'instagram.com', 'tiktok.com', 'youtube.com', 'reddit.com', 'weibo.com', 'telegram.org', 't.me']
         if any(domain.endswith(soc) or soc in domain for soc in SOCIAL_DOMAINS):
-            return 0.15
+            return 0.3  # UGC → không uy tín
 
-        LOW_TRUST_KEYWORDS = ['blogspot', 'wordpress', 'medium.com', 'tumblr', 'substack', 'forum']
+        # USER-GENERATED CONTENT (Blog platforms) - KHÔNG UY TÍN (do người dùng tự đăng)
+        LOW_TRUST_KEYWORDS = ['blogspot', 'wordpress', 'tumblr', 'substack', 'forum', 'medium.com', 'towardsdatascience.com']
         if any(keyword in domain for keyword in LOW_TRUST_KEYWORDS):
-            score = 0.3
+            return 0.3  # UGC → không uy tín
 
         if score is not None:
             return score
@@ -242,7 +254,8 @@ def get_rank_from_url(url: str) -> float:
             if base_domain_1.endswith(('.gov', '.edu', '.int')):
                 return 0.85
 
-        return SOURCE_RANKER_CONFIG.get("default", 0.6)
+        # DEFAULT - Nguồn bình thường → CHẤP NHẬN với điểm trung bình
+        return SOURCE_RANKER_CONFIG.get("default", 0.55)  # Tăng từ 0.6 → 0.55 cho default
     except Exception:
         return SOURCE_RANKER_CONFIG.get("default", 0.6)
 

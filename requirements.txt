@@ -13,3 +13,4 @@ duckduckgo-search
 geopy
 cloudscraper
 groq
+cerebras-cloud-sdk

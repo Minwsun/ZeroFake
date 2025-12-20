@@ -48,6 +48,69 @@ WEATHER_SOURCE_KEYWORDS = [
 ]
 
 
+# ==============================================================================
+# SYNTH LOGIC: Phân loại claim để quyết định quyền tự quyết của Agent
+# ==============================================================================
+
+def _classify_claim_type(text_input: str) -> str:
+    """
+    SYNTH: Phân loại claim thành 2 loại:
+    
+    - "KNOWLEDGE": Kiến thức (địa lý, khoa học, định nghĩa)
+      → Agent có quyền TỰ QUYẾT dựa trên kiến thức nội tại
+      → KHÔNG bắt buộc phải có evidence
+      
+    - "NEWS": Tin tức (sự kiện, tuyên bố, thông tin thời sự)
+      → BẮT BUỘC phải có evidence để kết luận
+      → Không có evidence = không thể kết luận chắc chắn
+    """
+    text_lower = text_input.lower()
+    
+    # KNOWLEDGE patterns - Agent có thể tự quyết
+    knowledge_patterns = [
+        # Địa lý cố định
+        r"(thủ đô|thủ phủ|thành phố lớn nhất|diện tích|biên giới|giáp với)",
+        r"(châu lục|biển|đại dương|sông|núi|hồ|sa mạc|rừng)",
+        r"(quốc gia|nước|tỉnh|vùng miền)",
+        # Dân số/Dân tộc
+        r"(dân số|dân tộc|ngôn ngữ chính thức)",
+        # Khoa học/Kỹ thuật cố định
+        r"(công thức|định luật|nguyên lý|nguyên tố|phân tử)",
+        r"(phát minh ra|phát hiện ra|được thành lập năm)",
+        # Định nghĩa
+        r"(là gì\??|nghĩa là|định nghĩa|thuộc về)",
+        # Sự thật lịch sử cố định
+        r"(năm \d{4}|vào năm \d{4}|từ năm \d{4})",
+        # Thông tin kỹ thuật cố định
+        r"(được phát triển bởi|do .+ phát triển|thuộc sở hữu của)",
+    ]
+    
+    for pattern in knowledge_patterns:
+        if re.search(pattern, text_lower):
+            return "KNOWLEDGE"
+    
+    # NEWS patterns - BẮT BUỘC phải có evidence
+    news_patterns = [
+        # Thời điểm gần
+        r"(sáng nay|hôm nay|tối qua|mới đây|vừa mới|gần đây|mới nhất)",
+        r"(đang diễn ra|ngay lúc này|hiện tại)",
+        # Tuyên bố
+        r"(tuyên bố|công bố|phát biểu|cho biết|thông báo|khẳng định)",
+        r"(theo nguồn tin|theo báo cáo)",
+        # Sự kiện
+        r"(xảy ra|diễn ra|dự kiến)",
+        # Tin tức indicators
+        r"(\[nóng\]|\[breaking\]|\[cập nhật\])",
+    ]
+    
+    for pattern in news_patterns:
+        if re.search(pattern, text_lower):
+            return "NEWS"
+    
+    # Default: NEWS (cần evidence để an toàn)
+    return "NEWS"
+
+
 def normalize_conclusion(conclusion: str) -> str:
     """
     Normalize conclusion to BINARY classification: TIN THẬT or TIN GIẢ only.
@@ -254,16 +317,24 @@ def _parse_json_from_text(text: str) -> dict:
         return {}
 
 
-def _trim_snippet(s: str, max_len: int = 500) -> str:
-    """Tăng max_len từ 280 lên 500 để giữ nhiều context hơn cho models."""
+def _trim_snippet(s: str, max_len: int = 200) -> str:
+    """
+    OPTIMIZED: Giảm max_len từ 500 xuống 200 để tiết kiệm token.
+    Với 3 evidence items * 200 chars = 600 chars thay vì 10 * 500 = 5000 chars.
+    Tiết kiệm ~90% token cho evidence.
+    """
     if not s:
         return ""
     s = s.replace("\n", " ").strip()
     return s[:max_len]
 
 
-def _trim_evidence_bundle(bundle: Dict[str, Any], cap_l2: int = 10, cap_l3: int = 10, cap_l4: int = 5) -> Dict[str, Any]:
-    """Tăng cap từ 5/5/2 lên 10/10/5 để gửi nhiều evidence hơn cho CRITIC và JUDGE."""
+def _trim_evidence_bundle(bundle: Dict[str, Any], cap_l2: int = 3, cap_l3: int = 3, cap_l4: int = 2) -> Dict[str, Any]:
+    """
+    OPTIMIZED: Giảm cap từ 10/10/5 xuống 3/3/2 để tiết kiệm token.
+    Tổng: 8 evidence items thay vì 25 items.
+    Mục tiêu: Giảm latency từ ~70s xuống ~25s.
+    """
     if not bundle:
         return {"layer_1_tools": [], "layer_2_high_trust": [], "layer_3_general": [], "layer_4_social_low": []}
     out = {
@@ -323,12 +394,11 @@ def _as_str(x: Any) -> str:
 
 def _heuristic_summarize(text_input: str, bundle: Dict[str, Any], current_date: str) -> Dict[str, Any]:
     """
-    (ĐÃ SỬA ĐỔI - ADVERSARIAL DIALECTIC)
     Logic dự phòng khi LLM thất bại.
-    Ưu tiên:
-    1. Phát hiện sản phẩm lỗi thời (iPhone 12, Galaxy S21, etc.)
-    2. Lớp 1 (OpenWeather API) cho tin thời tiết
-    3. Lớp 2/3 cho tin tức khác
+    
+    NGUYÊN TẮC: PRESUMPTION OF TRUTH
+    - Mặc định là TIN THẬT nếu không có bằng chứng BÁC BỎ
+    - Chỉ TIN GIẢ khi: evidence BÁC BỎ trực tiếp hoặc sản phẩm lỗi thời
     """
     l1 = bundle.get("layer_1_tools") or []
     l2 = bundle.get("layer_2_high_trust") or []
@@ -364,7 +434,7 @@ def _heuristic_summarize(text_input: str, bundle: Dict[str, Any], current_date: 
         }
     
     # ═══════════════════════════════════════════════════════════════
-    # PRIORITY 1: Phát hiện sản phẩm LỖI THỜI (Outdated Product)
+    # PRIORITY 2: Phát hiện sản phẩm LỖI THỜI (Outdated Product)
     # ═══════════════════════════════════════════════════════════════
     outdated_info = _detect_outdated_product(text_input)
     if outdated_info and outdated_info.get("is_outdated"):
@@ -529,11 +599,11 @@ def _heuristic_summarize(text_input: str, bundle: Dict[str, Any], current_date: 
             "conclusion": "TIN THẬT",
             "debate_log": {
                 "red_team_argument": "Tôi không tìm thấy bằng chứng bác bỏ.",
-                "blue_team_argument": _as_str(f"Có ít nhất 2 nguồn uy tín xác nhận: {top.get('source')}."),
-                "judge_reasoning": "Blue Team thắng với bằng chứng từ nhiều nguồn uy tín."
+                "blue_team_argument": _as_str(f"Có ít nhất 1 nguồn uy tín xác nhận: {top.get('source')}."),
+                "judge_reasoning": "Blue Team thắng với bằng chứng từ nguồn uy tín."
             },
             "confidence_score": 85,
-            "reason": _as_str(f"Có từ 2 nguồn uy tín xác nhận thông tin này ({top.get('source')})."),
+            "reason": _as_str(f"Có nguồn uy tín xác nhận thông tin này ({top.get('source')})."),
             "style_analysis": "",
             "key_evidence_snippet": _as_str(top.get("snippet")),
             "key_evidence_source": _as_str(top.get("source")),
@@ -541,37 +611,10 @@ def _heuristic_summarize(text_input: str, bundle: Dict[str, Any], current_date: 
             "cached": False
         }
     
-    # Nếu có nguồn L2 nhưng KHÔNG liên quan -> Có thể là TIN GIẢ
-    all_claim_keywords = person_keywords + org_location_keywords
-    if len(l2) >= 2 and len(relevant_l2) == 0 and all_claim_keywords:
-        # Claim có thực thể cụ thể (tên người/tổ chức) nhưng không có bằng chứng liên quan
-        debate_log = {
-            "red_team_argument": _as_str(
-                f"Không tìm thấy bất kỳ nguồn uy tín nào xác nhận thông tin này. "
-                f"Các nguồn tìm được không liên quan đến nội dung claim."
-            ),
-            "blue_team_argument": _as_str(
-                "Tôi không tìm thấy bằng chứng xác nhận. Tôi thừa nhận thua cuộc."
-            ),
-            "judge_reasoning": _as_str(
-                "Red Team thắng. Không có nguồn uy tín nào xác nhận tin này. "
-                "Đây có thể là tin đồn hoặc tin giả."
-            )
-        }
-        return {
-            "conclusion": "TIN GIẢ",
-            "confidence_score": 80,
-            "reason": _as_str(
-                "Không tìm thấy nguồn uy tín nào xác nhận thông tin này. "
-                "Các kết quả tìm kiếm không liên quan đến nội dung claim."
-            ),
-            "debate_log": debate_log,
-            "key_evidence_snippet": "",
-            "key_evidence_source": "",
-            "evidence_link": "",
-            "style_analysis": "Tin có vẻ là tin đồn không có căn cứ",
-            "cached": False
-        }
+    # ĐÃ XÓA: Block đánh TIN GIẢ khi "có L2 nhưng không liên quan"
+    # Đây là logic SAI: Không có evidence ≠ Tin giả
+    # Theo IFCN: Presumption of Truth - chỉ TIN GIẢ khi có BẰNG CHỨNG BÁC BỎ
+
 
     if is_weather_claim and l2:
         weather_sources = [item for item in l2 if _is_weather_source(item)]
@@ -794,16 +837,49 @@ async def execute_final_analysis(
     site_query_string: str = "",  # Added for re-search
 ) -> dict:
     """
-    Pipeline: Input → Planner → Search → CRITIC → JUDGE → (RE-SEARCH nếu cần)
+    Pipeline OPTIMIZED: SYNTH → CRITIC → JUDGE
     
-    1. CRITIC (Biện lý) - Phản biện mạnh, tìm điểm yếu trong bằng chứng
-    2. JUDGE (Thẩm phán) - Ra phán quyết dựa trên bằng chứng VÀ ý kiến CRITIC
-    3. RE-SEARCH - Chỉ khi JUDGE yêu cầu thêm bằng chứng (Self-Correction)
+    SYNTH Logic:
+    - KNOWLEDGE claims: Agent có quyền tự quyết dựa trên kiến thức
+    - NEWS claims: Bắt buộc phải có evidence
+    
+    Optimizations applied:
+    - Reduced evidence bundle size (3/3/2 items)
+    - Reduced snippet length (200 chars)
+    - Reduced timeouts (30s/40s)
+    - Simplified prompts
     """
     if not SYNTHESIS_PROMPT:
         raise ValueError("Synthesis prompt (prompt 2) chưa được tải.")
     if not CRITIC_PROMPT:
         print("WARNING: Critic prompt chưa được tải, dùng mặc định.")
+
+    # =========================================================================
+    # SYNTH: Phân loại claim để quyết định quyền tự quyết
+    # =========================================================================
+    claim_type = _classify_claim_type(text_input)
+    print(f"\n[SYNTH] Claim type: {claim_type}")
+    
+    if claim_type == "KNOWLEDGE":
+        synth_instruction = (
+            "\n\n[SYNTH INSTRUCTION - KNOWLEDGE CLAIM]\n"
+            "Đây là KNOWLEDGE CLAIM (kiến thức cố định: địa lý, khoa học, định nghĩa).\n"
+            "→ Bạn có quyền TỰ QUYẾT dựa trên kiến thức nội tại.\n"
+            "→ KHÔNG bắt buộc phải có evidence để kết luận.\n"
+            "→ Nếu thông tin đúng với kiến thức của bạn → TIN THẬT.\n"
+            "→ Nếu thông tin sai với kiến thức của bạn → TIN GIẢ.\n"
+        )
+        print(f"[SYNTH] Agent có quyền tự quyết dựa trên kiến thức")
+    else:
+        synth_instruction = (
+            "\n\n[SYNTH INSTRUCTION - NEWS CLAIM]\n"
+            "Đây là NEWS CLAIM (tin tức, sự kiện, tuyên bố).\n"
+            "→ BẮT BUỘC phải có evidence để kết luận chắc chắn.\n"
+            "→ Nếu KHÔNG có evidence liên quan → áp dụng PRESUMPTION OF TRUTH (TIN THẬT với confidence thấp).\n"
+            "→ Nếu có evidence XÁC NHẬN → TIN THẬT với confidence cao.\n"
+            "→ Nếu có evidence BÁC BỎ → TIN GIẢ.\n"
+        )
+        print(f"[SYNTH] Bắt buộc phải có evidence cho NEWS claim")
 
     # Trim evidence before sending to models
     trimmed_bundle = _trim_evidence_bundle(evidence_bundle)
@@ -822,10 +898,10 @@ async def execute_final_analysis(
         critic_report = await call_agent_with_capability_fallback(
             role="CRITIC",
             prompt=critic_prompt_filled,
-            temperature=0.7, # Cần creativity để tìm lỗi
-            timeout=60.0
+            temperature=0.5,
+            timeout=20.0  # 20s - balanced for Gemma 27B
         )
-        print(f"[CRITIC] Report:\n{critic_report[:200]}...")
+        print(f"[CRITIC] Report: {critic_report[:150]}...")
         
     except Exception as e:
         print(f"[CRITIC] Gặp lỗi: {e}")
@@ -838,15 +914,18 @@ async def execute_final_analysis(
     try:
         print(f"\n[JUDGE] Bắt đầu phán quyết Round 1...")
         judge_prompt_filled = SYNTHESIS_PROMPT.replace("{text_input}", text_input)
-        judge_prompt_filled = judge_prompt_filled.replace("{evidence_bundle_json}", evidence_bundle_json) # Dùng lại json cũ
+        judge_prompt_filled = judge_prompt_filled.replace("{evidence_bundle_json}", evidence_bundle_json)
         judge_prompt_filled = judge_prompt_filled.replace("{current_date}", current_date)
+        
+        # Add SYNTH instruction and CRITIC report
+        judge_prompt_filled += synth_instruction
         judge_prompt_filled += f"\n\n[Ý KIẾN BIỆN LÝ (CRITIC)]:\n{critic_report}"
         
         judge_text = await call_agent_with_capability_fallback(
             role="JUDGE",
             prompt=judge_prompt_filled,
-            temperature=0.1, # Cần strict logic
-            timeout=80.0
+            temperature=0.1,  # Strict logic
+            timeout=25.0  # 25s - enough for complex reasoning
         )
         
         judge_result = _parse_json_from_text(judge_text)
@@ -1023,6 +1102,102 @@ async def execute_final_analysis(
     except Exception as e:
         print(f"[JUDGE] Gặp lỗi Round 1: {e}")
         return _heuristic_summarize(text_input, evidence_bundle, current_date)
+
+    # =========================================================================
+    # PHASE 2.5: COUNTER-SEARCH (Tìm dẫn chứng BẢO VỆ claim trước khi kết luận TIN GIẢ)
+    # =========================================================================
+    # Nếu JUDGE Round 1 kết luận TIN GIẢ → Search thêm để tìm dẫn chứng ủng hộ claim
+    # Đây là cơ hội "phản biện lại CRITIC" bằng bằng chứng mới
+    
+    conclusion_r1 = normalize_conclusion(judge_result.get("conclusion", ""))
+    
+    if conclusion_r1 == "TIN GIẢ":
+        print(f"\n[COUNTER-SEARCH] JUDGE Round 1 kết luận TIN GIẢ → Tìm dẫn chứng BẢO VỆ claim...")
+        
+        try:
+            from app.search import call_google_search
+            
+            # Search để tìm dẫn chứng XÁC NHẬN claim (phản biện CRITIC)
+            counter_queries = [
+                f"{text_input} xác nhận",
+                f"{text_input} chứng minh đúng",
+                f"{text_input} official",
+            ]
+            
+            counter_evidence = []
+            for query in counter_queries[:2]:  # Chỉ 2 queries để nhanh
+                results = call_google_search(query, "")
+                counter_evidence.extend(results[:5])
+                if len(counter_evidence) >= 5:
+                    break
+            
+            if counter_evidence:
+                print(f"[COUNTER-SEARCH] Tìm thấy {len(counter_evidence)} dẫn chứng có thể ủng hộ claim")
+                
+                # Tạo evidence bundle mới với counter-evidence
+                counter_bundle = {
+                    "layer_1_tools": evidence_bundle.get("layer_1_tools", []),
+                    "layer_2_high_trust": counter_evidence[:5],
+                    "layer_3_general": evidence_bundle.get("layer_3_general", []),
+                    "layer_4_social_low": []
+                }
+                counter_evidence_json = json.dumps(_trim_evidence_bundle(counter_bundle), indent=2, ensure_ascii=False)
+                
+                # JUDGE Round 1.5: Xem xét lại với dẫn chứng mới
+                print(f"[JUDGE] Round 1.5: Xem xét lại với dẫn chứng mới...")
+                
+                counter_prompt = SYNTHESIS_PROMPT.replace("{text_input}", text_input)
+                counter_prompt = counter_prompt.replace("{evidence_bundle_json}", counter_evidence_json)
+                counter_prompt = counter_prompt.replace("{current_date}", current_date)
+                counter_prompt += f"""
+
+[COUNTER-SEARCH EVIDENCE]
+Đã tìm thêm dẫn chứng CÓ THỂ ủng hộ claim. Hãy xem xét lại kết luận.
+
+[NGUYÊN TẮC]
+- Nếu dẫn chứng mới XÁC NHẬN claim → TIN THẬT
+- Nếu dẫn chứng mới KHÔNG liên quan → Giữ nguyên TIN GIẢ
+- CHỈ kết luận TIN GIẢ nếu có bằng chứng BÁC BỎ rõ ràng
+
+[CRITIC FEEDBACK TRƯỚC ĐÓ]
+{critic_report}
+"""
+                
+                counter_text = await call_agent_with_capability_fallback(
+                    role="JUDGE",
+                    prompt=counter_prompt,
+                    temperature=0.1,
+                    timeout=25.0  # Same as JUDGE
+                )
+                
+                counter_result = _parse_json_from_text(counter_text)
+                
+                # Parse kết quả
+                if counter_result.get("verdict_metadata"):
+                    counter_conclusion = counter_result["verdict_metadata"].get("conclusion")
+                    counter_confidence = counter_result["verdict_metadata"].get("probability_score")
+                else:
+                    counter_conclusion = counter_result.get("conclusion")
+                    counter_confidence = counter_result.get("confidence_score")
+                
+                counter_conclusion = normalize_conclusion(counter_conclusion or "")
+                
+                print(f"[JUDGE] Round 1.5: {counter_conclusion} ({counter_confidence}%)")
+                
+                # Nếu Counter-Search đổi ý → Cập nhật judge_result
+                if counter_conclusion == "TIN THẬT":
+                    print(f"[COUNTER-SEARCH] ✅ Counter-evidence đã thay đổi kết luận: TIN GIẢ → TIN THẬT")
+                    judge_result["conclusion"] = "TIN THẬT"
+                    judge_result["confidence_score"] = counter_confidence or 75
+                    judge_result["reason"] = (judge_result.get("reason", "") + 
+                        f"\n\n[COUNTER-SEARCH] Sau khi tìm thêm dẫn chứng, claim được xác nhận là TIN THẬT.")
+                else:
+                    print(f"[COUNTER-SEARCH] ❌ Counter-evidence không thay đổi kết luận, giữ TIN GIẢ")
+            else:
+                print(f"[COUNTER-SEARCH] Không tìm thấy dẫn chứng mới")
+                
+        except Exception as e:
+            print(f"[COUNTER-SEARCH] Lỗi: {e}")
 
     # =========================================================================
     # PHASE 3: SELF-CORRECTION (RE-SEARCH LOOP)
@@ -1242,3 +1417,4 @@ async def execute_final_analysis(
 
     # Fallback final
     return _heuristic_summarize(text_input, evidence_bundle, current_date)
+

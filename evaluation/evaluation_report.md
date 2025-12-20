@@ -1,68 +1,74 @@
 # BÁO CÁO ĐÁNH GIÁ TOÀN DIỆN ZEROFAKE
 
-**Ngày đánh giá**: 2025-12-19 00:51:45
-**Tổng số mẫu**: 10
+**Ngày đánh giá**: 2025-12-20 00:21:33
+**Tổng số mẫu**: 1000
 
 ## TẦNG 1: HIỆU SUẤT PHÂN LOẠI (Quantitative Metrics)
 
 ### Ma trận nhầm lẫn (Confusion Matrix)
 
-| Thực tế \ Dự đoán | TIN THẬT | TIN GIẢ | GÂY HIỂU LẦM |
-|-------------------|----------|---------|--------------|
-| **TIN THẬT** | 5 | 2 | 0 |
-| **TIN GIẢ** | 0 | 3 | 0 |
-| **GÂY HIỂU LẦM** | 0 | 0 | 0 |
+| Thực tế \ Dự đoán | TIN THẬT | TIN GIẢ |
+|-------------------|----------|---------|
+| **TIN THẬT** | 381 | 119 |
+| **TIN GIẢ** | 255 | 245 |
 
 ### Các chỉ số hiệu suất
 
 | Chỉ số | Giá trị | Mục tiêu | Đánh giá |
 |--------|---------|----------|----------|
-| **Accuracy** | 80.00% | > 80% | ✗ Chưa đạt |
-| **Macro-F1** | 52.78% | > 80% | ✗ Chưa đạt |
-| **FNR (Bỏ lọt tin giả)** | 0.00% | < 10% | ✓ Đạt |
-| **FPR (Vu oan tin thật)** | 0.00% | < 15% | ✓ Đạt |
+| **Accuracy** | 62.60% | > 80% | ✗ Chưa đạt |
+| **Macro-F1** | 61.90% | > 80% | ✗ Chưa đạt |
+| **FNR (Bỏ lọt tin giả)** | 51.00% | < 10% | ✗ Chưa đạt |
+| **FPR (Vu oan tin thật)** | 51.00% | < 15% | ✗ Chưa đạt |
 
 ### F1-Score theo từng lớp
 
 | Lớp | Precision | Recall | F1-Score |
 |-----|-----------|--------|----------|
-| TIN THẬT | 100.00% | 71.43% | 83.33% |
-| TIN GIẢ | 60.00% | 100.00% | 75.00% |
-| GÂY HIỂU LẦM | 0.00% | 0.00% | 0.00% |
+| TIN THẬT | 59.91% | 76.20% | 67.08% |
+| TIN GIẢ | 67.31% | 49.00% | 56.71% |
 
 ## TẦNG 2: CHẤT LƯỢNG SUY LUẬN (Qualitative Metrics)
 
 | Chỉ số | Giá trị | Ý nghĩa |
 |--------|---------|---------|
-| **Evidence Relevance** | 10.00% | Tỷ lệ có bằng chứng liên quan |
+| **Evidence Relevance** | 11.60% | Tỷ lệ có bằng chứng liên quan |
 | **Dialectic Quality** | 0.00% | Chất lượng tranh biện Red/Blue |
-| **Reasoning Consistency** | 20.00% | Lý do khớp với kết luận |
+| **Reasoning Consistency** | 30.00% | Lý do khớp với kết luận |
 
 ## TẦNG 3: HIỆU NĂNG HỆ THỐNG (Operational Metrics)
 
 | Chỉ số | Giá trị | Mục tiêu |
 |--------|---------|----------|
-| **Latency trung bình** | 105.41s | < 15s |
-| **Latency P50** | 103.50s | - |
-| **Latency P95** | 130.93s | - |
-| **Latency tối đa** | 131.38s | - |
+| **Latency trung bình** | 73.97s | < 15s |
+| **Latency P50** | 69.61s | - |
+| **Latency P95** | 122.74s | - |
+| **Latency tối đa** | 229.82s | - |
 | **Cache Hit Rate** | 0.00% | - |
 
 ## KẾT QUẢ THEO LĨNH VỰC
 
 | Lĩnh vực | Accuracy | Số mẫu | Đánh giá |
 |----------|----------|--------|----------|
-| Zombie News | 100.00% | 2 | ✓ |
-| Xã hội | 100.00% | 2 | ✓ |
-| Chính trị | 100.00% | 1 | ✓ |
-| Bịa đặt | 100.00% | 1 | ✓ |
-| Văn hóa | 100.00% | 1 | ✓ |
-| Thể thao | 50.00% | 2 | ✗ |
-| Quốc tế | 0.00% | 1 | ✗ |
+| Địa lý | 100.00% | 1 | ✓ |
+| Thời tiết | 86.05% | 43 | ✓ |
+| Kinh tế | 78.87% | 71 | ✓ |
+| Thể thao | 78.08% | 73 | ✓ |
+| Quốc tế | 76.36% | 55 | ✓ |
+| Xã hội | 75.38% | 65 | ✓ |
+| Chính trị | 73.44% | 64 | ✓ |
+| Khoa học | 72.55% | 51 | ✓ |
+| Văn hóa | 71.43% | 42 | ✓ |
+| Công nghệ | 71.43% | 35 | ✓ |
+| Zombie News | 68.60% | 86 | ⚠ |
+| Xuyên tạc | 53.66% | 82 | ⚠ |
+| Lừa đảo | 48.11% | 106 | ✗ |
+| Y tế sai | 42.45% | 139 | ✗ |
+| Bịa đặt | 36.78% | 87 | ✗ |
 
 ## TỔNG KẾT
 
-- **Tổng số mẫu đánh giá**: 10
-- **Số dự đoán đúng**: 8
-- **Accuracy tổng thể**: 80.00%
-- **Thời gian đánh giá**: 17 phút
+- **Tổng số mẫu đánh giá**: 1000
+- **Số dự đoán đúng**: 626
+- **Accuracy tổng thể**: 62.60%
+- **Thời gian đánh giá**: 1233 phút

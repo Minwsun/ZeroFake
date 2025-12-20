@@ -256,25 +256,26 @@ async def _execute_search_tool(parameters: dict, site_query_string: str, flash_m
 	layer_2.sort(key=sort_key)
 	layer_3.sort(key=sort_key)
 
+	# DISABLED: CRAWL4AI scraping - using snippets only for faster processing
 	# Scrape full article content for top results using Crawl4ai
-	all_evidence = layer_2 + layer_3
-	if all_evidence:
-		urls_to_scrape = [item["url"] for item in all_evidence[:15]]  # Top 15 URLs (tăng từ 8)
-		try:
-			scraped_articles = await scrape_multiple_articles(urls_to_scrape, max_articles=15)
-			if scraped_articles:
-				print(f"[CRAWL4AI] Ban đầu: Đã cào {len(scraped_articles)} bài viết")
-				# Enrich results with full text
-				for item in layer_2 + layer_3:
-					for article in scraped_articles:
-						if article.get("url") == item.get("url") and article.get("success"):
-							full_text = article.get("text", "")
-							if full_text:
-								# Append full text to snippet for better context
-								item["snippet"] = item.get("snippet", "") + "\n\n[NỘI DUNG ĐẦY ĐỦ]: " + full_text
-							break
-		except Exception as e:
-			print(f"[CRAWL4AI] Lỗi khi cào: {e}")
+	# all_evidence = layer_2 + layer_3
+	# if all_evidence:
+	# 	urls_to_scrape = [item["url"] for item in all_evidence[:15]]  # Top 15 URLs (tăng từ 8)
+	# 	try:
+	# 		scraped_articles = await scrape_multiple_articles(urls_to_scrape, max_articles=15)
+	# 		if scraped_articles:
+	# 			print(f"[CRAWL4AI] Ban đầu: Đã cào {len(scraped_articles)} bài viết")
+	# 			# Enrich results with full text
+	# 			for item in layer_2 + layer_3:
+	# 				for article in scraped_articles:
+	# 					if article.get("url") == item.get("url") and article.get("success"):
+	# 						full_text = article.get("text", "")
+	# 						if full_text:
+	# 							# Append full text to snippet for better context
+	# 							item["snippet"] = item.get("snippet", "") + "\n\n[NỘI DUNG ĐẦY ĐỦ]: " + full_text
+	# 						break
+	# 	except Exception as e:
+	# 		print(f"[CRAWL4AI] Lỗi khi cào: {e}")
 
 	return {
 		"tool_name": "search", "status": "success",
