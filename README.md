@@ -25,7 +25,7 @@ INPUT → PLANNER → SEARCH → CRITIC → JUDGE → OUTPUT
   - Groq API: Llama 3.1/3.3 (8B, 70B), Llama Guard
   - Google AI: Gemini Flash, Gemma 3 (4B, 12B, 27B)
   - Cerebras API: Llama 3.1/3.3 (for high-speed inference)
-- **Search**: DuckDuckGo + Google Search with source ranking
+- **Search**: SearXNG (Google-only) with Cloudflare WARP proxy
 - **Weather**: OpenWeatherMap API (global coverage)
 - **Storage**: SQLite + FAISS (KB Cache + Feedback Learning)
 
@@ -74,6 +74,9 @@ pip install -r requirements.txt
 # Configure API keys
 cp .env.example .env
 # Edit .env with your API keys
+
+# Start SearXNG (required for search)
+docker-compose -f docker-compose.searxng.yml up -d
 ```
 
 ### API Keys (.env)
@@ -81,6 +84,8 @@ cp .env.example .env
 GROQ_API_KEY=...           # Groq API (Llama models)
 GEMINI_API_KEY=...         # Google AI (Gemini/Gemma)
 OPENWEATHER_API_KEY=...    # Weather verification
+SEARXNG_URL=http://localhost:8080  # Self-hosted SearXNG
+WARP_ENABLED=false         # Optional: Enable Cloudflare WARP
 ```
 
 ## 5) Running
@@ -112,7 +117,7 @@ app/
   agent_synthesizer.py # CRITIC + JUDGE agents
   model_clients.py     # Multi-API model clients
   ranker.py            # Source trust ranking
-  search.py            # DuckDuckGo + Google search
+  search.py            # SearXNG (Google) + WARP proxy
   weather.py           # Weather API integration
   trusted_domains.json # 380+ trusted domains
 
@@ -157,6 +162,9 @@ python evaluation/run_evaluation.py
 - ✅ Expanded trusted sources (380+ domains worldwide)
 - ✅ Source ranking: Accept normal sources, reject tabloids/UGC
 - ✅ Realistic test dataset (1000 samples)
+- ✅ Migrated from DuckDuckGo to SearXNG (Google-only)
+- ✅ Cloudflare WARP proxy support for rate limit bypass
+- ✅ Self-hosted SearXNG with Docker Compose
 
 ---
 

@@ -1,18 +1,27 @@
 import os
 import re
 import json
+import httpx
 from datetime import datetime
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlencode
 
 from duckduckgo_search import DDGS
 from dotenv import load_dotenv
 
 load_dotenv()
 
+# SearXNG Configuration
+SEARXNG_URL = os.getenv("SEARXNG_URL", "http://localhost:8080")  # Self-hosted default
+WARP_PROXY = os.getenv("WARP_PROXY", "socks5://127.0.0.1:40000")
+WARP_ENABLED = os.getenv("WARP_ENABLED", "false").lower() == "true"
+
+# Legacy Google API keys (kept for compatibility)
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 GOOGLE_CSE_ID = os.getenv("GOOGLE_CSE_ID")
 
 MAX_RESULTS = 40  # Tăng từ 20 để thu thập nhiều evidence hơn
+SEARXNG_TIMEOUT = 30  # Timeout cho SearXNG requests
+DDG_TIMEOUT = 20  # Timeout cho DuckDuckGo fallback
 _TRUSTED_DOMAINS_CACHE = None
 
 # Keywords indicating international events that need English search
@@ -156,6 +165,103 @@ def _sort_key(item: dict) -> tuple:
     return (tier, not is_news, -ts)
 
 
+def _create_http_client() -> httpx.Client:
+    """Create HTTP client with optional WARP proxy."""
+    if WARP_ENABLED:
+        print(f"🔒 Sử dụng Cloudflare WARP proxy: {WARP_PROXY}")
+        return httpx.Client(
+            proxy=WARP_PROXY,
+            timeout=SEARXNG_TIMEOUT,
+            follow_redirects=True,
+        )
+    else:
+        return httpx.Client(
+            timeout=SEARXNG_TIMEOUT,
+            follow_redirects=True,
+        )
+
+
+def _run_searxng(query: str, time_range: str = "month") -> list:
+    """
+    Gọi SearXNG API để tìm kiếm, chỉ sử dụng Google engine.
+    
+    Args:
+        query: Từ khóa tìm kiếm
+        time_range: Khoảng thời gian (day, week, month, year)
+    
+    Returns:
+        List các kết quả tìm kiếm, hoặc None nếu lỗi (để trigger fallback)
+    """
+    params = {
+        "q": query,
+        "format": "json",
+        "engines": "google",  # CHỈ sử dụng Google để đạt chất lượng cao nhất
+        "language": "vi-VN",
+        "safesearch": "0",
+        "pageno": "1",
+    }
+    
+    # Map time range
+    if time_range == "w":
+        params["time_range"] = "week"
+    elif time_range == "d":
+        params["time_range"] = "day"
+    elif time_range == "y":
+        params["time_range"] = "year"
+    else:
+        params["time_range"] = "month"
+    
+    search_url = f"{SEARXNG_URL.rstrip('/')}/search"
+    
+    try:
+        with _create_http_client() as client:
+            response = client.get(search_url, params=params)
+            response.raise_for_status()
+            data = response.json()
+            
+            results = data.get("results", [])
+            print(f"✅ SearXNG (Google): Tìm thấy {len(results)} kết quả")
+            return results
+            
+    except httpx.TimeoutException:
+        print(f"⏱️ SearXNG timeout sau {SEARXNG_TIMEOUT}s - sẽ fallback sang DuckDuckGo")
+        return None  # Trigger fallback
+    except httpx.HTTPStatusError as e:
+        print(f"❌ SearXNG HTTP error: {e.response.status_code} - sẽ fallback sang DuckDuckGo")
+        return None  # Trigger fallback
+    except Exception as exc:
+        print(f"❌ SearXNG lỗi: {exc} - sẽ fallback sang DuckDuckGo")
+        return None  # Trigger fallback
+
+
+def _run_ddg_fallback(query: str, timelimit: str = "m") -> list:
+    """
+    DuckDuckGo fallback khi SearXNG không khả dụng.
+    
+    Args:
+        query: Từ khóa tìm kiếm
+        timelimit: Khoảng thời gian (d, w, m, y)
+    
+    Returns:
+        List các kết quả tìm kiếm
+    """
+    print(f"🦆 Fallback: Đang gọi DuckDuckGo cho: {query}")
+    try:
+        with DDGS() as ddgs:
+            results = ddgs.text(
+                keywords=query,
+                region="vi-vn",
+                safesearch="off",
+                timelimit=timelimit,
+                max_results=MAX_RESULTS,
+            ) or []
+            print(f"✅ DuckDuckGo: Tìm thấy {len(results)} kết quả")
+            return results
+    except Exception as exc:
+        print(f"❌ DuckDuckGo lỗi: {exc}")
+        return []
+
+
 def call_google_search(text_input: str, site_query_string: str) -> list:
     """
     Enhanced DuckDuckGo search with:
@@ -176,6 +282,7 @@ def call_google_search(text_input: str, site_query_string: str) -> list:
 
     all_items = []
     seen = set()
+    use_ddg_fallback = False
 
     def _run_ddg(q: str, tl: str | None, region: str = "vi-vn"):
         try:
@@ -193,7 +300,35 @@ def call_google_search(text_input: str, site_query_string: str) -> list:
             print(f"DuckDuckGo Search lỗi ({region}): {exc}")
             return []
 
-    def _ingest(results):
+            # SearXNG trả về 'content' thay vì 'body'
+            snippet = r.get("content") or r.get("body") or ""
+            title = r.get("title") or ""
+            if len(snippet) < 30:
+                continue
+
+            domain = urlparse(link).netloc.lower().replace("www.", "")
+            is_news_site = any(kw in domain for kw in [
+                "vnexpress", "dantri", "tuoitre", "thanhnien", "vietnamnet", "vtv", "vov",
+                "nhandan", "qdnd", "cand", "znews", "laodong", "tienphong", "kenh14",
+                "bbc", "nytimes", "reuters", "apnews", "afp", "cnn", "theguardian",
+                "washingtonpost", "wsj", "news", "press", "post", "times"
+            ])
+
+            # SearXNG có thể trả về 'publishedDate'
+            date = r.get("publishedDate") or r.get("date") or None
+
+            all_items.append({
+                "title": title,
+                "link": link,
+                "snippet": snippet,
+                "pagemap": {},
+                "date": date,
+                "is_news_site": is_news_site,
+                "source_tier": _source_tier(domain),
+            })
+
+    def _ingest_ddg(results):
+        """Ingest results từ DuckDuckGo format."""
         for r in results:
             link = r.get("href")
             if not link or link in seen:
@@ -256,5 +391,6 @@ def call_google_search(text_input: str, site_query_string: str) -> list:
         item.pop("is_news_site", None)
         item.pop("source_tier", None)
 
-    print(f"DuckDuckGo Search: Tìm thấy {len(all_items)} bằng chứng.")
+    source = "DuckDuckGo (fallback)" if use_ddg_fallback else "SearXNG (Google)"
+    print(f"📊 {source}: Tổng cộng {len(all_items)} bằng chứng.")
     return all_items[:MAX_RESULTS]
