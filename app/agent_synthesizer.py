@@ -23,10 +23,12 @@ SYNTHESIS_PROMPT = ""
 CRITIC_PROMPT = ""  # NEW: Prompt cho CRITIC agent
 
 # ==============================================================================
-# SPEED OPTIMIZATION FLAGS - Tắt các tính năng thừa để tăng tốc
+# COGNITIVE PIPELINE FLAGS - Quy trình tư duy CRITIC-JUDGE
 # ==============================================================================
-ENABLE_COUNTER_SEARCH = False  # Tắt Counter-Search (tiết kiệm ~20s)
-ENABLE_SELF_CORRECTION = False  # Tắt Self-Correction/Re-Search (tiết kiệm ~30s)
+# COUNTER-SEARCH: Khi JUDGE kết luận TIN GIẢ, search thêm để "bảo vệ" claim
+# SELF-CORRECTION: Re-search khi JUDGE yêu cầu hoặc confidence thấp
+ENABLE_COUNTER_SEARCH = True   # Bật để JUDGE có thể phản biện lại CRITIC
+ENABLE_SELF_CORRECTION = True  # Bật để JUDGE có thể search verify khi cần
 
 
 # Cài đặt an toàn
@@ -55,66 +57,21 @@ WEATHER_SOURCE_KEYWORDS = [
 
 
 # ==============================================================================
-# SYNTH LOGIC: Phân loại claim để quyết định quyền tự quyết của Agent
+# SYNTH LOGIC: Để LLM tự phân loại claim (không dùng pattern cứng)
 # ==============================================================================
 
 def _classify_claim_type(text_input: str) -> str:
     """
-    SYNTH: Phân loại claim thành 2 loại:
+    SIMPLIFIED: Không dùng pattern cứng nữa.
+    Trả về "AUTO" để LLM tự quyết định dựa trên context.
     
-    - "KNOWLEDGE": Kiến thức (địa lý, khoa học, định nghĩa)
-      → Agent có quyền TỰ QUYẾT dựa trên kiến thức nội tại
-      → KHÔNG bắt buộc phải có evidence
-      
-    - "NEWS": Tin tức (sự kiện, tuyên bố, thông tin thời sự)
-      → BẮT BUỘC phải có evidence để kết luận
-      → Không có evidence = không thể kết luận chắc chắn
+    LLM sẽ tự phân loại:
+    - KNOWLEDGE: Kiến thức cố định (địa lý, khoa học, định nghĩa)
+    - NEWS: Tin tức, sự kiện, tuyên bố
+    
+    Như vậy hệ thống sẽ khách quan hơn và hoạt động trên mọi trường hợp.
     """
-    text_lower = text_input.lower()
-    
-    # KNOWLEDGE patterns - Agent có thể tự quyết
-    knowledge_patterns = [
-        # Địa lý cố định
-        r"(thủ đô|thủ phủ|thành phố lớn nhất|diện tích|biên giới|giáp với)",
-        r"(châu lục|biển|đại dương|sông|núi|hồ|sa mạc|rừng)",
-        r"(quốc gia|nước|tỉnh|vùng miền)",
-        # Dân số/Dân tộc
-        r"(dân số|dân tộc|ngôn ngữ chính thức)",
-        # Khoa học/Kỹ thuật cố định
-        r"(công thức|định luật|nguyên lý|nguyên tố|phân tử)",
-        r"(phát minh ra|phát hiện ra|được thành lập năm)",
-        # Định nghĩa
-        r"(là gì\??|nghĩa là|định nghĩa|thuộc về)",
-        # Sự thật lịch sử cố định
-        r"(năm \d{4}|vào năm \d{4}|từ năm \d{4})",
-        # Thông tin kỹ thuật cố định
-        r"(được phát triển bởi|do .+ phát triển|thuộc sở hữu của)",
-    ]
-    
-    for pattern in knowledge_patterns:
-        if re.search(pattern, text_lower):
-            return "KNOWLEDGE"
-    
-    # NEWS patterns - BẮT BUỘC phải có evidence
-    news_patterns = [
-        # Thời điểm gần
-        r"(sáng nay|hôm nay|tối qua|mới đây|vừa mới|gần đây|mới nhất)",
-        r"(đang diễn ra|ngay lúc này|hiện tại)",
-        # Tuyên bố
-        r"(tuyên bố|công bố|phát biểu|cho biết|thông báo|khẳng định)",
-        r"(theo nguồn tin|theo báo cáo)",
-        # Sự kiện
-        r"(xảy ra|diễn ra|dự kiến)",
-        # Tin tức indicators
-        r"(\[nóng\]|\[breaking\]|\[cập nhật\])",
-    ]
-    
-    for pattern in news_patterns:
-        if re.search(pattern, text_lower):
-            return "NEWS"
-    
-    # Default: NEWS (cần evidence để an toàn)
-    return "NEWS"
+    return "AUTO"
 
 
 def normalize_conclusion(conclusion: str) -> str:
@@ -999,31 +956,23 @@ async def execute_final_analysis(
         print("WARNING: Critic prompt chưa được tải, dùng mặc định.")
 
     # =========================================================================
-    # SYNTH: Phân loại claim để quyết định quyền tự quyết
+    # SYNTH: Để LLM tự phân loại claim (không dùng pattern cứng)
     # =========================================================================
     claim_type = _classify_claim_type(text_input)
     print(f"\n[SYNTH] Claim type: {claim_type}")
     
-    if claim_type == "KNOWLEDGE":
-        synth_instruction = (
-            "\n\n[SYNTH INSTRUCTION - KNOWLEDGE CLAIM]\n"
-            "Đây là KNOWLEDGE CLAIM (kiến thức cố định: địa lý, khoa học, định nghĩa).\n"
-            "→ Bạn có quyền TỰ QUYẾT dựa trên kiến thức nội tại.\n"
-            "→ KHÔNG bắt buộc phải có evidence để kết luận.\n"
-            "→ Nếu thông tin đúng với kiến thức của bạn → TIN THẬT.\n"
-            "→ Nếu thông tin sai với kiến thức của bạn → TIN GIẢ.\n"
-        )
-        print(f"[SYNTH] Agent có quyền tự quyết dựa trên kiến thức")
-    else:
-        synth_instruction = (
-            "\n\n[SYNTH INSTRUCTION - NEWS CLAIM]\n"
-            "Đây là NEWS CLAIM (tin tức, sự kiện, tuyên bố).\n"
-            "→ BẮT BUỘC phải có evidence để kết luận chắc chắn.\n"
-            "→ Nếu KHÔNG có evidence liên quan → áp dụng PRESUMPTION OF TRUTH (TIN THẬT với confidence thấp).\n"
-            "→ Nếu có evidence XÁC NHẬN → TIN THẬT với confidence cao.\n"
-            "→ Nếu có evidence BÁC BỎ → TIN GIẢ.\n"
-        )
-        print(f"[SYNTH] Bắt buộc phải có evidence cho NEWS claim")
+    # AUTO: Để LLM tự quyết định dựa trên context
+    synth_instruction = (
+        "\n\n[SYNTH INSTRUCTION]\n"
+        "Hãy TỰ PHÂN LOẠI claim này:\n"
+        "- KNOWLEDGE: Kiến thức cố định (địa lý, khoa học, định nghĩa) → Có thể tự suy luận\n"
+        "- NEWS: Tin tức, sự kiện, tuyên bố → Cần evidence\n\n"
+        "Sau đó áp dụng:\n"
+        "- Nếu KNOWLEDGE: Tự quyết dựa trên kiến thức nội tại\n"
+        "- Nếu NEWS: Bắt buộc có evidence để kết luận\n"
+        "- Nếu không có evidence bác bỏ → PRESUMPTION OF TRUTH (TIN THẬT)\n"
+    )
+    print(f"[SYNTH] LLM sẽ tự phân loại và quyết định")
 
     # Trim evidence before sending to models
     trimmed_bundle = _trim_evidence_bundle(evidence_bundle)
@@ -1033,6 +982,7 @@ async def execute_final_analysis(
     # PHASE 1: CRITIC AGENT (BIỆN LÝ ĐỐI LẬP)
     # =========================================================================
     critic_report = "Không có phản biện."
+    critic_parsed = {}
     try:
         print(f"\n[CRITIC] Bắt đầu phản biện...")
         critic_prompt_filled = CRITIC_PROMPT.replace("{text_input}", text_input)
@@ -1047,9 +997,43 @@ async def execute_final_analysis(
         )
         print(f"[CRITIC] Report: {critic_report[:150]}...")
         
+        # Parse CRITIC response để kiểm tra counter_search_needed
+        critic_parsed = _parse_json_from_text(critic_report)
+        
     except Exception as e:
         print(f"[CRITIC] Gặp lỗi: {e}")
         critic_report = "Lỗi khi chạy Critic Agent."
+
+    # =========================================================================
+    # PHASE 1.5: CRITIC COUNTER-SEARCH (nếu CRITIC yêu cầu search thêm)
+    # =========================================================================
+    if critic_parsed.get("counter_search_needed", False):
+        counter_queries = critic_parsed.get("counter_search_queries", [])
+        if counter_queries:
+            print(f"\n[CRITIC-SEARCH] CRITIC yêu cầu search thêm: {counter_queries}")
+            try:
+                from app.search import call_google_search
+                
+                critic_counter_evidence = []
+                for query in counter_queries[:2]:  # Giới hạn 2 queries
+                    results = call_google_search(query, "")
+                    critic_counter_evidence.extend(results[:5])
+                    if len(critic_counter_evidence) >= 5:
+                        break
+                
+                if critic_counter_evidence:
+                    print(f"[CRITIC-SEARCH] Tìm thấy {len(critic_counter_evidence)} evidence mới")
+                    # Merge vào evidence bundle
+                    if "layer_2_high_trust" not in evidence_bundle:
+                        evidence_bundle["layer_2_high_trust"] = []
+                    evidence_bundle["layer_2_high_trust"].extend(critic_counter_evidence[:3])
+                    
+                    # Update evidence_bundle_json cho JUDGE
+                    trimmed_bundle = _trim_evidence_bundle(evidence_bundle)
+                    evidence_bundle_json = json.dumps(trimmed_bundle, indent=2, ensure_ascii=False)
+                    
+            except Exception as e:
+                print(f"[CRITIC-SEARCH] Lỗi search: {e}")
 
     # =========================================================================
     # PHASE 2: JUDGE AGENT (THẨM PHÁN) - Round 1
