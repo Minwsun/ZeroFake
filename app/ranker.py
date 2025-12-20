@@ -1,112 +1,10 @@
 # 22520876-NguyenNhatMinh
 """
-Module 2b: Source Ranker 
+Module 2b: Source Ranker - Binary Classification (USABLE vs BLOCKED)
 """
-from typing import Optional, Dict
+from typing import Optional
 from urllib.parse import urlparse
 from datetime import datetime
-
-
-SOURCE_RANKER_CONFIG: Dict[str, float] = {"default": 0.6}
-
-WEATHER_DOMAINS = {
-    "weather.com",
-    "accuweather.com",
-    "windy.com",
-    "windy.app",
-    "ventusky.com",
-    "meteoblue.com",
-    "yr.no",
-    "nchmf.gov.vn",
-    "bom.gov.au",
-    "metoffice.gov.uk",
-    "open-meteo.com",
-    "openweathermap.org",
-    "thoitiet.vn",
-    "dubaothoitiet.info",
-    "wunderground.com",
-    "weather.gov",
-    "weatherchannel.com",
-}
-
-WEATHER_KEYWORDS = [
-    "weather",
-    "forecast",
-    "accuweather",
-    "windy",
-    "meteoblue",
-    "ventusky",
-    "yr.no",
-    "thoitiet",
-    "nchmf",
-    "metoffice",
-    "bom.gov",
-]
-
-
-def _flatten_config(nested_dict: dict) -> dict:
-    """
-    Hàm private để làm phẳng config JSON lồng nhau.
-    """
-    flat_map = {}
-    for key, value in nested_dict.items():
-        if key.startswith("__"):  # Bỏ qua các key comment/nhãn nhóm
-            if isinstance(value, dict):
-                # Đệ quy vào các nhóm lồng nhau
-                flat_map.update(_flatten_config(value))
-            continue
-
-        if isinstance(value, (int, float)):
-            # Đây là một domain:rank
-            flat_map[key] = float(value)
-        elif isinstance(value, dict):
-            # Đệ quy vào các nhóm lồng nhau (trường hợp không có __)
-            flat_map.update(_flatten_config(value))
-
-    return flat_map
-
-
-def load_ranker_config(config_path: str = "config.json"):
-    """
-    Tải cấu hình rank domain.
-
-    THAY ĐỔI: thay vì dùng config.json, hệ thống sẽ ưu tiên đọc từ app/trusted_domains.json
-    (cùng format với tool_executor/search). Mỗi domain trong:
-      - tier0 → score ~0.95
-      - tier1 → score ~0.9
-    """
-    global SOURCE_RANKER_CONFIG
-    import json
-    import os
-
-    # Khởi tạo với default
-    SOURCE_RANKER_CONFIG = {"default": 0.6}
-
-    # Đường dẫn trusted_domains.json (ưu tiên)
-    try:
-        base_dir = os.path.dirname(__file__)
-        trusted_path = os.path.join(base_dir, "trusted_domains.json")
-        if os.path.exists(trusted_path):
-            with open(trusted_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            tier0 = data.get("tier0") or []
-            tier1 = data.get("tier1") or []
-            count = 0
-            for d in tier0:
-                if isinstance(d, str):
-                    SOURCE_RANKER_CONFIG[d.lower()] = 0.95
-                    count += 1
-            for d in tier1:
-                if isinstance(d, str):
-                    # Nếu domain đã ở tier0 thì giữ score cao hơn
-                    SOURCE_RANKER_CONFIG.setdefault(d.lower(), 0.9)
-                    count += 1
-            print(f"Ranker: Đã tải {count} nguồn từ trusted_domains.json.")
-            return
-        else:
-            print("Ranker: Không tìm thấy trusted_domains.json, sử dụng heuristic toàn cục.")
-    except Exception as e:
-        print(f"Ranker: Lỗi khi tải trusted_domains.json: {e}, sử dụng heuristic toàn cục.")
 
 
 # Danh sách các domain báo chí uy tín (để phát hiện domain giả)
@@ -166,98 +64,183 @@ def _is_fake_domain(domain: str) -> bool:
 
 def get_rank_from_url(url: str) -> float:
     """
-    Phân tích domain và subdomain để lấy score từ SOURCE_RANKER_CONFIG (đã được làm phẳng).
-    Có logic phát hiện domain giả dạng báo chí.
+    SIMPLIFIED BINARY RANKING: USABLE (0.8) vs BLOCKED (0.1)
+    
+    Philosophy: Trust most sources EXCEPT:
+    - User-generated content (social media, blogs, forums)
+    - Tabloids / báo lá cải (sensationalist, clickbait)
+    - Anti-state / propaganda / báo chống phá
+    - Unreliable / low-quality news sources
+    
+    USABLE (0.8): News, official, corporate, Wikipedia, etc.
+    BLOCKED (0.1): Social, blog, UGC, tabloid, propaganda
     """
-    if not SOURCE_RANKER_CONFIG:
-        load_ranker_config()
-
     try:
         parsed = urlparse(url)
         domain = parsed.netloc.lower()
 
-        # Loại bỏ www.
+        # Remove www.
         if domain.startswith('www.'):
             domain = domain[4:]
         
-        # Phát hiện domain giả (SCAR 2: NGUỒN)
+        # ==========================================================
+        # BLOCKED SOURCES (0.1)
+        # ==========================================================
+        
+        # 1. FAKE DOMAINS - Impersonating trusted sources
         if _is_fake_domain(domain):
-            print(f"Ranker: Domain giả được phát hiện: {domain} → rank = 0.1 (rất thấp)")
-            return 0.1  # Rank rất thấp cho domain giả
-
-        # Ưu tiên các trang dự báo thời tiết chuyên dụng (accuweather.com được ưu tiên cao nhất)
-        if 'accuweather.com' in domain:
-            return 0.98  # Accuweather được ưu tiên cao nhất
-        if any(domain == d or domain.endswith('.' + d) for d in WEATHER_DOMAINS) or any(k in domain for k in WEATHER_KEYWORDS):
-            return 0.95
-
-        # Kiểm tra config.json trước (ưu tiên nguồn uy tín từ config)
-        if domain in SOURCE_RANKER_CONFIG:
-            config_score = SOURCE_RANKER_CONFIG[domain]
-            if config_score >= 0.85:  # Nguồn uy tín từ config
-                print(f"Ranker: Tìm thấy nguồn uy tín từ config.json: {domain} = {config_score}")
-                return config_score
+            print(f"Ranker: BLOCKED (fake domain): {domain}")
+            return 0.1
         
-        # Kiểm tra subdomain trong config
-        parts = domain.split('.')
-        if len(parts) > 2:
-            base_domain_2 = '.'.join(parts[-2:])
-            if base_domain_2 in SOURCE_RANKER_CONFIG:
-                config_score = SOURCE_RANKER_CONFIG[base_domain_2]
-                if config_score >= 0.85:
-                    print(f"Ranker: Tìm thấy nguồn uy tín từ config.json: {base_domain_2} = {config_score}")
-                    return config_score
-        
-        # Domain heuristics (fallback)
-        score = None
-
-        if domain.endswith(('.gov', '.gov.vn', '.gob', '.go.jp', '.mil', '.mil.vn')):
-            score = 0.92
-        elif domain.endswith(('.edu', '.edu.vn', '.ac.uk', '.ac.jp', '.ac')):
-            score = 0.87
-        elif domain.endswith(('.int', '.org')):
-            score = 0.8
-
-        HIGH_TRUST_KEYWORDS = ['news', 'press', 'post', 'times', 'guardian', 'telegraph', 'tribune', 'herald']
-        if score is None and any(keyword in domain for keyword in HIGH_TRUST_KEYWORDS):
-            score = 0.78
-
-        # TABLOIDS - Báo lá cải, nguồn kém uy tín → LOẠI BỎ (score rất thấp)
-        TABLOID_DOMAINS = [
-            'tinmoi.vn', 'eva.vn', 'afamily.vn', 'ngoisao.net', '2sao.vn', 'gamek.vn',
-            'yan.vn', 'yeah1.com', 'docbao.vn', 'tintuconline.com.vn', 'webtretho.com',
-            'dailymail.co.uk', 'thesun.co.uk', 'mirror.co.uk', 'nypost.com', 'nationalenquirer.com',
-            'buzzfeed.com', 'tmz.com', 'huffpost.com'
+        # 2. SOCIAL MEDIA - 100% user-generated content
+        SOCIAL_DOMAINS = [
+            'facebook.com', 'fb.com', 'fb.watch', 'm.facebook.com',
+            'twitter.com', 'x.com', 'mobile.twitter.com',
+            'instagram.com', 'tiktok.com', 'youtube.com', 'youtu.be',
+            'reddit.com', 'weibo.com', 'telegram.org', 't.me',
+            'threads.net', 'mastodon.social', 'bsky.app',
+            'linkedin.com', 'pinterest.com', 'snapchat.com',
+            'zalo.me', 'zalo.vn',
         ]
-        if any(keyword in domain for keyword in TABLOID_DOMAINS):
-            return 0.1  # Báo lá cải → loại
-
-        # SOCIAL MEDIA - KHÔNG UY TÍN (do người dùng tự đăng lên)
-        SOCIAL_DOMAINS = ['facebook.com', 'twitter.com', 'x.com', 'instagram.com', 'tiktok.com', 'youtube.com', 'reddit.com', 'weibo.com', 'telegram.org', 't.me']
-        if any(domain.endswith(soc) or soc in domain for soc in SOCIAL_DOMAINS):
-            return 0.3  # UGC → không uy tín
-
-        # USER-GENERATED CONTENT (Blog platforms) - KHÔNG UY TÍN (do người dùng tự đăng)
-        LOW_TRUST_KEYWORDS = ['blogspot', 'wordpress', 'tumblr', 'substack', 'forum', 'medium.com', 'towardsdatascience.com']
-        if any(keyword in domain for keyword in LOW_TRUST_KEYWORDS):
-            return 0.3  # UGC → không uy tín
-
-        if score is not None:
-            return score
-
-        # Nếu là subdomain của các domain được đánh giá cao theo heuristic
-        parts = domain.split('.')
-        if len(parts) > 2:
-            base_domain_1 = '.'.join(parts[-2:])
-            if any(base_domain_1 == d for d in WEATHER_DOMAINS):
-                return 0.95
-            if base_domain_1.endswith(('.gov', '.edu', '.int')):
-                return 0.85
-
-        # DEFAULT - Nguồn bình thường → CHẤP NHẬN với điểm trung bình
-        return SOURCE_RANKER_CONFIG.get("default", 0.55)  # Tăng từ 0.6 → 0.55 cho default
+        if any(domain == soc or domain.endswith('.' + soc) for soc in SOCIAL_DOMAINS):
+            print(f"Ranker: BLOCKED (social media): {domain}")
+            return 0.1
+        
+        # 3. BLOG/UGC PLATFORMS - User-written content
+        BLOG_PLATFORMS = [
+            'blogspot.com', 'blogger.com', 'wordpress.com', 'wordpress.org',
+            'tumblr.com', 'substack.com', 'medium.com', 
+            'wix.com', 'weebly.com', 'squarespace.com',
+            'notion.so', 'notion.site', 'ghost.io',
+            'towardsdatascience.com', 'dev.to', 'hashnode.dev',
+        ]
+        if any(domain == blog or domain.endswith('.' + blog) for blog in BLOG_PLATFORMS):
+            print(f"Ranker: BLOCKED (blog platform): {domain}")
+            return 0.1
+        
+        # 4. FORUMS - User discussions, not news
+        FORUM_KEYWORDS = ['forum', 'community', 'discuss', 'boards', 'voz.vn', 'tinhte.vn', 'otofun']
+        if any(kw in domain for kw in FORUM_KEYWORDS):
+            print(f"Ranker: BLOCKED (forum): {domain}")
+            return 0.1
+        
+        # 5. TABLOIDS / BÁO LÁ CẢI - Sensationalist, clickbait, unreliable
+        TABLOID_DOMAINS = [
+            # International tabloids
+            'dailymail.co.uk', 'thesun.co.uk', 'mirror.co.uk', 'express.co.uk',
+            'nypost.com', 'nationalenquirer.com', 'tmz.com', 'pagesix.com',
+            'buzzfeed.com', 'huffpost.com', 'dailybeast.com',
+            'infowars.com', 'breitbart.com', 'thegatewaypundit.com',
+            
+            # Vietnamese tabloids / báo lá cải
+            'eva.vn', 'afamily.vn', 'ngoisao.net', '2sao.vn', 
+            'gamek.vn', 'yan.vn', 'yeah1.com', 'docbao.vn',
+            'webtretho.com', 'tinmoi.vn', 'tintuconline.com.vn',
+            'soha.vn', 'kienthuc.net.vn', 'giadinh.net.vn',
+            'anninhthudo.vn',  # Often sensationalist
+            'nguoiduatin.vn', 'phapluatplus.vn',
+            'congly.vn', 'baomoi.com',  # Aggregator with low quality
+            'tiin.vn', '24h.com.vn',  # Clickbait heavy
+            'doisongphapluat.com', 'danviet.vn',
+        ]
+        if any(domain == tab or domain.endswith('.' + tab) for tab in TABLOID_DOMAINS):
+            print(f"Ranker: BLOCKED (tabloid/báo lá cải): {domain}")
+            return 0.1
+        
+        # 6. ANTI-STATE / PROPAGANDA / BÁO CHỐNG PHÁ
+        PROPAGANDA_DOMAINS = [
+            # Anti-Vietnam government propaganda
+            'rfa.org', 'rfavietnam.com', 'voatiengviet.com',
+            'bbc.com/vietnamese',  # Note: bbc.com main is OK
+            'nguoi-viet.com', 'vietbao.com', 'viettan.org',
+            'chantroimoimedia.com', 'danchimviet.info',
+            'baocalitoday.com', 'saigonnhonews.com',
+            'vietbf.com', 'vietinfo.eu', 'thoibao.de',
+            'luatkhoa.org', 'thevietnamese.org',
+            
+            # General propaganda/conspiracy sites
+            'rt.com', 'sputniknews.com', 'globalresearch.ca',
+            'naturalnews.com', 'zerohedge.com',
+            'epochtimes.com', 'ntd.com', 'theepochtimes.com',
+        ]
+        if any(domain == prop or domain.endswith('.' + prop) or prop in domain for prop in PROPAGANDA_DOMAINS):
+            print(f"Ranker: BLOCKED (propaganda/chống phá): {domain}")
+            return 0.1
+        
+        # 7. UNRELIABLE / LOW QUALITY NEWS - BÁO KHÔNG UY TÍN
+        UNRELIABLE_DOMAINS = [
+            # Vietnamese low-quality news
+            'dantricdn.com', 'img.vn',  # CDN/image hosts
+            'xahoi.com.vn', 'vietnamfinance.vn',
+            'petrotimes.vn', 'congan.com.vn',
+            'giadinhvietnam.com', 'giaoducthoidai.vn',
+            'baophapluat.vn', 'baodatviet.vn',
+            
+            # International unreliable
+            'theonion.com', 'babylonbee.com',  # Satire (can be misleading)
+            'clickhole.com', 'waterfordwhispersnews.com',
+        ]
+        if any(domain == unreliable or domain.endswith('.' + unreliable) for unreliable in UNRELIABLE_DOMAINS):
+            print(f"Ranker: BLOCKED (unreliable/không uy tín): {domain}")
+            return 0.1
+        
+        # 8. SUSPICIOUS TLDs with fake news history
+        SUSPICIOUS_TLDS = ['.xyz', '.top', '.click', '.online', '.site', '.website', '.space', '.store', '.shop', '.info', '.tk', '.ml', '.ga', '.cf', '.gq']
+        if any(domain.endswith(tld) for tld in SUSPICIOUS_TLDS):
+            print(f"Ranker: BLOCKED (suspicious TLD): {domain}")
+            return 0.1
+        
+        # ==========================================================
+        # USABLE SOURCES (0.8) - Everything else
+        # ==========================================================
+        # News sites, official websites, corporate sites, Wikipedia, etc.
+        return 0.8
+        
     except Exception:
-        return SOURCE_RANKER_CONFIG.get("default", 0.6)
+        return 0.8  # Default to usable on error
+
+
+def test_query_results(query: str) -> None:
+    """
+    Test function to check search results - what comes back and if it's usable.
+    Usage: from app.ranker import test_query_results; test_query_results("Apple Vision Pro")
+    """
+    from app.search import call_google_search
+    
+    print(f"\n{'='*60}")
+    print(f"TEST QUERY: {query}")
+    print(f"{'='*60}")
+    
+    results = call_google_search(query, "")
+    
+    print(f"\nFound {len(results)} results total")
+    print(f"\n{'─'*60}")
+    
+    usable_count = 0
+    blocked_count = 0
+    
+    for i, r in enumerate(results[:10], 1):
+        url = r.get("link", "")
+        title = r.get("title", "")[:50]
+        snippet = r.get("snippet", "")[:80]
+        
+        score = get_rank_from_url(url)
+        status = "✓ USABLE" if score >= 0.5 else "✗ BLOCKED"
+        
+        if score >= 0.5:
+            usable_count += 1
+        else:
+            blocked_count += 1
+        
+        domain = urlparse(url).netloc.replace("www.", "")
+        
+        print(f"\n{i}. [{status}] {domain}")
+        print(f"   Title: {title}...")
+        print(f"   Snippet: {snippet}...")
+    
+    print(f"\n{'='*60}")
+    print(f"SUMMARY: {usable_count} usable, {blocked_count} blocked out of top 10")
+    print(f"{'='*60}\n")
 
 
 def _extract_date(item: dict) -> Optional[str]:

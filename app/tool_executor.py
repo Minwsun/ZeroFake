@@ -227,11 +227,9 @@ async def _execute_search_tool(parameters: dict, site_query_string: str, flash_m
 			"is_old": is_old,  # Đánh dấu thông tin cũ
 			"source_tier": source_tier,  # Độ chính thống của nguồn
 		}
-		if rank_score >= 0.85:
+		if rank_score >= 0.5:  # BINARY: USABLE sources go to layer_2
 			layer_2.append(evidence_item)
-		elif rank_score >= 0.4:
-			layer_3.append(evidence_item)
-		else:
+		else:  # BLOCKED sources (social, blog, tabloid) go to layer_4
 			layer_4.append(evidence_item)
 
 	# Sắp xếp theo:
@@ -256,26 +254,25 @@ async def _execute_search_tool(parameters: dict, site_query_string: str, flash_m
 	layer_2.sort(key=sort_key)
 	layer_3.sort(key=sort_key)
 
-	# DISABLED: CRAWL4AI scraping - using snippets only for faster processing
-	# Scrape full article content for top results using Crawl4ai
-	# all_evidence = layer_2 + layer_3
-	# if all_evidence:
-	# 	urls_to_scrape = [item["url"] for item in all_evidence[:15]]  # Top 15 URLs (tăng từ 8)
-	# 	try:
-	# 		scraped_articles = await scrape_multiple_articles(urls_to_scrape, max_articles=15)
-	# 		if scraped_articles:
-	# 			print(f"[CRAWL4AI] Ban đầu: Đã cào {len(scraped_articles)} bài viết")
-	# 			# Enrich results with full text
-	# 			for item in layer_2 + layer_3:
-	# 				for article in scraped_articles:
-	# 					if article.get("url") == item.get("url") and article.get("success"):
-	# 						full_text = article.get("text", "")
-	# 						if full_text:
-	# 							# Append full text to snippet for better context
-	# 							item["snippet"] = item.get("snippet", "") + "\n\n[NỘI DUNG ĐẦY ĐỦ]: " + full_text
-	# 						break
-	# 	except Exception as e:
-	# 		print(f"[CRAWL4AI] Lỗi khi cào: {e}")
+	# Re-enabled article scraping for top 5 high-trust sources (accuracy > speed)
+	top_evidence = layer_2[:5]  # Only scrape top 5 layer_2 for speed
+	if top_evidence:
+		urls_to_scrape = [item["url"] for item in top_evidence]
+		try:
+			scraped_articles = await scrape_multiple_articles(urls_to_scrape, max_articles=5)
+			if scraped_articles:
+				print(f"[SCRAPER] Scraped {len(scraped_articles)} articles for enrichment")
+				# Enrich layer_2 snippets with full text
+				for item in layer_2:
+					for article in scraped_articles:
+						if article.get("url") == item.get("url") and article.get("success"):
+							full_text = article.get("text", "")
+							if full_text and len(full_text) > 100:
+								# Append first 800 chars of full text to snippet
+								item["snippet"] = item.get("snippet", "") + "\n\n[FULL_TEXT]: " + full_text[:800]
+							break
+		except Exception as e:
+			print(f"[SCRAPER] Warning (non-fatal): {e}")
 
 	return {
 		"tool_name": "search", "status": "success",
@@ -531,11 +528,10 @@ async def execute_tool_plan(plan: dict, site_query_string: str, flash_mode: bool
 							"date": date_str,
 							"is_old": is_old  # Đánh dấu thông tin cũ
 						}
-						if rank_score >= 0.85:
+						# BINARY CLASSIFICATION: usable vs blocked
+						if rank_score >= 0.5:  # USABLE
 							layer_2.append(mapped)
-						elif rank_score >= 0.4:
-							layer_3.append(mapped)
-						else:
+						else:  # BLOCKED
 							layer_4.append(mapped)
 						seen_urls.add(link)
 			except Exception as e:
