@@ -7,6 +7,7 @@ from urllib.parse import urlparse, urlencode
 
 from duckduckgo_search import DDGS
 from gnews import GNews
+import wikipediaapi
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -392,30 +393,66 @@ def call_google_search(text_input: str, site_query_string: str) -> list:
                 "date": pub_date,
             })
     
-    # 1. GOOGLE NEWS VN: Tin tức từ Google News tiếng Việt
+    # --- OPTIMIZED SEARCH STRATEGY ---
+    # Priority: GNews (fast) → Wikipedia (fast) → DDG (fallback if < 5 results)
+    
+    # 1. GOOGLE NEWS: Primary news source (fast, reliable)
     print(f"  [GNEWS-VN] Tìm Google News VN: {cleaned_input[:50]}...")
     _ingest_gnews(_run_gnews(cleaned_input, language="vi", country="VN"))
     
-    # 2. GOOGLE NEWS EN: Tin tức quốc tế từ Google News
     if en_query and len(en_query) > 5:
         print(f"  [GNEWS-EN] Tìm Google News QT: {en_query[:50]}...")
         _ingest_gnews(_run_gnews(en_query, language="en", country="US"))
     
-    # 3. DDG NEWS (Fallback/Supplement)
-    print(f"  [DDG-NEWS-VN] Tìm tin tức VN: {cleaned_input[:50]}...")
-    _ingest_ddg(_run_ddg_news(cleaned_input, timelimit or "m", region="vi-vn"), source_type="news")
+    # 2. WIKIPEDIA: Fast direct Wikipedia search for entities
+    def _search_wikipedia(query: str, lang: str = "vi") -> list:
+        """Search Wikipedia directly for entity info."""
+        try:
+            wiki = wikipediaapi.Wikipedia(
+                user_agent='ZeroFake/1.0 (fact-checker)',
+                language=lang
+            )
+            # Try to find page
+            page = wiki.page(query)
+            if page.exists():
+                return [{
+                    "title": page.title,
+                    "link": page.fullurl,
+                    "snippet": page.summary[:500] if page.summary else "",
+                    "source": f"wikipedia_{lang}",
+                    "date": "",
+                }]
+            return []
+        except Exception as exc:
+            print(f"  [WIKI] Error: {exc}")
+            return []
     
-    if en_query and len(en_query) > 5:
-        print(f"  [DDG-NEWS-EN] Tìm tin tức QT: {en_query[:50]}...")
-        _ingest_ddg(_run_ddg_news(en_query, timelimit or "m", region="wt-wt"), source_type="news")
+    # Extract main entity from claim for Wikipedia search
+    main_entity = cleaned_input.split()[0:5]  # First 5 words
+    main_entity_str = " ".join(main_entity)
     
-    # 4. WEB SEARCH (Wikipedia, etc.)
-    print(f"  [DDG-WEB-VN] Tìm kiếm web VN: {query_vi[:50]}...")
-    _ingest_ddg(_run_ddg_text(query_vi, None, region="vi-vn"), source_type="web")
+    print(f"  [WIKI-VN] Tìm Wikipedia VN: {main_entity_str[:30]}...")
+    wiki_results = _search_wikipedia(main_entity_str, "vi")
+    for wr in wiki_results:
+        if wr["link"] not in seen:
+            seen.add(wr["link"])
+            all_items.append(wr)
     
-    if en_query and len(en_query) > 5:
-        print(f"  [DDG-WEB-EN] Tìm Wikipedia EN: {en_query[:50]}...")
-        _ingest_ddg(_run_ddg_text(en_query, None, region="wt-wt"), source_type="web")
+    if en_query:
+        print(f"  [WIKI-EN] Tìm Wikipedia EN: {en_query[:30]}...")
+        wiki_results_en = _search_wikipedia(en_query.split()[0:3] if len(en_query.split()) > 3 else en_query, "en")
+        for wr in wiki_results_en:
+            if wr["link"] not in seen:
+                seen.add(wr["link"])
+                all_items.append(wr)
+    
+    # 3. DDG: FALLBACK only if not enough results
+    if len(all_items) < 5:
+        print(f"  [DDG] Fallback: cần thêm evidence ({len(all_items)} < 5)...")
+        _ingest_ddg(_run_ddg_news(cleaned_input, timelimit or "m", region="vi-vn"), source_type="news")
+        
+        if en_query and len(en_query) > 5 and len(all_items) < 5:
+            _ingest_ddg(_run_ddg_text(en_query, None, region="wt-wt"), source_type="web")
 
     # Sort by date (newest first)
     all_items.sort(key=_sort_key)

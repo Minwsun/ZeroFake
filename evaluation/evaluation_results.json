@@ -7,7 +7,7 @@
     "reason": "",
     "debate_log": {},
     "evidence_link": "",
-    "latency": 17.19,
+    "latency": 45.81,
     "cached": false
   },
   {
@@ -15,10 +15,10 @@
     "expected": "TIN GIẢ",
     "predicted": "TIN GIẢ",
     "category": "other",
-    "reason": "Claim nói về sự kiện đã xảy ra (12/2024) nhưng không có bằng chứng nào trong evidence xác nhận. Các nguồn đề cập đến sự kiện khác như SEA Games 2025, World Cup 2026, cho thấy claim có thể là thông tin",
+    "reason": "Claim nói về sự kiện AFF Cup 2024 nhưng tất cả bằng chứng đều từ năm 2025, không có nguồn nào xác nhận VFF công bố đội hình với cầu thủ châu Âu tham dự AFF Cup 2024. Điều này cho thấy claim không được",
     "debate_log": {},
     "evidence_link": "",
-    "latency": 35.49,
+    "latency": 88.4,
     "cached": false
   },
   {
@@ -26,10 +26,10 @@
     "expected": "TIN GIẢ",
     "predicted": "TIN GIẢ",
     "category": "other",
-    "reason": "Claim nói về một nghiên cứu mới của Đại học Oxford liên quan đến sóng mmWave từ trạm 5G và ảnh hưởng của nó đến hệ thống miễn dịch, nhưng không có evidence nào trong danh sách hỗ trợ claim này. Tất cả",
+    "reason": "Claim này được coi là TIN GIẢ vì không có evidence nào trong danh sách hỗ trợ cho nghiên cứu của Đại học Oxford về sóng mmWave từ 5G và ảnh hưởng của nó đến hệ miễn dịch. Hơn nữa, chủ đề này đã được c",
     "debate_log": {},
     "evidence_link": "",
-    "latency": 28.14,
+    "latency": 42.31,
     "cached": false
   },
   {
@@ -37,10 +37,10 @@
     "expected": "TIN GIẢ",
     "predicted": "TIN GIẢ",
     "category": "other",
-    "reason": "Claim không có bằng chứng hỗ trợ từ nguồn tin chính thống, nguồn của claim không rõ ràng, và không có xác nhận từ Malaysia Airlines hoặc cơ quan hàng không quốc tế. Evidence không liên quan đến MH370 ",
+    "reason": "Claim không có bằng chứng từ nguồn tin uy tín, vị trí tìm kiếm không trùng với khu vực chính thức, và không có xác nhận từ Malaysia Airlines. Evidence không hỗ trợ claim, và các nguồn không đề cập đến",
     "debate_log": {},
     "evidence_link": "",
-    "latency": 21.45,
+    "latency": 48.53,
     "cached": false
   },
   {
@@ -48,10 +48,10 @@
     "expected": "TIN GIẢ",
     "predicted": "TIN GIẢ",
     "category": "other",
-    "reason": "Claim nói về một khoản đầu tư cụ thể nhưng không có bằng chứng từ các nguồn tin cậy. Hơn nữa, thời điểm của sự kiện (nếu có) không khớp với thời điểm của các bài báo được cung cấp. Điều này, cùng với ",
+    "reason": "Claim không có bằng chứng trực tiếp từ nguồn tin đáng tin cậy, có mâu thuẫn về thời gian giữa sự kiện và thời điểm các nguồn tin được xuất bản, và số 500 triệu USD được lặp lại trong các bối cảnh khôn",
     "debate_log": {},
     "evidence_link": "",
-    "latency": 20.03,
+    "latency": 65.71,
     "cached": false
   },
   {
@@ -59,10 +59,10 @@
     "expected": "TIN THẬT",
     "predicted": "TIN THẬT",
     "category": "other",
-    "reason": "",
+    "reason": "Claim được hỗ trợ bởi evidence từ VietnamNet và Google News. Mặc dù cần kiểm tra nguồn gốc từ VnExpress, nhưng evidence hiện có xác nhận việc hợp nhất 63 tỉnh thành thành 34 đơn vị hành chính.",
     "debate_log": {},
     "evidence_link": "",
-    "latency": 19.04,
+    "latency": 57.42,
     "cached": false
   },
   {
@@ -70,10 +70,10 @@
     "expected": "TIN GIẢ",
     "predicted": "TIN GIẢ",
     "category": "other",
-    "reason": "Claim nói Apple đang xây dựng bảo tàng Steve Jobs tại Cupertino, dự kiến mở cửa năm 2026, nhưng không có bằng chứng hỗ trợ từ nguồn chính thức. Evidence cung cấp không liên quan đến claim, và sử dụng ",
+    "reason": "Claim nói Apple vừa công bố kế hoạch xây dựng bảo tàng Steve Jobs tại trụ sở Cupertino, dự kiến mở cửa vào năm 2026. Tuy nhiên, không có bằng chứng trực tiếp từ nguồn uy tín nào xác nhận thông tin này",
     "debate_log": {},
     "evidence_link": "",
-    "latency": 37.15,
+    "latency": 50.41,
     "cached": false
   },
   {
@@ -81,21 +81,21 @@
     "expected": "TIN THẬT",
     "predicted": "TIN GIẢ",
     "category": "other",
-    "reason": "Claim nói GPT 5 đã ra mắt vào năm 2025, nhưng evidence chỉ nói về GPT-5.1 và GPT-5.2. Không có thông tin trực tiếp về GPT 5, và claim không được hỗ trợ bởi evidence. Do đó, claim này là TIN GIẢ.",
+    "reason": "Claim nói GPT-5 đã ra mắt vào năm 2025, nhưng tất cả evidence chỉ đề cập đến GPT-5.2. Không có evidence nào xác nhận GPT-5 ra mắt năm 2025. Sự khác biệt giữa GPT-5 và GPT-5.2 là quan trọng vì chúng là",
     "debate_log": {},
     "evidence_link": "",
-    "latency": 19.61,
+    "latency": 78.7,
     "cached": false
   },
   {
     "text": "Theo VnExpress: Việt Nam có 34 tỉnh thành",
     "expected": "TIN THẬT",
-    "predicted": "TIN GIẢ",
+    "predicted": "TIN THẬT",
     "category": "other",
-    "reason": "",
+    "reason": "Claim được hỗ trợ bởi bài báo từ VietnamNet.vn ngày 30/6/2025, nói về việc hợp nhất 63 tỉnh thành thành 34 đơn vị hành chính mới. Dù có một số vấn đề với nguồn VnExpress (thiếu ngày xuất bản), nhưng e",
     "debate_log": {},
     "evidence_link": "",
-    "latency": 25.63,
+    "latency": 63.82,
     "cached": false
   },
   {
@@ -103,10 +103,10 @@
     "expected": "TIN GIẢ",
     "predicted": "TIN GIẢ",
     "category": "other",
-    "reason": "Claim nói Apple vừa công bố kế hoạch xây dựng bảo tàng Steve Jobs, nhưng không có bằng chứng nào từ nguồn uy tín. Tất cả các nguồn đều không liên quan hoặc không có thông tin mới. Từ ngữ 'vừa công bố'",
+    "reason": "",
     "debate_log": {},
     "evidence_link": "",
-    "latency": 25.69,
+    "latency": 46.26,
     "cached": false
   }
 ]
