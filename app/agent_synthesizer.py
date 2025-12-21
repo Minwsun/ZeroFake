@@ -89,8 +89,10 @@ def normalize_conclusion(conclusion: str) -> str:
     
     # 🔴 CHỈ TIN GIẢ KHI CÓ DẤU HIỆU RÕ RÀNG
     fake_indicators = [
+        # English fake indicators (new prompts are in English)
+        "FAKE NEWS", "FAKE", "FALSE", "UNTRUE", "NOT TRUE",
         # Vietnamese fake indicators
-        "TIN GIẢ", "TIN GIA", "GIẢ MẠO", "FAKE", "FALSE",
+        "TIN GIẢ", "TIN GIA", "GIẢ MẠO",
         "BỊA ĐẶT", "BIA DAT", "LỪA ĐẢO", "LUA DAO", "SCAM",
         "ZOMBIE", "OUTDATED", "LỖI THỜI", "LOI THOI",
         "KHÔNG ĐÚNG", "KHONG DUNG", "SAI SỰ THẬT", "SAI SU THAT",

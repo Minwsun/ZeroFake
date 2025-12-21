@@ -265,11 +265,15 @@ def call_google_search(text_input: str, site_query_string: str) -> list:
     print(f"  [DDG] Searching Vietnamese: {query_vi[:60]}...")
     _ingest_ddg(_run_ddg(query_vi, timelimit, region="vi-vn"))
 
-    # 2. Search worldwide (wt-wt) for international reach
-    print(f"  [DDG] Searching Worldwide: {cleaned_input[:60]}...")
-    _ingest_ddg(_run_ddg(cleaned_input, timelimit, region="wt-wt"))
-
-    # Removed: English and US region searches (per user request - only VN + Worldwide)
+    # 2. Search worldwide with ENGLISH query for international reach
+    en_query = _extract_english_query(cleaned_input)
+    if en_query and len(en_query) > 10:
+        print(f"  [DDG] Searching Worldwide (EN): {en_query[:60]}...")
+        _ingest_ddg(_run_ddg(en_query, timelimit, region="wt-wt"))
+    else:
+        # Fallback to original query if extraction fails
+        print(f"  [DDG] Searching Worldwide: {cleaned_input[:60]}...")
+        _ingest_ddg(_run_ddg(cleaned_input, timelimit, region="wt-wt"))
 
     # 4. Fallback enhanced queries if still < 5 results
     if len(all_items) < 5:
