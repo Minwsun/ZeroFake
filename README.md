@@ -54,12 +54,11 @@ The system uses a multi-agent cognitive architecture with:
             │                     │           ┌───────┴───────┐
             │                     │           ▼               ▼
             │                     │      Found Result    No Result
+            │                     │    (Add to Evidence)      │
+            │                     │           │               ▼
+            │                     │           │          DDG Search
             │                     │           │               │
-            │                     │           ▼               ▼
-            │                     │    🚀 FAST RETURN    DDG Search
-            │                     │    (Skip Pipeline)        │
-            │                     │                           │
-            └─────────────────────┼───────────────────────────┘
+            └─────────────────────┴───────────┴───────────────┘
                                   ▼
                          ┌─────────────────┐
                          │     CRITIC      │
@@ -123,13 +122,13 @@ GROQ_API_KEY_4=gsk_...
 | Flow Type | Condition | Action |
 |-----------|-----------|--------|
 | **RECENT NEWS** | Claim within 3 days | Skip Fact Check → Search news directly |
-| **OLD INFO** | Claim older than 3 days | Fact Check API first → Skip search if found |
+| **OLD INFO** | Claim older than 3 days | Fact Check API first → Add to evidence |
 
 ### 2. Google Fact Check API Integration
 
 - **Multi-query search**: 3 English + 3 Vietnamese queries per claim
-- **Absolute trust**: If Fact Check returns verdict → Skip entire pipeline
-- **Fast path**: Fake claims detected in seconds vs minutes
+- **Evidence for JUDGE**: Fact Check results added to evidence bundle for JUDGE decision
+- **Combined analysis**: JUDGE considers both Fact Check + Search results
 
 ### 3. News Search Strategy
 
