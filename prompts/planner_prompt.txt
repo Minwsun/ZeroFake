@@ -9,47 +9,34 @@ MISSION: Classify claim type and build COMPREHENSIVE verification strategy with 
 
 ---
 
-## STEP 1: CLASSIFY CLAIM TYPE
+## STEP 1: CLASSIFY CLAIM TYPE & DETECT RED FLAGS
 
-**CRITICAL**: First classify the claim into one of two flows:
+**CRITICAL**: First analyze the claim for:
 
-### NEWS_FLOW (Current Events)
-Use this for:
-- Breaking news, current events
-- Sports results (matches, championships)
-- Political events, announcements
-- Product launches, company news
-- Anything with "today", "just", "breaking", "vừa", "mới"
+### A. Flow Classification
+- **NEWS_FLOW**: Breaking news, current events, sports, politics, product launches
+- **KNOWLEDGE_FLOW**: Historical facts, geography, science, established truths
 
-### KNOWLEDGE_FLOW (Facts & Knowledge)
-Use this for:
-- Historical facts (who won X in year Y)
-- Geography (capitals, populations)
-- Science facts (physics, chemistry)
-- General knowledge (inventions, discoveries)
-- Established truths that don't change
+### B. Red Flags Detection (QUAN TRỌNG cho CRITIC)
+Phát hiện các cảnh báo để CRITIC biết cần kiểm tra kỹ:
+
+| Red Flag | Pattern | Action |
+|----------|---------|--------|
+| **HEDGING_LANGUAGE** | "chưa xác nhận", "gợi ý rằng", "có thể", "theo nguồn tin" | Flag cho CRITIC: Cần verify source |
+| **ZOMBIE_NEWS** | "NÓNG", "VỪA", "breaking" + sự kiện cũ | Flag cho CRITIC: Check timestamp |
+| **UNVERIFIED_SOURCE** | "nguồn tin nội bộ", "theo một nghiên cứu" | Flag cho CRITIC: Cần official source |
+| **EXTRAORDINARY_CLAIM** | Tuyên bố phi thường, conspiracy | Flag cho CRITIC: Cần extraordinary evidence |
 
 ---
 
-## STEP 2: BUILD COMPREHENSIVE QUERY STRATEGY
+## STEP 2: BUILD QUERY STRATEGY
 
-**CRITICAL**: Generate AT LEAST 5 DIVERSE QUERIES to maximize search coverage.
-
-### Query Types to Generate:
-1. **EXACT_CLAIM**: The claim as-is in English
-2. **RESULT_FORMAT**: "[Subject] [Result] [Year]" (e.g., "Real Madrid Champion 2024")
+Generate AT LEAST 5 DIVERSE QUERIES:
+1. **EXACT_CLAIM**: Claim as-is in English
+2. **RESULT_FORMAT**: "[Subject] [Result] [Year]"
 3. **CONFIRMATION**: "[Event] confirmed official [Year]"
 4. **FACT_CHECK**: "[Claim] fact check true or false"
 5. **VIETNAMESE**: Original claim in Vietnamese
-
-### For Sports/Results Claims:
-- Include opponent name if mentioned: "Real Madrid beat Dortmund 2024 final"
-- Include specific score if mentioned: "Real Madrid 2-0 Dortmund Champions League"
-- Include "winner", "champion", "result" keywords
-
-### For Political/Appointment Claims:
-- Include position title: "Elon Musk DOGE director appointed 2024"
-- Include official source keywords: "White House confirms", "government announces"
 
 ---
 
@@ -58,10 +45,20 @@ Use this for:
 ```json
 {
   "flow_type": "NEWS | KNOWLEDGE",
-  "flow_reason": "Brief explanation why this flow was chosen",
+  "flow_reason": "Brief explanation",
   
   "main_claim": "The main verifiable claim",
   "claim_type": "sports | politics | product | geography | science | other",
+  
+  "red_flags_detected": {
+    "hedging_language": false,
+    "zombie_news_pattern": false,
+    "unverified_source": false,
+    "extraordinary_claim": false,
+    "flags_description": "Mô tả các red flags nếu có"
+  },
+  
+  "critic_instructions": "Hướng dẫn cụ thể cho CRITIC về cần kiểm tra gì",
   
   "entities_and_values": {
     "subjects": ["Main subjects mentioned"],
@@ -91,78 +88,70 @@ Use this for:
 
 ## EXAMPLES
 
-### Example 1: Sports Result
-**Claim**: "Real Madrid vô địch Champions League 2024 sau khi thắng Dortmund 2-0"
+### Example 1: Claim với Hedging Language
+**Claim**: "Theo nguồn tin nội bộ, Google đã đầu tư 500 triệu USD vào OpenAI. Thông tin này chưa được xác nhận."
+```json
+{
+  "flow_type": "NEWS",
+  "flow_reason": "Business news claim",
+  "main_claim": "Google invested 500M USD in OpenAI",
+  "claim_type": "other",
+  "red_flags_detected": {
+    "hedging_language": true,
+    "zombie_news_pattern": false,
+    "unverified_source": true,
+    "extraordinary_claim": false,
+    "flags_description": "Claim TỰ NÓI 'chưa được xác nhận' và 'nguồn tin nội bộ' - không thể verify"
+  },
+  "critic_instructions": "CRITIC cần FLAG: Claim tự thừa nhận chưa verify. Tìm xác nhận từ Google hoặc OpenAI.",
+  "required_tools": [{"tool_name": "search", "parameters": {"queries": ["Google OpenAI investment confirmed", "Google invested OpenAI 500 million official", "Google OpenAI partnership fact check", "Google đầu tư OpenAI xác nhận chính thức"]}}]
+}
+```
+
+### Example 2: Zombie News Pattern
+**Claim**: "NÓNG: Steve Jobs vừa qua đời!"
+```json
+{
+  "flow_type": "NEWS",
+  "flow_reason": "Breaking news pattern detected",
+  "main_claim": "Steve Jobs recently died",
+  "claim_type": "other",
+  "red_flags_detected": {
+    "hedging_language": false,
+    "zombie_news_pattern": true,
+    "unverified_source": false,
+    "extraordinary_claim": false,
+    "flags_description": "ZOMBIE NEWS: Steve Jobs mất năm 2011 nhưng claim dùng 'NÓNG' và 'vừa'"
+  },
+  "critic_instructions": "CRITIC cần FLAG: ZOMBIE NEWS. Steve Jobs mất năm 2011, không phải tin mới.",
+  "required_tools": [{"tool_name": "search", "parameters": {"queries": ["Steve Jobs death date", "Steve Jobs died when", "Steve Jobs qua đời năm nào"]}}]
+}
+```
+
+### Example 3: Normal Sports Claim (No Red Flags)
+**Claim**: "Real Madrid vô địch Champions League 2024"
 ```json
 {
   "flow_type": "NEWS",
   "flow_reason": "Sports result from 2024",
   "main_claim": "Real Madrid won Champions League 2024",
   "claim_type": "sports",
-  "required_tools": [{
-    "tool_name": "search",
-    "parameters": {
-      "queries": [
-        "Real Madrid Champions League 2024 winner",
-        "Real Madrid beat Dortmund 2-0 final 2024",
-        "Champions League 2024 final result confirmed",
-        "Real Madrid Champions League 2024 champion fact check",
-        "Real Madrid vô địch C1 2024 chung kết"
-      ]
-    }
-  }]
-}
-```
-
-### Example 2: Political Appointment
-**Claim**: "Elon Musk được bổ nhiệm vào Bộ Hiệu quả Chính phủ DOGE"
-```json
-{
-  "flow_type": "NEWS",
-  "flow_reason": "Political appointment news",
-  "main_claim": "Elon Musk appointed to DOGE department",
-  "claim_type": "politics",
-  "required_tools": [{
-    "tool_name": "search",
-    "parameters": {
-      "queries": [
-        "Elon Musk DOGE Department Government Efficiency appointed",
-        "Elon Musk government position Trump administration 2024",
-        "DOGE department Elon Musk official announcement",
-        "Elon Musk DOGE fact check true",
-        "Elon Musk bổ nhiệm Bộ Hiệu quả Chính phủ"
-      ]
-    }
-  }]
-}
-```
-
-### Example 3: Product Launch
-**Claim**: "Apple Vision Pro bán tại Việt Nam từ tháng 11/2024"
-```json
-{
-  "flow_type": "NEWS",
-  "flow_reason": "Product launch announcement",
-  "main_claim": "Apple Vision Pro launched in Vietnam November 2024",
-  "claim_type": "product",
-  "required_tools": [{
-    "tool_name": "search",
-    "parameters": {
-      "queries": [
-        "Apple Vision Pro Vietnam launch November 2024",
-        "Vision Pro available Vietnam 2024",
-        "Apple Vietnam official store Vision Pro",
-        "Apple Vision Pro Vietnam price availability",
-        "Apple Vision Pro bán Việt Nam tháng 11 2024"
-      ]
-    }
-  }]
+  "red_flags_detected": {
+    "hedging_language": false,
+    "zombie_news_pattern": false,
+    "unverified_source": false,
+    "extraordinary_claim": false,
+    "flags_description": "Không có red flags"
+  },
+  "critic_instructions": "CRITIC: Verify với nguồn thể thao uy tín (UEFA, BBC, ESPN)",
+  "required_tools": [{"tool_name": "search", "parameters": {"queries": ["Real Madrid Champions League 2024 winner", "Champions League 2024 final result", "Real Madrid vô địch C1 2024"]}}]
 }
 ```
 
 [COMMAND]
-1. Classify the claim as NEWS or KNOWLEDGE
-2. Extract ALL entities, dates, numbers mentioned
-3. Generate AT LEAST 5 DIVERSE search queries
-4. Include English AND Vietnamese queries
-5. Return complete JSON with required_tools
+1. Analyze claim for RED FLAGS (hedging, zombie, unverified source)
+2. Classify as NEWS or KNOWLEDGE
+3. Extract entities, dates, numbers
+4. Generate 5+ diverse queries
+5. Provide specific CRITIC_INSTRUCTIONS
+6. Return complete JSON
