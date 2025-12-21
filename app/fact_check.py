@@ -6,7 +6,7 @@ import os
 import httpx
 from typing import Optional
 
-# API Configuration
+# API Configuration - Key must be set in .env
 FACT_CHECK_API_KEY = os.getenv("GOOGLE_FACT_CHECK_API_KEY", "")
 FACT_CHECK_BASE_URL = "https://factchecktools.googleapis.com/v1alpha1/claims:search"
 
