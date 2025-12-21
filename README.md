@@ -153,16 +153,18 @@ Using `DDGS().news()` for actual news articles:
 | **CRITIC** | Adversarial analysis, find weaknesses | Llama 3.3 70B (Cerebras → Groq fallback) |
 | **JUDGE** | Final verdict with Bayesian reasoning | Llama 3.3 70B (Cerebras → Groq fallback) |
 
-### 5. Source Trust Ranking
+### 5. Binary Source Ranking
 
-| Source Type | Trust Score | Status |
-|-------------|-------------|--------|
-| Government (.gov) | 0.95 | ✅ Trusted |
-| Major News (Reuters, BBC, AP) | 0.95 | ✅ Trusted |
-| Quality News (VnExpress, VTV) | 0.90 | ✅ Trusted |
-| Default Sources | 0.55 | ✅ Accepted |
-| Social Media | 0.30 | ⚠️ Low Trust |
-| Tabloids/UGC | 0.10 | ❌ Blocked |
+| Source Type | Score | Classification |
+|-------------|-------|----------------|
+| Government (.gov) | 0.95 | ✅ USABLE |
+| Major News (Reuters, BBC, AP) | 0.95 | ✅ USABLE |
+| Quality News (VnExpress, VTV) | 0.90 | ✅ USABLE |
+| Default Sources | 0.55 | ✅ USABLE |
+| Social Media | 0.30 | ❌ BLOCKED |
+| Tabloids/UGC | 0.10 | ❌ BLOCKED |
+
+> **Binary Rule**: Score ≥ 0.5 = USABLE (layer_2), Score < 0.5 = BLOCKED (layer_4)
 
 ---
 
