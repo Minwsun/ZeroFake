@@ -150,8 +150,8 @@ Using `DDGS().news()` for actual news articles:
 | Agent | Role | Model |
 |-------|------|-------|
 | **PLANNER** | Generate 5+ search queries | Qwen 3 32B (Cerebras) |
-| **CRITIC** | Adversarial analysis, find weaknesses | Gemini Flash |
-| **JUDGE** | Final verdict with Bayesian reasoning | Gemini Flash |
+| **CRITIC** | Adversarial analysis, find weaknesses | Llama 3.3 70B (Cerebras → Groq fallback) |
+| **JUDGE** | Final verdict with Bayesian reasoning | Llama 3.3 70B (Cerebras → Groq fallback) |
 
 ### 5. Source Trust Ranking
 
