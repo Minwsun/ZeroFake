@@ -286,31 +286,24 @@ def call_google_search(text_input: str, site_query_string: str) -> list:
             print(f"  DDG TEXT error ({region}): {exc}")
             return []
 
-    # --- NEWS-FIRST SEARCH STRATEGY ---
-    # Ưu tiên tin tức mới nhất từ nguồn news trước
+    # --- COMPREHENSIVE SEARCH STRATEGY ---
+    # Lấy TẤT CẢ nguồn: News + Web (Wikipedia) + Quốc tế
 
-    # Default timelimit = 1 tháng để lấy tin mới nhất
-    if timelimit is None:
-        timelimit = "m"  # Default: tin trong tháng
-
-    # 1. PRIORITY 1: Vietnamese News (tin tức tiếng Việt mới nhất)
+    # 1. NEWS SEARCH: Tin tức tiếng Việt và Quốc tế (có timelimit)
     print(f"  [DDG-NEWS] Tìm tin tức VN: {cleaned_input[:50]}...")
-    _ingest_ddg(_run_ddg_news(cleaned_input, timelimit, region="vi-vn"), source_type="news")
+    _ingest_ddg(_run_ddg_news(cleaned_input, timelimit or "m", region="vi-vn"), source_type="news")
 
-    # 2. PRIORITY 2: International News (LUÔN search cả tiếng Anh)
     if en_query and len(en_query) > 5:
         print(f"  [DDG-NEWS] Tìm tin tức QT: {en_query[:50]}...")
-        _ingest_ddg(_run_ddg_news(en_query, timelimit, region="wt-wt"), source_type="news")
+        _ingest_ddg(_run_ddg_news(en_query, timelimit or "m", region="wt-wt"), source_type="news")
 
-    # 3. FALLBACK WEB: Khi ít news (<5), search web để lấy thêm từ Wikipedia, etc.
-    if len(all_items) < 5:
-        print(f"  [DDG-WEB] Fallback tìm kiếm web: {query_vi[:50]}...")
-        _ingest_ddg(_run_ddg_text(query_vi, None, region="vi-vn"), source_type="web")  # No timelimit for wiki
-        
-        # English web fallback để lấy Wikipedia tiếng Anh
-        if en_query and len(en_query) > 5:
-            print(f"  [DDG-WEB] Tìm kiếm Wikipedia EN: {en_query[:50]}...")
-            _ingest_ddg(_run_ddg_text(en_query, None, region="wt-wt"), source_type="web")
+    # 2. WEB SEARCH: LUÔN tìm web để lấy Wikipedia và các nguồn khác (không timelimit)
+    print(f"  [DDG-WEB] Tìm kiếm web VN: {query_vi[:50]}...")
+    _ingest_ddg(_run_ddg_text(query_vi, None, region="vi-vn"), source_type="web")
+    
+    if en_query and len(en_query) > 5:
+        print(f"  [DDG-WEB] Tìm kiếm Wikipedia EN: {en_query[:50]}...")
+        _ingest_ddg(_run_ddg_text(en_query, None, region="wt-wt"), source_type="web")
 
     # Sort by date (newest first)
     all_items.sort(key=_sort_key)
