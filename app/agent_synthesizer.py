@@ -26,10 +26,10 @@ CRITIC_PROMPT = ""  # NEW: Prompt cho CRITIC agent
 # ==============================================================================
 # COGNITIVE PIPELINE FLAGS - Quy trình tư duy CRITIC-JUDGE
 # ==============================================================================
-# SEARCH FLAGS - TẮT tất cả để tiết kiệm thời gian
+# SEARCH FLAGS - Cho phép search khi THỰC SỰ cần thiết
 # ==============================================================================
-ENABLE_CRITIC_SEARCH = False    # TẮT - CRITIC không được search thêm
-ENABLE_COUNTER_SEARCH = False   # TẮT - JUDGE không search sau Round 1
+ENABLE_CRITIC_SEARCH = True     # BẬT - CRITIC search khi thiếu evidence THỰC SỰ
+ENABLE_COUNTER_SEARCH = False   # TẮT - JUDGE không cần search thêm
 ENABLE_SELF_CORRECTION = False  # TẮT - Không có UNIFIED-RE-SEARCH
 
 
@@ -1214,15 +1214,26 @@ This claim has been fact-checked by {fc_source}. The verdict is {fc_conclusion}.
     
     print(f"[CRITIC] Issues found: {critic_issues}, Type: {issue_type}, Evidence: {evidence_verdict}")
     
-    # Counter-search DISABLED để tiết kiệm thời gian
-    # Chỉ PLANNER được search, CRITIC và JUDGE không được search thêm
-    should_counter_search = False  # DISABLED
+    # Counter-search CHỈ KHI THỰC SỰ CẦN THIẾT:
+    # 1. Flag ENABLE_CRITIC_SEARCH = True
+    # 2. VÀ một trong các điều kiện sau:
+    #    a) Evidence là INSUFFICIENT hoặc IRRELEVANT (không có gì để phản biện)
+    #    b) CRITIC phát hiện vấn đề CỤ THỂ (không phải NONE/UNVERIFIED chung chung)
+    # 3. VÀ CRITIC có trả về counter_search_queries
+    
+    should_counter_search = False
     if ENABLE_CRITIC_SEARCH:
-        # Chỉ enable nếu flag = True
-        should_counter_search = (
-            (critic_issues and issue_type != "NONE") or 
-            evidence_insufficient
-        ) and critic_parsed.get("counter_search_needed", False)
+        has_critical_issue = critic_issues and issue_type not in ["NONE", "UNVERIFIED"]  # Vấn đề cụ thể như ZOMBIE, SCAM
+        evidence_truly_missing = evidence_verdict in ["INSUFFICIENT", "IRRELEVANT"]
+        has_valid_queries = bool(critic_parsed.get("counter_search_queries"))
+        
+        # CHỈ search khi: (có vấn đề cụ thể HOẶC thiếu evidence) VÀ có queries
+        should_counter_search = (has_critical_issue or evidence_truly_missing) and has_valid_queries
+        
+        if should_counter_search:
+            print(f"[CRITIC-SEARCH] Kích hoạt vì: issue={issue_type}, evidence={evidence_verdict}")
+        else:
+            print(f"[CRITIC-SEARCH] Bỏ qua - không đủ điều kiện")
     
     if should_counter_search:
         counter_queries = critic_parsed.get("counter_search_queries", [])
