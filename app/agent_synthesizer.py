@@ -1127,10 +1127,39 @@ async def execute_final_analysis(
     # Đây là cơ hội "phản biện lại CRITIC" bằng bằng chứng mới
     
     conclusion_r1 = normalize_conclusion(judge_result.get("conclusion", ""))
+    confidence_r1 = 50
+    try:
+        conf_raw = judge_result.get("confidence_score")
+        if conf_raw is not None:
+            confidence_r1 = int(conf_raw)
+    except:
+        pass
     
-    # SPEED OPTIMIZATION: Bỏ qua COUNTER-SEARCH nếu flag tắt
-    if ENABLE_COUNTER_SEARCH and conclusion_r1 == "TIN GIẢ":
-        print(f"\n[COUNTER-SEARCH] JUDGE Round 1 kết luận TIN GIẢ → Tìm dẫn chứng BẢO VỆ claim...")
+    # Track queries already searched (avoid duplicates)
+    searched_queries = set()
+    # Add queries from original search (estimated from text_input)
+    searched_queries.add(text_input.lower().strip())
+    # Add queries from CRITIC if any
+    critic_queries = critic_parsed.get("counter_search_queries", [])
+    for q in critic_queries:
+        if q:
+            searched_queries.add(q.lower().strip())
+    
+    # SMART TRIGGER: Only counter-search when JUDGE is UNCERTAIN (confidence < 70)
+    # NOT when already confident about TIN GIẢ (that means evidence strongly contradicts)
+    judge_uncertain = confidence_r1 < 70
+    needs_more_evidence = judge_result.get("needs_more_evidence", False)
+    if isinstance(needs_more_evidence, str):
+        needs_more_evidence = needs_more_evidence.lower() == "true"
+    
+    should_counter_search = (
+        ENABLE_COUNTER_SEARCH 
+        and conclusion_r1 == "TIN GIẢ" 
+        and (judge_uncertain or needs_more_evidence)  # Only when uncertain
+    )
+    
+    if should_counter_search:
+        print(f"\n[COUNTER-SEARCH] JUDGE ngờ ngời (confidence={confidence_r1}%) → Tìm dẫn chứng BẢO VỆ claim...")
         
         try:
             from app.search import call_google_search, _is_international_event, _extract_english_query
@@ -1150,32 +1179,56 @@ async def execute_final_analysis(
             else:
                 counter_queries.append(f"{text_input} Reuters AFP BBC")
             
-            counter_evidence = []
-            for query in counter_queries[:2]:  # Chỉ 2 queries để nhanh
-                results = call_google_search(query, "")
-                counter_evidence.extend(results[:5])
-                if len(counter_evidence) >= 5:
-                    break
+            # FILTER: Remove queries similar to already searched (avoid redundant search)
+            def is_similar(q: str, searched: set) -> bool:
+                q_lower = q.lower().strip()
+                for s in searched:
+                    # Skip if query is substring of searched or vice versa
+                    if q_lower in s or s in q_lower:
+                        return True
+                    # Skip if >70% word overlap
+                    q_words = set(q_lower.split())
+                    s_words = set(s.split())
+                    if q_words and s_words:
+                        overlap = len(q_words & s_words) / max(len(q_words), len(s_words))
+                        if overlap > 0.7:
+                            return True
+                return False
             
-            if counter_evidence:
-                print(f"[COUNTER-SEARCH] Tìm thấy {len(counter_evidence)} dẫn chứng có thể ủng hộ claim")
-                
-                # Tạo evidence bundle mới với counter-evidence
-                counter_bundle = {
-                    "layer_1_tools": evidence_bundle.get("layer_1_tools", []),
-                    "layer_2_high_trust": counter_evidence[:5],
-                    "layer_3_general": evidence_bundle.get("layer_3_general", []),
-                    "layer_4_social_low": []
-                }
-                counter_evidence_json = json.dumps(_trim_evidence_bundle(counter_bundle), indent=2, ensure_ascii=False)
-                
-                # JUDGE Round 1.5: Xem xét lại với dẫn chứng mới
-                print(f"[JUDGE] Round 1.5: Xem xét lại với dẫn chứng mới...")
-                
-                counter_prompt = SYNTHESIS_PROMPT.replace("{text_input}", text_input)
-                counter_prompt = counter_prompt.replace("{evidence_bundle_json}", counter_evidence_json)
-                counter_prompt = counter_prompt.replace("{current_date}", current_date)
-                counter_prompt += f"""
+            unique_counter_queries = [q for q in counter_queries if not is_similar(q, searched_queries)]
+            
+            if not unique_counter_queries:
+                print(f"[COUNTER-SEARCH] Bỏ qua - queries đã được search trước đó")
+            else:
+                counter_evidence = []
+                for query in unique_counter_queries[:2]:  # Chỉ 2 queries để nhanh
+                    searched_queries.add(query.lower().strip())  # Track new query
+                    results = call_google_search(query, "")
+                    counter_evidence.extend(results[:5])
+                    if len(counter_evidence) >= 5:
+                        break
+            
+                if not counter_evidence:
+                    print(f"[COUNTER-SEARCH] Không tìm thấy dẫn chứng mới")
+                else:
+                    print(f"[COUNTER-SEARCH] Tìm thấy {len(counter_evidence)} dẫn chứng có thể ủng hộ claim")
+                    
+                    # Tạo evidence bundle mới với counter-evidence
+                    counter_bundle = {
+                        "layer_1_tools": evidence_bundle.get("layer_1_tools", []),
+                        "layer_2_high_trust": counter_evidence[:5],
+                        "layer_3_general": evidence_bundle.get("layer_3_general", []),
+                        "layer_4_social_low": []
+                    }
+                    counter_evidence_json = json.dumps(_trim_evidence_bundle(counter_bundle), indent=2, ensure_ascii=False)
+                    
+                    # JUDGE Round 1.5: Xem xét lại với dẫn chứng mới
+                    print(f"[JUDGE] Round 1.5: Xem xét lại với dẫn chứng mới...")
+                    
+                    counter_prompt = SYNTHESIS_PROMPT.replace("{text_input}", text_input)
+                    counter_prompt = counter_prompt.replace("{evidence_bundle_json}", counter_evidence_json)
+                    counter_prompt = counter_prompt.replace("{current_date}", current_date)
+                    counter_prompt += f"""
 
 [COUNTER-SEARCH EVIDENCE - QUAN TRỌNG]
 Đã tìm thêm dẫn chứng từ nguồn tin chính thống. Hãy xem xét lại kết luận.
@@ -1190,39 +1243,37 @@ async def execute_final_analysis(
 [CRITIC FEEDBACK TRƯỚC ĐÓ]
 {critic_report}
 """
-                
-                counter_text = await call_agent_with_capability_fallback(
-                    role="JUDGE",
-                    prompt=counter_prompt,
-                    temperature=0.1,
-                    timeout=25.0  # Same as JUDGE
-                )
-                
-                counter_result = _parse_json_from_text(counter_text)
-                
-                # Parse kết quả
-                if counter_result.get("verdict_metadata"):
-                    counter_conclusion = counter_result["verdict_metadata"].get("conclusion")
-                    counter_confidence = counter_result["verdict_metadata"].get("probability_score")
-                else:
-                    counter_conclusion = counter_result.get("conclusion")
-                    counter_confidence = counter_result.get("confidence_score")
-                
-                counter_conclusion = normalize_conclusion(counter_conclusion or "")
-                
-                print(f"[JUDGE] Round 1.5: {counter_conclusion} ({counter_confidence}%)")
-                
-                # Nếu Counter-Search đổi ý → Cập nhật judge_result
-                if counter_conclusion == "TIN THẬT":
-                    print(f"[COUNTER-SEARCH] ✅ Counter-evidence đã thay đổi kết luận: TIN GIẢ → TIN THẬT")
-                    judge_result["conclusion"] = "TIN THẬT"
-                    judge_result["confidence_score"] = counter_confidence or 75
-                    judge_result["reason"] = (judge_result.get("reason", "") + 
-                        f"\n\n[COUNTER-SEARCH] Sau khi tìm thêm dẫn chứng, claim được xác nhận là TIN THẬT.")
-                else:
-                    print(f"[COUNTER-SEARCH] ❌ Counter-evidence không thay đổi kết luận, giữ TIN GIẢ")
-            else:
-                print(f"[COUNTER-SEARCH] Không tìm thấy dẫn chứng mới")
+                    
+                    counter_text = await call_agent_with_capability_fallback(
+                        role="JUDGE",
+                        prompt=counter_prompt,
+                        temperature=0.1,
+                        timeout=25.0
+                    )
+                    
+                    counter_result = _parse_json_from_text(counter_text)
+                    
+                    # Parse kết quả
+                    if counter_result.get("verdict_metadata"):
+                        counter_conclusion = counter_result["verdict_metadata"].get("conclusion")
+                        counter_confidence = counter_result["verdict_metadata"].get("probability_score")
+                    else:
+                        counter_conclusion = counter_result.get("conclusion")
+                        counter_confidence = counter_result.get("confidence_score")
+                    
+                    counter_conclusion = normalize_conclusion(counter_conclusion or "")
+                    
+                    print(f"[JUDGE] Round 1.5: {counter_conclusion} ({counter_confidence}%)")
+                    
+                    # Nếu Counter-Search đổi ý → Cập nhật judge_result
+                    if counter_conclusion == "TIN THẬT":
+                        print(f"[COUNTER-SEARCH] ✅ Counter-evidence đã thay đổi kết luận: TIN GIẢ → TIN THẬT")
+                        judge_result["conclusion"] = "TIN THẬT"
+                        judge_result["confidence_score"] = counter_confidence or 75
+                        judge_result["reason"] = (judge_result.get("reason", "") + 
+                            f"\n\n[COUNTER-SEARCH] Sau khi tìm thêm dẫn chứng, claim được xác nhận là TIN THẬT.")
+                    else:
+                        print(f"[COUNTER-SEARCH] ❌ Counter-evidence không thay đổi kết luận, giữ TIN GIẢ")
                 
         except Exception as e:
             print(f"[COUNTER-SEARCH] Lỗi: {e}")
