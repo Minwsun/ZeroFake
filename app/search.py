@@ -67,20 +67,47 @@ def _is_international_event(text: str) -> bool:
 
 
 def _extract_english_query(text: str) -> str:
-    """Extract or create an English-friendly query from Vietnamese text."""
-    # Keep proper nouns and numbers, remove Vietnamese particles
-    # Common translations for search
+    """Extract or create an English-friendly query from Vietnamese text.
+    Translate key Vietnamese terms to proper English for accurate search."""
+    
+    # Comprehensive Vietnamese to English translations
     translations = {
-        "vô địch": "champion winner",
-        "ra mắt": "launch release",
-        "qua đời": "died death",
-        "mất tích": "disappeared missing",
+        # Sports
+        "vô địch": "won championship",
+        "giải vô địch": "championship",
+        "đội tuyển Việt Nam": "Vietnam national team",
+        "bóng đá": "football soccer",
+        "SEA Games": "SEA Games",
+        "AFF Cup": "AFF Cup",
+        # Events
+        "ra mắt": "launched released",
+        "công bố": "announced",
+        "qua đời": "died passed away",
+        "mất tích": "missing disappeared",
+        "tai nạn": "accident",
         "sập cầu": "bridge collapse",
-        "tháng": "",  # Remove, keep the number
-        "năm": "",
-        "vừa": "",
-        "đêm qua": "",
-        "hôm nay": "",
+        "động đất": "earthquake",
+        # Technology
+        "điện thoại": "smartphone phone",
+        "máy tính": "computer",
+        "trí tuệ nhân tạo": "artificial intelligence AI",
+        # Politics
+        "bầu cử": "election",
+        "tổng thống": "president",
+        "thủ tướng": "prime minister",
+        "chính phủ": "government",
+        # Geography
+        "Việt Nam": "Vietnam",
+        "Hà Nội": "Hanoi",
+        "Campuchia": "Cambodia",
+        "Thái Lan": "Thailand",
+        # Time (remove Vietnamese, keep numbers)
+        "tháng": "month",
+        "năm": "year",
+        "vừa": "just recently",
+        "đêm qua": "last night",
+        "hôm nay": "today",
+        "mới nhất": "latest",
     }
     
     result = text
