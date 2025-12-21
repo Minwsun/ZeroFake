@@ -386,21 +386,41 @@ def _trim_snippet(s: str, max_len: int = 350) -> str:
     return s[:max_len]
 
 
-def _trim_evidence_bundle(bundle: Dict[str, Any], cap_l2: int = 8, cap_l3: int = 5, cap_l4: int = 0) -> Dict[str, Any]:
+def _trim_evidence_bundle(bundle: Dict[str, Any], cap_l2: int = 8, cap_l3: int = 5, cap_l4: int = 0, claim_text: str = "") -> Dict[str, Any]:
     """
-    BALANCED: Use more evidence (8/5/0) to improve accuracy.
-    Total: 13 evidence items. L4 (blocked) is excluded.
+    OPTIMIZED: Filter evidence by relevance before capping.
+    Only include evidence that mentions keywords from the claim.
+    This reduces token waste on irrelevant search results.
     """
     if not bundle:
         return {"layer_1_tools": [], "layer_2_high_trust": [], "layer_3_general": [], "layer_4_social_low": []}
+    
+    # Extract keywords from claim for relevance filtering
+    claim_keywords = set()
+    if claim_text:
+        # Extract words with 3+ chars, excluding common words
+        stop_words = {"được", "trong", "với", "của", "cho", "người", "những", "theo", "đang", "sẽ", "đã", "này", "các", "một", "have", "been", "from", "with", "that", "this", "will", "the", "and", "for"}
+        words = re.findall(r'\b\w{3,}\b', claim_text.lower())
+        claim_keywords = {w for w in words if w not in stop_words}
+    
+    def is_relevant(item: Dict) -> bool:
+        """Check if evidence snippet mentions at least 1 claim keyword."""
+        if not claim_keywords:
+            return True  # No filtering if no claim provided
+        snippet = (item.get("snippet") or "").lower()
+        title = (item.get("title") or "").lower()
+        combined = snippet + " " + title
+        # Need at least 1 keyword match
+        return any(kw in combined for kw in claim_keywords)
+    
     out = {
-        "layer_1_tools": [], # OpenWeather API data
+        "layer_1_tools": [],
         "layer_2_high_trust": [],
         "layer_3_general": [],
         "layer_4_social_low": []
     }
     
-    # Lớp 1: OpenWeather API data (quan trọng cho tin thời tiết)
+    # Lớp 1: OpenWeather API data (always include)
     for it in (bundle.get("layer_1_tools") or []):
         out["layer_1_tools"].append({
             "source": it.get("source"),
@@ -408,11 +428,12 @@ def _trim_evidence_bundle(bundle: Dict[str, Any], cap_l2: int = 8, cap_l3: int =
             "snippet": _trim_snippet(it.get("snippet")),
             "rank_score": it.get("rank_score"),
             "date": it.get("date"),
-            "weather_data": it.get("weather_data")  # Giữ nguyên dữ liệu gốc từ OpenWeather
+            "weather_data": it.get("weather_data")
         })
     
-    # Lớp 2
-    for it in (bundle.get("layer_2_high_trust") or [])[:cap_l2]:
+    # Lớp 2: Filter by relevance, then cap
+    relevant_l2 = [it for it in (bundle.get("layer_2_high_trust") or []) if is_relevant(it)]
+    for it in relevant_l2[:cap_l2]:
         out["layer_2_high_trust"].append({
             "source": it.get("source"),
             "url": it.get("url"),
@@ -420,8 +441,10 @@ def _trim_evidence_bundle(bundle: Dict[str, Any], cap_l2: int = 8, cap_l3: int =
             "rank_score": it.get("rank_score"),
             "date": it.get("date")
         })
-    # Lớp 3
-    for it in (bundle.get("layer_3_general") or [])[:cap_l3]:
+    
+    # Lớp 3: Filter by relevance, then cap
+    relevant_l3 = [it for it in (bundle.get("layer_3_general") or []) if is_relevant(it)]
+    for it in relevant_l3[:cap_l3]:
         out["layer_3_general"].append({
             "source": it.get("source"),
             "url": it.get("url"),
@@ -429,15 +452,15 @@ def _trim_evidence_bundle(bundle: Dict[str, Any], cap_l2: int = 8, cap_l3: int =
             "rank_score": it.get("rank_score"),
             "date": it.get("date")
         })
-    # Lớp 4
-    for it in (bundle.get("layer_4_social_low") or [])[:cap_l4]:
-        out["layer_4_social_low"].append({
-            "source": it.get("source"),
-            "url": it.get("url"),
-            "snippet": _trim_snippet(it.get("snippet")),
-            "rank_score": it.get("rank_score"),
-            "date": it.get("date")
-        })
+    
+    # Lớp 4: Excluded (cap_l4 = 0)
+    # L4 is blocked sources, no need to include
+    
+    filtered_count = len(relevant_l2) + len(relevant_l3)
+    total_count = len(bundle.get("layer_2_high_trust") or []) + len(bundle.get("layer_3_general") or [])
+    if total_count > 0:
+        print(f"[FILTER] Evidence: {filtered_count}/{total_count} relevant to claim")
+    
     return out
 
 
@@ -973,7 +996,7 @@ async def execute_final_analysis(
     print(f"[SYNTH] LLM sẽ tự phân loại và quyết định")
 
     # Trim evidence before sending to models
-    trimmed_bundle = _trim_evidence_bundle(evidence_bundle)
+    trimmed_bundle = _trim_evidence_bundle(evidence_bundle, claim_text=text_input)
     evidence_bundle_json = json.dumps(trimmed_bundle, indent=2, ensure_ascii=False)
 
     # =========================================================================
@@ -1043,7 +1066,7 @@ async def execute_final_analysis(
                     evidence_bundle["layer_2_high_trust"].extend(critic_counter_evidence[:3])
                     
                     # Update evidence_bundle_json cho JUDGE
-                    trimmed_bundle = _trim_evidence_bundle(evidence_bundle)
+                    trimmed_bundle = _trim_evidence_bundle(evidence_bundle, claim_text=text_input)
                     evidence_bundle_json = json.dumps(trimmed_bundle, indent=2, ensure_ascii=False)
                     
             except Exception as e:
@@ -1215,7 +1238,7 @@ async def execute_final_analysis(
                         "layer_3_general": evidence_bundle.get("layer_3_general", []),
                         "layer_4_social_low": []
                     }
-                    counter_evidence_json = json.dumps(_trim_evidence_bundle(counter_bundle), indent=2, ensure_ascii=False)
+                    counter_evidence_json = json.dumps(_trim_evidence_bundle(counter_bundle, claim_text=text_input), indent=2, ensure_ascii=False)
                     
                     # JUDGE Round 1.5: Xem xét lại với dẫn chứng mới
                     print(f"[JUDGE] Round 1.5: Xem xét lại với dẫn chứng mới...")
@@ -1397,7 +1420,7 @@ async def execute_final_analysis(
             # Remove duplicates by URL
             seen_urls = {item.get("url") or item.get("link") for item in (evidence_bundle.get("layer_2_high_trust") or [])}
             # Trim evidence
-            trimmed_bundle_v2 = _trim_evidence_bundle(evidence_bundle)
+            trimmed_bundle_v2 = _trim_evidence_bundle(evidence_bundle, claim_text=text_input)
             evidence_bundle_json_v2 = json.dumps(trimmed_bundle_v2, indent=2, ensure_ascii=False)
             
             # Re-Run JUDGE Round 2
