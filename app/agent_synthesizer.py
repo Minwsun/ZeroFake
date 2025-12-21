@@ -498,7 +498,7 @@ def _trim_snippet(s: str, max_len: int = 350) -> str:
     return s[:max_len]
 
 
-def _trim_evidence_bundle(bundle: Dict[str, Any], cap_l2: int = 8, cap_l3: int = 5, cap_l4: int = 0, claim_text: str = "") -> Dict[str, Any]:
+def _trim_evidence_bundle(bundle: Dict[str, Any], cap_l2: int = 20, cap_l3: int = 15, cap_l4: int = 5, claim_text: str = "") -> Dict[str, Any]:
     """
     OPTIMIZED: Filter evidence by relevance before capping.
     Only include evidence that mentions keywords from the claim.

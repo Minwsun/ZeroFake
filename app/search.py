@@ -19,7 +19,7 @@ WARP_ENABLED = os.getenv("WARP_ENABLED", "false").lower() == "true"
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 GOOGLE_CSE_ID = os.getenv("GOOGLE_CSE_ID")
 
-MAX_RESULTS = 15  # Giảm từ 40 xuống 15 để tối ưu - chỉ lấy evidence chất lượng
+MAX_RESULTS = 25  # Lấy đủ evidence cho CRITIC và JUDGE
 SEARXNG_TIMEOUT = 30  # Timeout cho SearXNG requests
 DDG_TIMEOUT = 20  # Timeout cho DuckDuckGo fallback
 
