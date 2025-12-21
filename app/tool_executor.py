@@ -278,43 +278,84 @@ async def execute_tool_plan(plan: dict, site_query_string: str, flash_mode: bool
 			})
 
 	# =========================================================================
-	# KNOWLEDGE FLOW: Call Fact Check API FIRST for non-breaking-news claims
-	# (Sports results, historical facts, general knowledge)
+	# DATE-BASED ROUTING: Old info (>1 week) → Fact Check first
+	# New info (≤1 week) → Skip fact check, search directly with priority news
 	# =========================================================================
-	flow_type = plan.get("flow_type", "NEWS")
+	from datetime import datetime, timedelta
+	
 	main_claim = plan.get("main_claim", "")
 	skip_search = False
 	
-	if flow_type == "KNOWLEDGE" and main_claim:
-		print(f"\n[KNOWLEDGE FLOW] Calling Fact Check API first for: {main_claim[:50]}...")
-		try:
-			fact_results = await call_google_fact_check(main_claim)
-			
-			if fact_results:
-				# Add fact check results as high-trust evidence
-				for r in fact_results[:3]:  # Max 3 results
-					conclusion, confidence = interpret_fact_check_rating(r.get("rating", ""))
-					evidence_bundle["layer_2_high_trust"].append({
-						"source": f"[FACT-CHECK] {r.get('publisher', 'Unknown')}",
-						"url": r.get("url", ""),
-						"snippet": f"Claim: {r.get('claim', '')[:100]}... Rating: {r.get('rating', 'N/A')}",
-						"rank_score": 0.95,  # High trust for fact checks
-						"date": r.get("review_date", ""),
-						"fact_check_conclusion": conclusion,
-						"fact_check_confidence": confidence
-					})
+	# Check if claim mentions recent date (within 1 week)
+	today = datetime.now().date()
+	one_week_ago = today - timedelta(days=7)
+	
+	# Extract date hints from claim
+	is_recent_news = False
+	claim_lower = main_claim.lower() if main_claim else ""
+	
+	# Keywords indicating RECENT news (should skip fact check, search directly)
+	recent_keywords = ["hôm nay", "today", "vừa", "mới đây", "just", "breaking", "nóng", 
+	                   "vài giờ", "few hours", "sáng nay", "tối nay", "chiều nay"]
+	for kw in recent_keywords:
+		if kw in claim_lower:
+			is_recent_news = True
+			break
+	
+	# Also check for dates in claim (if within 1 week, it's recent)
+	import re
+	date_patterns = [
+		r"(\d{1,2})/(\d{1,2})/(\d{4})",  # DD/MM/YYYY
+		r"(\d{4})-(\d{1,2})-(\d{1,2})",  # YYYY-MM-DD
+		r"tháng\s*(\d{1,2})/(\d{4})",     # tháng MM/YYYY
+	]
+	for pattern in date_patterns:
+		match = re.search(pattern, main_claim)
+		if match:
+			try:
+				# Parse and check if within 1 week
+				groups = match.groups()
+				if len(groups) == 3 and "/" in pattern:  # DD/MM/YYYY
+					claim_date = datetime.strptime(f"{groups[0]}/{groups[1]}/{groups[2]}", "%d/%m/%Y").date()
+				elif len(groups) == 3:  # YYYY-MM-DD
+					claim_date = datetime.strptime(f"{groups[0]}-{groups[1]}-{groups[2]}", "%Y-%m-%d").date()
+				if claim_date >= one_week_ago:
+					is_recent_news = True
+			except:
+				pass
+	
+	# Route based on recency
+	if is_recent_news:
+		print(f"\n[RECENT NEWS] Skipping Fact Check, searching directly with priority news sources")
+		# Search will use Google News + Bing priority (already configured in search.py)
+	else:
+		# OLD INFO: Try Fact Check API first
+		if main_claim:
+			print(f"\n[OLD INFO] Calling Fact Check API first for: {main_claim[:50]}...")
+			try:
+				fact_results = await call_google_fact_check(main_claim)
 				
-				# If high confidence result found, can skip search for faster response
-				best_confidence = max((interpret_fact_check_rating(r.get("rating", ""))[1] for r in fact_results), default=0)
-				if best_confidence >= 85:
-					print(f"[KNOWLEDGE FLOW] High confidence fact check ({best_confidence}%), reducing search")
-					# Still do search but reduce scope
-					for module in required_tools:
-						if module.get("tool_name") == "search":
-							queries = module.get("parameters", {}).get("queries", [])
-							module["parameters"]["queries"] = queries[:1]  # Only 1 query
-		except Exception as e:
-			print(f"[KNOWLEDGE FLOW] Fact check error (continuing with search): {e}")
+				if fact_results:
+					# Add fact check results as high-trust evidence
+					for r in fact_results[:3]:  # Max 3 results
+						conclusion, confidence = interpret_fact_check_rating(r.get("rating", ""))
+						evidence_bundle["layer_2_high_trust"].append({
+							"source": f"[FACT-CHECK] {r.get('publisher', 'Unknown')}",
+							"url": r.get("url", ""),
+							"snippet": f"Claim: {r.get('claim', '')[:100]}... Rating: {r.get('rating', 'N/A')}",
+							"rank_score": 0.95,  # High trust for fact checks
+							"date": r.get("review_date", ""),
+							"fact_check_conclusion": conclusion,
+							"fact_check_confidence": confidence
+						})
+					
+					# If fact check returns results, SKIP search entirely
+					print(f"[OLD INFO] Fact Check found {len(fact_results)} results → SKIPPING search")
+					skip_search = True
+				else:
+					print(f"[OLD INFO] No Fact Check results → Continuing with search")
+			except Exception as e:
+				print(f"[OLD INFO] Fact check error (continuing with search): {e}")
 
 	tasks = []
 
@@ -322,6 +363,10 @@ async def execute_tool_plan(plan: dict, site_query_string: str, flash_mode: bool
 		tool_name = module.get("tool_name")
 		parameters = module.get("parameters", {})
 		if tool_name == "search":
+			# Skip search if fact check already found results (for old info)
+			if skip_search:
+				print(f"[SKIP] Search skipped - Fact Check already provided evidence")
+				continue
 			tasks.append(_execute_search_tool(parameters, site_query_string, flash_mode=flash_mode))
 		elif tool_name == "weather":
 			# Thêm tool weather với OpenWeather API
