@@ -26,11 +26,11 @@ CRITIC_PROMPT = ""  # NEW: Prompt cho CRITIC agent
 # ==============================================================================
 # COGNITIVE PIPELINE FLAGS - Quy trình tư duy CRITIC-JUDGE
 # ==============================================================================
-# COUNTER-SEARCH: Khi JUDGE kết luận TIN GIẢ, search thêm để "bảo vệ" claim
-# SELF-CORRECTION: Re-search khi JUDGE yêu cầu hoặc confidence thấp
-# DISABLED: Cả hai đều tốn thời gian mà không cải thiện accuracy đáng kể
-ENABLE_COUNTER_SEARCH = False   # TẮT - không cần search thêm sau JUDGE
-ENABLE_SELF_CORRECTION = False  # TẮT - không cần UNIFIED-RE-SEARCH
+# SEARCH FLAGS - TẮT tất cả để tiết kiệm thời gian
+# ==============================================================================
+ENABLE_CRITIC_SEARCH = False    # TẮT - CRITIC không được search thêm
+ENABLE_COUNTER_SEARCH = False   # TẮT - JUDGE không search sau Round 1
+ENABLE_SELF_CORRECTION = False  # TẮT - Không có UNIFIED-RE-SEARCH
 
 
 # Cài đặt an toàn
@@ -1214,13 +1214,15 @@ This claim has been fact-checked by {fc_source}. The verdict is {fc_conclusion}.
     
     print(f"[CRITIC] Issues found: {critic_issues}, Type: {issue_type}, Evidence: {evidence_verdict}")
     
-    # Counter-search khi:
-    # 1. CRITIC phát hiện vấn đề cụ thể (issues_found=True AND issue_type != NONE)
-    # 2. HOẶC thiếu bằng chứng để phản biện (evidence_insufficient=True)
-    should_counter_search = (
-        (critic_issues and issue_type != "NONE") or 
-        evidence_insufficient
-    ) and critic_parsed.get("counter_search_needed", False)
+    # Counter-search DISABLED để tiết kiệm thời gian
+    # Chỉ PLANNER được search, CRITIC và JUDGE không được search thêm
+    should_counter_search = False  # DISABLED
+    if ENABLE_CRITIC_SEARCH:
+        # Chỉ enable nếu flag = True
+        should_counter_search = (
+            (critic_issues and issue_type != "NONE") or 
+            evidence_insufficient
+        ) and critic_parsed.get("counter_search_needed", False)
     
     if should_counter_search:
         counter_queries = critic_parsed.get("counter_search_queries", [])
