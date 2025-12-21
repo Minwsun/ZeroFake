@@ -9,6 +9,7 @@ from app.search import call_google_search
 from app.ranker import get_rank_from_url, _extract_date
 from app.weather import get_openweather_data, format_openweather_snippet
 from app.article_scraper import scrape_multiple_articles, enrich_search_results_with_full_text
+from app.fact_check import call_google_fact_check, interpret_fact_check_rating, format_fact_check_evidence
 
 
 # --- SOURCE PRIORITIZATION HELPERS ---
@@ -275,6 +276,45 @@ async def execute_tool_plan(plan: dict, site_query_string: str, flash_mode: bool
 				"tool_name": "search",
 				"parameters": {"queries": fallback_queries + [f"{main_claim} tin tức"]}
 			})
+
+	# =========================================================================
+	# KNOWLEDGE FLOW: Call Fact Check API FIRST for non-breaking-news claims
+	# (Sports results, historical facts, general knowledge)
+	# =========================================================================
+	flow_type = plan.get("flow_type", "NEWS")
+	main_claim = plan.get("main_claim", "")
+	skip_search = False
+	
+	if flow_type == "KNOWLEDGE" and main_claim:
+		print(f"\n[KNOWLEDGE FLOW] Calling Fact Check API first for: {main_claim[:50]}...")
+		try:
+			fact_results = await call_google_fact_check(main_claim)
+			
+			if fact_results:
+				# Add fact check results as high-trust evidence
+				for r in fact_results[:3]:  # Max 3 results
+					conclusion, confidence = interpret_fact_check_rating(r.get("rating", ""))
+					evidence_bundle["layer_2_high_trust"].append({
+						"source": f"[FACT-CHECK] {r.get('publisher', 'Unknown')}",
+						"url": r.get("url", ""),
+						"snippet": f"Claim: {r.get('claim', '')[:100]}... Rating: {r.get('rating', 'N/A')}",
+						"rank_score": 0.95,  # High trust for fact checks
+						"date": r.get("review_date", ""),
+						"fact_check_conclusion": conclusion,
+						"fact_check_confidence": confidence
+					})
+				
+				# If high confidence result found, can skip search for faster response
+				best_confidence = max((interpret_fact_check_rating(r.get("rating", ""))[1] for r in fact_results), default=0)
+				if best_confidence >= 85:
+					print(f"[KNOWLEDGE FLOW] High confidence fact check ({best_confidence}%), reducing search")
+					# Still do search but reduce scope
+					for module in required_tools:
+						if module.get("tool_name") == "search":
+							queries = module.get("parameters", {}).get("queries", [])
+							module["parameters"]["queries"] = queries[:1]  # Only 1 query
+		except Exception as e:
+			print(f"[KNOWLEDGE FLOW] Fact check error (continuing with search): {e}")
 
 	tasks = []
 
