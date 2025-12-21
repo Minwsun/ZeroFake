@@ -54,11 +54,27 @@ ELIF claim là TIN TỨC BÌNH THƯỜNG + evidence không rõ ràng:
 
 | Điều kiện | Ví dụ | Logic |
 |-----------|-------|-------|
-| Evidence XÁC NHẬN từ nguồn uy tín | Reuters, BBC, VnExpress đưa tin | Nguồn đáng tin → Tin đáng tin |
-| Sự kiện lịch sử có thể verify | "Messi vô địch World Cup 2022" | Có thể kiểm chứng độc lập |
-| Thông tin địa lý/khoa học cơ bản | "Hà Nội là thủ đô VN" | Kiến thức chung |
-| Tin tức với timestamp cụ thể + nguồn | "VinFast IPO tháng 8/2023" | Sự kiện có thời điểm rõ ràng |
-| Thống kê từ nguồn chính thức | "Dân số VN ~100 triệu" | Dữ liệu official |
+| **Claim CÓ NGUỒN UY TÍN** (AP, BBC, Reuters, VnExpress) | "Theo AP: Apple ra mắt Vision Pro..." | Nguồn level-1 → TIN THẬT |
+| **Sự kiện đã xảy ra** có thể verify | "Real Madrid vô địch Champions League 2024" | Kiểm chứng được |
+| **Thông tin sản phẩm chính thức** | "Vision Pro giá $3,499" | Có thể verify từ Apple |
+| **Số liệu thống kê hợp lý** | "Internet users > 5 tỷ" | Phù hợp với xu hướng |
+| **Tin tức công nghệ/AI từ nguồn tech** | "OpenAI nghiên cứu AI alignment" | OpenAI thực sự có team này |
+
+### 🔥 QUY TẮC ĐẶC BIỆT VỀ NGUỒN:
+
+```
+NẾU claim BẮT ĐẦU BẰNG:
+  - "Theo AP:", "Thông tin từ AP:", "AP đưa tin:"
+  - "BBC đưa tin:", "Theo BBC:", "Reuters cho biết:"
+  - "VnExpress:", "Theo VnExpress:"
+  
+VÀ nội dung claim LÀ:
+  - Sự kiện có thể xảy ra (không phi thường)
+  - Số liệu hợp lý (không phóng đại)
+  - Thời điểm rõ ràng và hợp lý
+  
+→ CÓ XU HƯỚNG LÀ TIN THẬT (trừ khi có bằng chứng bác bỏ rõ ràng)
+```
 
 ### ❌ XÁC ĐỊNH TIN GIẢ KHI:
 
