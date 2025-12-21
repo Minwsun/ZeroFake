@@ -269,15 +269,7 @@ def call_google_search(text_input: str, site_query_string: str) -> list:
     print(f"  [DDG] Searching Worldwide: {cleaned_input[:60]}...")
     _ingest_ddg(_run_ddg(cleaned_input, timelimit, region="wt-wt"))
 
-    # 3. ALWAYS search in English for global coverage (not just international events)
-    en_query = _extract_english_query(cleaned_input)
-    if en_query and len(en_query) > 10:
-        print(f"  [DDG] Searching English: {en_query[:60]}...")
-        _ingest_ddg(_run_ddg(en_query, timelimit, region="wt-wt"))
-        
-        # Also search US region for English news
-        print(f"  [DDG] Searching US: {en_query[:60]}...")
-        _ingest_ddg(_run_ddg(en_query, timelimit, region="us-en"))
+    # Removed: English and US region searches (per user request - only VN + Worldwide)
 
     # 4. Fallback enhanced queries if still < 5 results
     if len(all_items) < 5:

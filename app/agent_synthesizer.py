@@ -1166,7 +1166,10 @@ async def execute_final_analysis(
         if q:
             searched_queries.add(q.lower().strip())
     
-    # SMART TRIGGER: Counter-search when JUDGE is less than fully confident (< 85%)\n    # Lower threshold means more counter-searching for potential TIN THẬT\n    judge_uncertain = confidence_r1 < 85\n    needs_more_evidence = judge_result.get("needs_more_evidence", False)
+    # SMART TRIGGER: Counter-search when JUDGE is less than fully confident (< 85%)
+    # Lower threshold means more counter-searching for potential TIN THẬT
+    judge_uncertain = confidence_r1 < 85
+    needs_more_evidence = judge_result.get("needs_more_evidence", False)
     if isinstance(needs_more_evidence, str):
         needs_more_evidence = needs_more_evidence.lower() == "true"
     
