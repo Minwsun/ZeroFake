@@ -289,16 +289,16 @@ def call_google_search(text_input: str, site_query_string: str) -> list:
     # --- NEWS-FIRST SEARCH STRATEGY ---
     # Ưu tiên tin tức mới nhất từ nguồn news trước
 
-    # Default timelimit = 1 tuần để lấy tin mới nhất
+    # Default timelimit = 1 tháng để lấy tin mới nhất
     if timelimit is None:
-        timelimit = "w"  # Default: tin trong tuần
+        timelimit = "m"  # Default: tin trong tháng
 
     # 1. PRIORITY 1: Vietnamese News (tin tức tiếng Việt mới nhất)
     print(f"  [DDG-NEWS] Tìm tin tức VN: {cleaned_input[:50]}...")
     _ingest_ddg(_run_ddg_news(cleaned_input, timelimit, region="vi-vn"), source_type="news")
 
-    # 2. PRIORITY 2: International News (nếu có từ khóa quốc tế)
-    if en_query and len(en_query) > 10 and en_query != cleaned_input:
+    # 2. PRIORITY 2: International News (LUÔN search cả tiếng Anh)
+    if en_query and len(en_query) > 5:
         print(f"  [DDG-NEWS] Tìm tin tức QT: {en_query[:50]}...")
         _ingest_ddg(_run_ddg_news(en_query, timelimit, region="wt-wt"), source_type="news")
 
