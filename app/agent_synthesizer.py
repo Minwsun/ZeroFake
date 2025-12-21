@@ -28,8 +28,9 @@ CRITIC_PROMPT = ""  # NEW: Prompt cho CRITIC agent
 # ==============================================================================
 # COUNTER-SEARCH: Khi JUDGE kết luận TIN GIẢ, search thêm để "bảo vệ" claim
 # SELF-CORRECTION: Re-search khi JUDGE yêu cầu hoặc confidence thấp
-ENABLE_COUNTER_SEARCH = True   # Bật để JUDGE có thể phản biện lại CRITIC
-ENABLE_SELF_CORRECTION = True  # Bật để JUDGE có thể search verify khi cần
+# DISABLED: Cả hai đều tốn thời gian mà không cải thiện accuracy đáng kể
+ENABLE_COUNTER_SEARCH = False   # TẮT - không cần search thêm sau JUDGE
+ENABLE_SELF_CORRECTION = False  # TẮT - không cần UNIFIED-RE-SEARCH
 
 
 # Cài đặt an toàn
