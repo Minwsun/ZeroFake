@@ -1008,9 +1008,14 @@ async def execute_final_analysis(
     model_key: str | None = None,
     flash_mode: bool = False,
     site_query_string: str = "",  # Added for re-search
+    skip_critic: bool = False,    # NEW: Skip CRITIC when Fact Check has verdict
 ) -> dict:
     """
-    Pipeline OPTIMIZED: SYNTH → CRITIC → JUDGE
+    Pipeline: SYNTH → CRITIC (optional) → JUDGE
+    
+    When skip_critic=True (Fact Check has verdict):
+    - Skip CRITIC phase
+    - Go directly to JUDGE with Fact Check + Search evidence
     
     SYNTH Logic:
     - KNOWLEDGE claims: Agent có quyền tự quyết dựa trên kiến thức
@@ -1055,45 +1060,74 @@ async def execute_final_analysis(
 
     # =========================================================================
     # PHASE 1: CRITIC AGENT (BIỆN LÝ ĐỐI LẬP)
+    # Skip if Fact Check already has verdict - use Fact Check as "critic"
     # =========================================================================
     critic_report = "Không có phản biện."
     critic_parsed = {}
-    try:
-        print(f"\n[CRITIC] Bắt đầu phản biện...")
-        critic_prompt_filled = CRITIC_PROMPT.replace("{text_input}", text_input)
-        critic_prompt_filled = critic_prompt_filled.replace("{evidence_bundle_json}", evidence_bundle_json)
-        critic_prompt_filled = critic_prompt_filled.replace("{current_date}", current_date)
+    
+    # Check if Fact Check has verdict
+    fact_check_verdict = evidence_bundle.get("fact_check_verdict")
+    
+    if skip_critic and fact_check_verdict:
+        # Use Fact Check verdict as the CRITIC report
+        fc_conclusion = fact_check_verdict.get("conclusion", "")
+        fc_confidence = fact_check_verdict.get("confidence", 0)
+        fc_source = fact_check_verdict.get("source", "Fact Check")
+        fc_url = fact_check_verdict.get("url", "")
         
-        critic_report = await call_agent_with_capability_fallback(
-            role="CRITIC",
-            prompt=critic_prompt_filled,
-            temperature=0.5,
-            timeout=120.0  # Tăng lên 120s theo yêu cầu user
-        )
-        print(f"[CRITIC] Report: {critic_report[:150]}...")
+        print(f"\n[SKIP CRITIC] Using Fact Check verdict from {fc_source}")
+        critic_report = f"""[FACT CHECK VERDICT]
+Source: {fc_source}
+Verdict: {fc_conclusion} (Confidence: {fc_confidence}%)
+URL: {fc_url}
+
+This claim has been fact-checked by {fc_source}. The verdict is {fc_conclusion}."""
         
-        # Parse CRITIC response để kiểm tra counter_search_needed
-        critic_parsed = _parse_json_from_text(critic_report)
-        
-        # NEW SCHEMA: Kiểm tra issues_found trực tiếp (không qua conclusion.issues_found)
-        critic_issues = critic_parsed.get("issues_found", False)
-        if not critic_issues:
-            # Fallback: check old schema
-            conclusion_obj = critic_parsed.get("conclusion", {})
-            if isinstance(conclusion_obj, dict):
-                critic_issues = conclusion_obj.get("issues_found", False)
-        
-        issue_type = critic_parsed.get("issue_type", "NONE")
-        if not issue_type or issue_type == "NONE":
-            conclusion_obj = critic_parsed.get("conclusion", {})
-            if isinstance(conclusion_obj, dict):
-                issue_type = conclusion_obj.get("issue_type", "NONE")
-        
-        print(f"[CRITIC] Issues found: {critic_issues}, Type: {issue_type}")
-        
-    except Exception as e:
-        print(f"[CRITIC] Gặp lỗi: {e}")
-        critic_report = "Lỗi khi chạy Critic Agent."
+        critic_parsed = {
+            "issues_found": fc_conclusion == "TIN GIẢ",
+            "issue_type": "FACT_CHECK_DEBUNKED" if fc_conclusion == "TIN GIẢ" else "FACT_CHECK_VERIFIED",
+            "fact_check_source": fc_source,
+            "fact_check_url": fc_url
+        }
+        print(f"[SKIP CRITIC] Fact Check verdict added to evidence")
+    else:
+        # Normal CRITIC flow
+        try:
+            print(f"\n[CRITIC] Bắt đầu phản biện...")
+            critic_prompt_filled = CRITIC_PROMPT.replace("{text_input}", text_input)
+            critic_prompt_filled = critic_prompt_filled.replace("{evidence_bundle_json}", evidence_bundle_json)
+            critic_prompt_filled = critic_prompt_filled.replace("{current_date}", current_date)
+            
+            critic_report = await call_agent_with_capability_fallback(
+                role="CRITIC",
+                prompt=critic_prompt_filled,
+                temperature=0.5,
+                timeout=120.0
+            )
+            print(f"[CRITIC] Report: {critic_report[:150]}...")
+            
+            # Parse CRITIC response để kiểm tra counter_search_needed
+            critic_parsed = _parse_json_from_text(critic_report)
+            
+            # NEW SCHEMA: Kiểm tra issues_found trực tiếp (không qua conclusion.issues_found)
+            critic_issues = critic_parsed.get("issues_found", False)
+            if not critic_issues:
+                # Fallback: check old schema
+                conclusion_obj = critic_parsed.get("conclusion", {})
+                if isinstance(conclusion_obj, dict):
+                    critic_issues = conclusion_obj.get("issues_found", False)
+            
+            issue_type = critic_parsed.get("issue_type", "NONE")
+            if not issue_type or issue_type == "NONE":
+                conclusion_obj = critic_parsed.get("conclusion", {})
+                if isinstance(conclusion_obj, dict):
+                    issue_type = conclusion_obj.get("issue_type", "NONE")
+            
+            print(f"[CRITIC] Issues found: {critic_issues}, Type: {issue_type}")
+            
+        except Exception as e:
+            print(f"[CRITIC] Gặp lỗi: {e}")
+            critic_report = "Lỗi khi chạy Critic Agent."
 
     # =========================================================================
     # PHASE 1.5: CRITIC COUNTER-SEARCH (nếu CRITIC yêu cầu search thêm)

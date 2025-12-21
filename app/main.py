@@ -387,7 +387,7 @@ async def _handle_check_news_internal(
             conclusion = fact_check_verdict.get("conclusion", "")
             confidence = fact_check_verdict.get("confidence", 0)
             print(f"\n[FACT-CHECK] Found verdict from {source}: {conclusion} ({confidence}%)")
-            print(f"[FACT-CHECK] Passing to JUDGE for final decision...")
+            print(f"[FACT-CHECK] Skipping CRITIC → Going directly to JUDGE...")
         
         # Count evidence
         total_evidence = sum(len(evidence_bundle.get(layer, [])) for layer in ["layer_1_api", "layer_2_high_trust", "layer_3_general", "layer_4_social_low"])
@@ -397,6 +397,9 @@ async def _handle_check_news_internal(
         enriched_plan = enrich_plan_with_evidence(plan, evidence_bundle)
         
         # Step 4: Agent 2 (Synthesizer) makes judgment
+        # Skip CRITIC if Fact Check already has verdict
+        skip_critic = fact_check_verdict is not None
+        
         current_date = datetime.datetime.now().strftime('%Y-%m-%d')
         gemini_result = await execute_final_analysis(
             request.text,
@@ -405,6 +408,7 @@ async def _handle_check_news_internal(
             model_key=agent2_model,
             flash_mode=flash_mode,
             site_query_string=SITE_QUERY_STRING,
+            skip_critic=skip_critic,  # NEW: Skip CRITIC when Fact Check has verdict
         )
         gemini_result = _sanitize_check_response(gemini_result)
         
