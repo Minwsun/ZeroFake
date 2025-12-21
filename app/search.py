@@ -286,24 +286,29 @@ def call_google_search(text_input: str, site_query_string: str) -> list:
             print(f"  DDG TEXT error ({region}): {exc}")
             return []
 
-    # --- NEW SEARCH STRATEGY ---
+    # --- NEWS-FIRST SEARCH STRATEGY ---
+    # Ưu tiên tin tức mới nhất từ nguồn news trước
 
-    # 1. PRIORITY 1: Vietnamese News (using .news() for real news articles)
+    # Default timelimit = 1 tuần để lấy tin mới nhất
+    if timelimit is None:
+        timelimit = "w"  # Default: tin trong tuần
+
+    # 1. PRIORITY 1: Vietnamese News (tin tức tiếng Việt mới nhất)
     print(f"  [DDG-NEWS] Tìm tin tức VN: {cleaned_input[:50]}...")
     _ingest_ddg(_run_ddg_news(cleaned_input, timelimit, region="vi-vn"), source_type="news")
 
-    # 2. PRIORITY 2: International News (if English query available)
+    # 2. PRIORITY 2: International News (nếu có từ khóa quốc tế)
     if en_query and len(en_query) > 10 and en_query != cleaned_input:
         print(f"  [DDG-NEWS] Tìm tin tức QT: {en_query[:50]}...")
         _ingest_ddg(_run_ddg_news(en_query, timelimit, region="wt-wt"), source_type="news")
 
-    # 3. FALLBACK: If few news results, use web search
-    if len(all_items) < 5:
+    # 3. FALLBACK: Chỉ dùng web search khi KHÔnG có tin tức (<3 results)
+    if len(all_items) < 3:
         print(f"  [DDG-WEB] Fallback tìm kiếm web: {query_vi[:50]}...")
         _ingest_ddg(_run_ddg_text(query_vi, timelimit, region="vi-vn"), source_type="web")
         
-        # Also try English web fallback if needed
-        if en_query and len(en_query) > 10 and len(all_items) < 8:
+        # English web fallback nếu vẫn ít kết quả
+        if en_query and len(en_query) > 10 and len(all_items) < 5:
             _ingest_ddg(_run_ddg_text(en_query, timelimit, region="wt-wt"), source_type="web")
 
     # Sort by date (newest first)
