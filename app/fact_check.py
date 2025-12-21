@@ -13,80 +13,133 @@ FACT_CHECK_BASE_URL = "https://factchecktools.googleapis.com/v1alpha1/claims:sea
 
 async def call_google_fact_check(query: str, language_code: str = "en") -> list:
     """
-    Call Google Fact Check Tool API to find existing fact checks.
-    IMPROVED: Search in English FIRST (most fact checks are in English),
-    then try Vietnamese if no results.
+    Call Google Fact Check Tool API with MULTIPLE QUERIES in both languages.
     
-    Args:
-        query: The claim to search for
-        language_code: Language code (en for English by default)
-    
-    Returns:
-        List of fact check results with rating and source
+    Strategy:
+    1. Extract key entities (names, events, numbers)
+    2. Search with 3 English variations
+    3. Search with 3 Vietnamese variations (if original is Vietnamese)
+    4. Merge and deduplicate results
     """
     if not FACT_CHECK_API_KEY:
-        print("[FACT-CHECK] API key not configured")
+        print("[FACT-CHECK] ⚠️ API key not configured")
         return []
     
-    # Extract English keywords from Vietnamese query for better matching
-    english_query = _extract_english_query(query)
-    search_query = english_query if english_query else query
+    # Generate multiple search queries
+    queries = _generate_fact_check_queries(query)
     
-    results = []
+    all_results = []
+    seen_urls = set()
     
-    try:
-        params = {
-            "key": FACT_CHECK_API_KEY,
-            "query": search_query,
-            "languageCode": language_code,
-            "pageSize": 10
-        }
-        
-        print(f"[FACT-CHECK] Searching: {search_query[:60]}...")
-        
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            response = await client.get(FACT_CHECK_BASE_URL, params=params)
-            
-            if response.status_code == 200:
-                data = response.json()
-                claims = data.get("claims", [])
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        for q, lang in queries[:6]:  # Max 6 queries (3 EN + 3 VN)
+            try:
+                params = {
+                    "key": FACT_CHECK_API_KEY,
+                    "query": q,
+                    "languageCode": lang,
+                    "pageSize": 5
+                }
                 
-                for claim in claims:
-                    claim_text = claim.get("text", "")
+                response = await client.get(FACT_CHECK_BASE_URL, params=params)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    claims = data.get("claims", [])
                     
-                    for review in claim.get("claimReview", []):
-                        result = {
-                            "claim": claim_text,
-                            "publisher": review.get("publisher", {}).get("name", "Unknown"),
-                            "url": review.get("url", ""),
-                            "rating": review.get("textualRating", ""),
-                            "title": review.get("title", ""),
-                            "review_date": review.get("reviewDate", ""),
-                            "language": review.get("languageCode", language_code)
-                        }
-                        results.append(result)
-                
-                if results:
-                    print(f"[FACT-CHECK] ✓ Found {len(results)} existing fact checks")
-                else:
-                    print(f"[FACT-CHECK] No fact checks found")
-                    
-            elif response.status_code == 403:
-                print(f"[FACT-CHECK] API access denied (403)")
-            else:
-                print(f"[FACT-CHECK] API error: {response.status_code}")
-                
-    except httpx.TimeoutException:
-        print("[FACT-CHECK] API timeout")
-    except Exception as e:
-        print(f"[FACT-CHECK] Error: {e}")
+                    for claim in claims:
+                        claim_text = claim.get("text", "")
+                        
+                        for review in claim.get("claimReview", []):
+                            url = review.get("url", "")
+                            if url in seen_urls:
+                                continue
+                            seen_urls.add(url)
+                            
+                            result = {
+                                "claim": claim_text,
+                                "publisher": review.get("publisher", {}).get("name", "Unknown"),
+                                "url": url,
+                                "rating": review.get("textualRating", ""),
+                                "title": review.get("title", ""),
+                                "review_date": review.get("reviewDate", ""),
+                                "language": review.get("languageCode", lang),
+                                "matched_query": q
+                            }
+                            all_results.append(result)
+                            
+            except Exception as e:
+                print(f"[FACT-CHECK] Query error: {e}")
+                continue
     
-    # Try Vietnamese if English returns no results
-    if not results and language_code == "en":
-        print("[FACT-CHECK] Trying Vietnamese search...")
-        return await call_google_fact_check(query, "vi")
+    if all_results:
+        print(f"[FACT-CHECK] ✓ Found {len(all_results)} fact checks")
+    else:
+        print(f"[FACT-CHECK] No fact checks found")
     
-    return results
+    return all_results
+
+
+def _generate_fact_check_queries(text: str) -> list:
+    """
+    Generate multiple search queries from claim text.
+    Returns: [(query, language_code), ...]
+    """
+    import re
+    
+    queries = []
+    
+    # Extract key entities
+    # Keep proper nouns (capitalized words), numbers, years
+    entities = re.findall(r'[A-Z][a-zA-Z]+|[A-Z]+|[0-9]{4}|[0-9]+', text)
+    entities_str = " ".join(entities) if entities else ""
+    
+    # Vietnamese to English key phrases
+    vn_to_en = {
+        "vô địch": "champion won",
+        "thắng": "beat defeated",
+        "thua": "lost",
+        "bổ nhiệm": "appointed",
+        "qua đời": "died",
+        "ra mắt": "launched",
+        "bán": "sold available",
+        "tổ chức": "hosted held",
+        "vaccine": "vaccine",
+        "microchip": "microchip",
+        "virus": "virus",
+        "thừa nhận": "admitted",
+        "tuyên bố": "announced claimed",
+        "Champions League": "Champions League",
+        "COP29": "COP 29",
+        "DOGE": "DOGE Department Government Efficiency",
+    }
+    
+    # Translate to English
+    en_text = text
+    for vn, en in vn_to_en.items():
+        en_text = re.sub(vn, en, en_text, flags=re.IGNORECASE)
+    
+    # Clean up
+    en_text = re.sub(r'[^\w\s\-]', ' ', en_text)
+    en_text = re.sub(r'\s+', ' ', en_text).strip()
+    
+    # Generate English queries
+    if entities_str:
+        queries.append((entities_str, "en"))  # Just entities
+    queries.append((en_text[:100], "en"))  # Translated claim
+    queries.append((f"{entities_str} fact check", "en"))  # With fact check keyword
+    
+    # Generate Vietnamese queries
+    vn_text = re.sub(r'[^\w\s\-àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]', ' ', text, flags=re.IGNORECASE)
+    vn_text = re.sub(r'\s+', ' ', vn_text).strip()
+    
+    queries.append((vn_text[:80], "vi"))
+    if entities_str:
+        queries.append((f"{entities_str} thật hay giả", "vi"))
+    
+    return queries
+
+
 
 
 def _extract_english_query(text: str) -> str:
