@@ -2,12 +2,17 @@ import os
 import re
 import json
 import httpx
+import time
+import random
 from datetime import datetime
 from urllib.parse import urlparse, urlencode
 
 from duckduckgo_search import DDGS
 from gnews import GNews
 import wikipediaapi
+from googlesearch import search as google_search
+import trafilatura
+from fake_useragent import UserAgent
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -446,7 +451,52 @@ def call_google_search(text_input: str, site_query_string: str) -> list:
                 seen.add(wr["link"])
                 all_items.append(wr)
     
-    # 3. DDG: FALLBACK only if not enough results
+    # 3. GOOGLE WEB SEARCH (with anti-block)
+    def _run_google_web(query: str, num: int = 5) -> list:
+        """Search Google Web directly with anti-block measures."""
+        try:
+            # Random delay to avoid detection
+            time.sleep(random.uniform(1.0, 2.0))
+            
+            urls = list(google_search(query, num_results=num, lang="vi"))
+            print(f"  [GOOGLE-WEB] Found {len(urls)} URLs")
+            return urls
+        except Exception as exc:
+            print(f"  [GOOGLE-WEB] Error: {exc}")
+            return []
+    
+    def _extract_with_trafilatura(url: str) -> str:
+        """Extract article content from URL using trafilatura."""
+        try:
+            downloaded = trafilatura.fetch_url(url)
+            if downloaded:
+                text = trafilatura.extract(downloaded, include_comments=False)
+                return text[:500] if text else ""
+            return ""
+        except Exception:
+            return ""
+    
+    # Run Google Web search for top URLs
+    if len(all_items) < 10:
+        print(f"  [GOOGLE-WEB] Tìm Google Web: {cleaned_input[:40]}...")
+        google_urls = _run_google_web(cleaned_input, num=5)
+        
+        for url in google_urls[:3]:  # Only extract top 3 to save time
+            if url not in seen:
+                seen.add(url)
+                # Try to extract content with trafilatura
+                content = _extract_with_trafilatura(url)
+                if content and len(content) > 50:
+                    all_items.append({
+                        "title": url.split("/")[-1][:50],
+                        "link": url,
+                        "snippet": content[:400],
+                        "source": "google_web",
+                        "pagemap": {},
+                        "date": "",
+                    })
+    
+    # 4. DDG: FALLBACK only if still not enough results
     if len(all_items) < 5:
         print(f"  [DDG] Fallback: cần thêm evidence ({len(all_items)} < 5)...")
         _ingest_ddg(_run_ddg_news(cleaned_input, timelimit or "m", region="vi-vn"), source_type="news")
@@ -457,6 +507,6 @@ def call_google_search(text_input: str, site_query_string: str) -> list:
     # Sort by date (newest first)
     all_items.sort(key=_sort_key)
 
-    print(f"📊 Search: Tổng cộng {len(all_items)} bằng chứng.")
+    print(f"📊 Search: Tổng cộng {len(all_items)} bằng chứng từ ALL sources.")
     return all_items[:MAX_RESULTS]
 
