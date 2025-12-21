@@ -11,13 +11,15 @@ FACT_CHECK_API_KEY = os.getenv("GOOGLE_FACT_CHECK_API_KEY", "")
 FACT_CHECK_BASE_URL = "https://factchecktools.googleapis.com/v1alpha1/claims:search"
 
 
-async def call_google_fact_check(query: str, language_code: str = "vi") -> list:
+async def call_google_fact_check(query: str, language_code: str = "en") -> list:
     """
     Call Google Fact Check Tool API to find existing fact checks.
+    IMPROVED: Search in English FIRST (most fact checks are in English),
+    then try Vietnamese if no results.
     
     Args:
         query: The claim to search for
-        language_code: Language code (vi for Vietnamese, en for English)
+        language_code: Language code (en for English by default)
     
     Returns:
         List of fact check results with rating and source
@@ -26,15 +28,21 @@ async def call_google_fact_check(query: str, language_code: str = "vi") -> list:
         print("[FACT-CHECK] API key not configured")
         return []
     
+    # Extract English keywords from Vietnamese query for better matching
+    english_query = _extract_english_query(query)
+    search_query = english_query if english_query else query
+    
     results = []
     
     try:
         params = {
             "key": FACT_CHECK_API_KEY,
-            "query": query,
+            "query": search_query,
             "languageCode": language_code,
             "pageSize": 10
         }
+        
+        print(f"[FACT-CHECK] Searching: {search_query[:60]}...")
         
         async with httpx.AsyncClient(timeout=15.0) as client:
             response = await client.get(FACT_CHECK_BASE_URL, params=params)
@@ -59,9 +67,9 @@ async def call_google_fact_check(query: str, language_code: str = "vi") -> list:
                         results.append(result)
                 
                 if results:
-                    print(f"[FACT-CHECK] Found {len(results)} existing fact checks")
+                    print(f"[FACT-CHECK] ✓ Found {len(results)} existing fact checks")
                 else:
-                    print(f"[FACT-CHECK] No existing fact checks found for: {query[:50]}...")
+                    print(f"[FACT-CHECK] No fact checks found")
                     
             elif response.status_code == 403:
                 print(f"[FACT-CHECK] API access denied (403)")
@@ -73,12 +81,51 @@ async def call_google_fact_check(query: str, language_code: str = "vi") -> list:
     except Exception as e:
         print(f"[FACT-CHECK] Error: {e}")
     
-    # Also try English if Vietnamese returns no results
-    if not results and language_code == "vi":
-        print("[FACT-CHECK] Trying English search...")
-        return await call_google_fact_check(query, "en")
+    # Try Vietnamese if English returns no results
+    if not results and language_code == "en":
+        print("[FACT-CHECK] Trying Vietnamese search...")
+        return await call_google_fact_check(query, "vi")
     
     return results
+
+
+def _extract_english_query(text: str) -> str:
+    """Extract English-friendly keywords from Vietnamese text for fact check search."""
+    import re
+    
+    # Common Vietnamese to English mappings for fact check topics
+    translations = {
+        "vô địch": "champion winner",
+        "thắng": "won defeated",
+        "thua": "lost",
+        "ra mắt": "launch release",
+        "qua đời": "died death",
+        "bổ nhiệm": "appointed",
+        "từ chức": "resigned",
+        "thừa nhận": "admitted confirmed",
+        "tổ chức": "hosted held",
+        "vaccine": "vaccine",
+        "microchip": "microchip",
+        "virus": "virus",
+        "tạo ra": "created made",
+        "phát hiện": "discovered found",
+        "đổi tên": "renamed changed name",
+        "giả": "fake false",
+        "thật": "true real",
+    }
+    
+    result = text
+    for vn, en in translations.items():
+        result = re.sub(vn, en, result, flags=re.IGNORECASE)
+    
+    # Keep proper nouns, numbers, and remove Vietnamese particles
+    result = re.sub(r'[^\w\s\-\./]', ' ', result)
+    result = re.sub(r'\s+', ' ', result).strip()
+    
+    # Keep only if substantial content remains
+    if len(result) > 15:
+        return result
+    return ""
 
 
 def interpret_fact_check_rating(rating: str) -> tuple[str, int]:
