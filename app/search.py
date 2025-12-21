@@ -302,14 +302,15 @@ def call_google_search(text_input: str, site_query_string: str) -> list:
         print(f"  [DDG-NEWS] Tìm tin tức QT: {en_query[:50]}...")
         _ingest_ddg(_run_ddg_news(en_query, timelimit, region="wt-wt"), source_type="news")
 
-    # 3. FALLBACK: Chỉ dùng web search khi KHÔnG có tin tức (<3 results)
-    if len(all_items) < 3:
+    # 3. FALLBACK WEB: Khi ít news (<5), search web để lấy thêm từ Wikipedia, etc.
+    if len(all_items) < 5:
         print(f"  [DDG-WEB] Fallback tìm kiếm web: {query_vi[:50]}...")
-        _ingest_ddg(_run_ddg_text(query_vi, timelimit, region="vi-vn"), source_type="web")
+        _ingest_ddg(_run_ddg_text(query_vi, None, region="vi-vn"), source_type="web")  # No timelimit for wiki
         
-        # English web fallback nếu vẫn ít kết quả
-        if en_query and len(en_query) > 10 and len(all_items) < 5:
-            _ingest_ddg(_run_ddg_text(en_query, timelimit, region="wt-wt"), source_type="web")
+        # English web fallback để lấy Wikipedia tiếng Anh
+        if en_query and len(en_query) > 5:
+            print(f"  [DDG-WEB] Tìm kiếm Wikipedia EN: {en_query[:50]}...")
+            _ingest_ddg(_run_ddg_text(en_query, None, region="wt-wt"), source_type="web")
 
     # Sort by date (newest first)
     all_items.sort(key=_sort_key)
