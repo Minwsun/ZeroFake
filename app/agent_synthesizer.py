@@ -375,11 +375,10 @@ def _parse_json_from_text(text: str) -> dict:
         return {}
 
 
-def _trim_snippet(s: str, max_len: int = 200) -> str:
+def _trim_snippet(s: str, max_len: int = 350) -> str:
     """
-    OPTIMIZED: Giảm max_len từ 500 xuống 200 để tiết kiệm token.
-    Với 3 evidence items * 200 chars = 600 chars thay vì 10 * 500 = 5000 chars.
-    Tiết kiệm ~90% token cho evidence.
+    BALANCED: Use 350 chars for better context.
+    With 13 evidence items * 350 chars = ~4500 chars total.
     """
     if not s:
         return ""
@@ -387,11 +386,10 @@ def _trim_snippet(s: str, max_len: int = 200) -> str:
     return s[:max_len]
 
 
-def _trim_evidence_bundle(bundle: Dict[str, Any], cap_l2: int = 3, cap_l3: int = 3, cap_l4: int = 2) -> Dict[str, Any]:
+def _trim_evidence_bundle(bundle: Dict[str, Any], cap_l2: int = 8, cap_l3: int = 5, cap_l4: int = 0) -> Dict[str, Any]:
     """
-    OPTIMIZED: Giảm cap từ 10/10/5 xuống 3/3/2 để tiết kiệm token.
-    Tổng: 8 evidence items thay vì 25 items.
-    Mục tiêu: Giảm latency từ ~70s xuống ~25s.
+    BALANCED: Use more evidence (8/5/0) to improve accuracy.
+    Total: 13 evidence items. L4 (blocked) is excluded.
     """
     if not bundle:
         return {"layer_1_tools": [], "layer_2_high_trust": [], "layer_3_general": [], "layer_4_social_low": []}
@@ -1145,10 +1143,7 @@ async def execute_final_analysis(
         if q:
             searched_queries.add(q.lower().strip())
     
-    # SMART TRIGGER: Only counter-search when JUDGE is UNCERTAIN (confidence < 70)
-    # NOT when already confident about TIN GIẢ (that means evidence strongly contradicts)
-    judge_uncertain = confidence_r1 < 70
-    needs_more_evidence = judge_result.get("needs_more_evidence", False)
+    # SMART TRIGGER: Counter-search when JUDGE is less than fully confident (< 85%)\n    # Lower threshold means more counter-searching for potential TIN THẬT\n    judge_uncertain = confidence_r1 < 85\n    needs_more_evidence = judge_result.get("needs_more_evidence", False)
     if isinstance(needs_more_evidence, str):
         needs_more_evidence = needs_more_evidence.lower() == "true"
     
