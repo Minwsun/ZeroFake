@@ -53,8 +53,14 @@ ELIF claim là KIẾN THỨC CHUNG (địa lý, lịch sử, khoa học):
 
 ELIF claim là SỰ KIỆN CŨ (>1 năm trước, trước tháng 12/2024):
     → AI ĐÃ BIẾT trong training data → Dùng kiến thức AI
-    → Ví dụ: SEA Games 33 (2025), Messi vô địch WC 2022, VinFast IPO 2023
+    → Ví dụ: Messi vô địch WC 2022, VinFast IPO 2023
     → KHÔNG CẦN evidence từ nguồn bên ngoài
+
+ELIF claim là SỰ KIỆN MỚI (năm 2025+):
+    → AI CÓ THỂ KHÔNG BIẾT (cutoff 2023-2024)
+    → **ƯU TIÊN EVIDENCE TỪ NGUỒN BÊN NGOÀI**
+    → VD: GPT-5 ra mắt 8/2025, SEA Games 33 Campuchia 2025
+    → Nếu evidence xác nhận → TIN THẬT (dù AI không biết)
     
 ELIF evidence không rõ ràng:
     → Dùng KIẾN THỨC AI + suy luận để quyết định

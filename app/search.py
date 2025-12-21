@@ -19,7 +19,7 @@ WARP_ENABLED = os.getenv("WARP_ENABLED", "false").lower() == "true"
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 GOOGLE_CSE_ID = os.getenv("GOOGLE_CSE_ID")
 
-MAX_RESULTS = 25  # Lấy đủ evidence cho CRITIC và JUDGE
+MAX_RESULTS = 15  # Giảm để tiết kiệm CSE quota (100/day)
 SEARXNG_TIMEOUT = 30  # Timeout cho SearXNG requests
 DDG_TIMEOUT = 20  # Timeout cho DuckDuckGo fallback
 
@@ -286,24 +286,98 @@ def call_google_search(text_input: str, site_query_string: str) -> list:
             print(f"  DDG TEXT error ({region}): {exc}")
             return []
 
-    # --- COMPREHENSIVE SEARCH STRATEGY ---
-    # Lấy TẤT CẢ nguồn: News + Web (Wikipedia) + Quốc tế
+    def _run_google_cse(query: str) -> list:
+        """Google Custom Search Engine - Primary search."""
+        if not GOOGLE_API_KEY or not GOOGLE_CSE_ID:
+            print("  [CSE] API key/CSE ID not configured - skip")
+            return None  # Return None to trigger DDG fallback
+        
+        try:
+            url = "https://www.googleapis.com/customsearch/v1"
+            params = {
+                "key": GOOGLE_API_KEY,
+                "cx": GOOGLE_CSE_ID,
+                "q": query,
+                "num": min(10, MAX_RESULTS),  # CSE max 10 per request
+                "lr": "lang_vi",  # Vietnamese
+            }
+            
+            with httpx.Client(timeout=15) as client:
+                response = client.get(url, params=params)
+                
+                if response.status_code == 429:
+                    print("  [CSE] Quota exceeded - fallback to DDG")
+                    return None  # Trigger DDG fallback
+                    
+                response.raise_for_status()
+                data = response.json()
+                items = data.get("items", [])
+                print(f"  [CSE] Found {len(items)} results")
+                return items
+                
+        except httpx.HTTPStatusError as e:
+            print(f"  [CSE] HTTP error {e.response.status_code} - fallback to DDG")
+            return None
+        except Exception as exc:
+            print(f"  [CSE] Error: {exc} - fallback to DDG")
+            return None
 
-    # 1. NEWS SEARCH: Tin tức tiếng Việt và Quốc tế (có timelimit)
-    print(f"  [DDG-NEWS] Tìm tin tức VN: {cleaned_input[:50]}...")
-    _ingest_ddg(_run_ddg_news(cleaned_input, timelimit or "m", region="vi-vn"), source_type="news")
+    def _ingest_cse(results: list):
+        """Ingest Google CSE results."""
+        if not results:
+            return
+        for r in results:
+            link = r.get("link")
+            if not link or link in seen:
+                continue
+            seen.add(link)
+            
+            snippet = r.get("snippet", "")
+            title = r.get("title", "")
+            
+            if len(snippet) < 30:
+                continue
+                
+            all_items.append({
+                "title": title,
+                "link": link,
+                "snippet": snippet,
+                "source": "google_cse",
+                "pagemap": r.get("pagemap", {}),
+                "date": "",
+            })
 
-    if en_query and len(en_query) > 5:
-        print(f"  [DDG-NEWS] Tìm tin tức QT: {en_query[:50]}...")
-        _ingest_ddg(_run_ddg_news(en_query, timelimit or "m", region="wt-wt"), source_type="news")
-
-    # 2. WEB SEARCH: LUÔN tìm web để lấy Wikipedia và các nguồn khác (không timelimit)
-    print(f"  [DDG-WEB] Tìm kiếm web VN: {query_vi[:50]}...")
-    _ingest_ddg(_run_ddg_text(query_vi, None, region="vi-vn"), source_type="web")
+    # --- OPTIMIZED SEARCH STRATEGY ---
+    # Priority: Google CSE (1 query) → DDG fallback (if CSE fails)
     
-    if en_query and len(en_query) > 5:
-        print(f"  [DDG-WEB] Tìm kiếm Wikipedia EN: {en_query[:50]}...")
-        _ingest_ddg(_run_ddg_text(en_query, None, region="wt-wt"), source_type="web")
+    # 1. TRY GOOGLE CSE FIRST (1 query only)
+    print(f"  [CSE] Trying Google CSE: {cleaned_input[:50]}...")
+    cse_results = _run_google_cse(cleaned_input)
+    
+    if cse_results is not None:
+        # CSE worked - use these results
+        _ingest_cse(cse_results)
+        
+        # If EN query available, try one more CSE query
+        if en_query and len(en_query) > 10 and len(all_items) < 5:
+            print(f"  [CSE] Trying EN query: {en_query[:50]}...")
+            cse_results_en = _run_google_cse(en_query)
+            if cse_results_en:
+                _ingest_cse(cse_results_en)
+    
+    # 2. DDG FALLBACK (only if CSE failed or no results)
+    if cse_results is None or len(all_items) < 3:
+        print(f"  [DDG] Fallback: CSE unavailable, using DuckDuckGo...")
+        
+        # News search
+        _ingest_ddg(_run_ddg_news(cleaned_input, timelimit or "m", region="vi-vn"), source_type="news")
+        
+        if en_query and len(en_query) > 5:
+            _ingest_ddg(_run_ddg_news(en_query, timelimit or "m", region="wt-wt"), source_type="news")
+        
+        # Web search if still few results
+        if len(all_items) < 5:
+            _ingest_ddg(_run_ddg_text(query_vi, None, region="vi-vn"), source_type="web")
 
     # Sort by date (newest first)
     all_items.sort(key=_sort_key)
