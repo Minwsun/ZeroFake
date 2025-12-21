@@ -1,68 +1,173 @@
-# ZeroFake v2.0
+# ZeroFake v2.1
 
-Advanced AI-powered Fake News Detection System with Multi-Agent Architecture.
+**Advanced AI-powered Fake News Detection System with Dual Flow Architecture**
 
 ---
 
-## 1) Objective
-ZeroFake is a real-time fact-checking system that verifies news claims as: **"TIN THẬT" (TRUE)** or **"TIN GIẢ" (FAKE)**. The system uses a multi-agent cognitive architecture with adversarial debate to ensure accurate verification.
+## 🎯 Objective
 
-## 2) Architecture Overview
+ZeroFake is a real-time fact-checking system that verifies news claims as:
+- **TIN THẬT** (TRUE NEWS)
+- **TIN GIẢ** (FAKE NEWS)
 
-### Core Pipeline
+The system uses a multi-agent cognitive architecture with:
+- **Dual Flow Routing** (Recent News vs Old Info)
+- **Google Fact Check API** integration
+- **Adversarial CRITIC-JUDGE debate**
+- **Presumption of Truth** principle
+
+---
+
+## 🏗️ Architecture
+
+### System Flow Diagram
+
 ```
-INPUT → PLANNER → SEARCH → CRITIC → JUDGE → OUTPUT
+                         ┌─────────────────┐
+                         │   INPUT CLAIM   │
+                         └────────┬────────┘
+                                  ▼
+                         ┌─────────────────┐
+                         │    PLANNER      │
+                         │ (Generate 5+    │
+                         │  search queries)│
+                         └────────┬────────┘
+                                  ▼
+                    ┌─────────────┴─────────────┐
+                    │       DATE CHECK          │
+                    │  (3 days threshold)       │
+                    └─────────────┬─────────────┘
+                                  │
+            ┌─────────────────────┼─────────────────────┐
+            ▼                     │                     ▼
+    ┌───────────────┐             │           ┌───────────────┐
+    │  RECENT NEWS  │             │           │   OLD INFO    │
+    │   (≤3 days)   │             │           │   (>3 days)   │
+    └───────┬───────┘             │           └───────┬───────┘
+            │                     │                   │
+            ▼                     │                   ▼
+    ┌───────────────┐             │           ┌───────────────┐
+    │ DDG NEWS API  │             │           │  FACT CHECK   │
+    │ (VN + Int'l)  │             │           │     API       │
+    └───────┬───────┘             │           └───────┬───────┘
+            │                     │                   │
+            │                     │           ┌───────┴───────┐
+            │                     │           ▼               ▼
+            │                     │      Found Result    No Result
+            │                     │           │               │
+            │                     │           ▼               ▼
+            │                     │    🚀 FAST RETURN    DDG Search
+            │                     │    (Skip Pipeline)        │
+            │                     │                           │
+            └─────────────────────┼───────────────────────────┘
+                                  ▼
+                         ┌─────────────────┐
+                         │     CRITIC      │
+                         │  (Adversarial   │
+                         │   Analysis)     │
+                         └────────┬────────┘
+                                  ▼
+                         ┌─────────────────┐
+                         │     JUDGE       │
+                         │ (Final Verdict) │
+                         └────────┬────────┘
+                                  ▼
+                         ┌─────────────────┐
+                         │ TIN THẬT/TIN GIẢ│
+                         └─────────────────┘
 ```
 
-### Components
-- **Frontend**: PyQt6 GUI (Dark Mode), non-blocking with QThread
-- **Backend**: FastAPI (Python), fully asynchronous
-- **AI Agents**:
-  - **PLANNER**: Analyzes claims, generates search queries
-  - **CRITIC**: Adversarial agent that challenges evidence
-  - **JUDGE**: Final verdict using Bayesian reasoning
-- **AI Models**:
-  - Groq API: Llama 3.1/3.3 (8B, 70B), Llama Guard
-  - Google AI: Gemini Flash, Gemma 3 (4B, 12B, 27B)
-  - Cerebras API: Llama 3.1/3.3 (for high-speed inference)
-- **Search**: SearXNG (Google-only) with Cloudflare WARP proxy
-- **Weather**: OpenWeatherMap API (global coverage)
-- **Storage**: SQLite + FAISS (KB Cache + Feedback Learning)
+---
 
-## 3) Key Features
+## 🔑 API Keys Required
 
-### Multi-Agent Cognitive Architecture
-- **Popperian Falsification**: CRITIC attempts to falsify claims
-- **Adversarial Dialectic**: Red Team vs Blue Team debate
-- **Presumption of Truth**: Claims are true unless proven false
-- **Internal Reasoning**: KNOWLEDGE claims can use AI's internal knowledge
+All API keys are configured in `.env` file:
 
-### Source Trust System
+```env
+# ============================================
+# REQUIRED APIs
+# ============================================
+
+# Google Gemini API (PLANNER, CRITIC, JUDGE)
+GEMINI_API_KEY=AIza...
+
+# Google Fact Check Tools API (Fake news verification)
+GOOGLE_FACT_CHECK_API_KEY=AIza...
+
+# OpenWeather API (Weather claims)
+OPENWEATHER_API_KEY=...
+
+# ============================================
+# CEREBRAS APIs (Primary models - 4 keys for rotation)
+# ============================================
+CEREBRAS_API_KEY_1=csk_...
+CEREBRAS_API_KEY_2=csk_...
+CEREBRAS_API_KEY_3=csk_...
+CEREBRAS_API_KEY_4=csk_...
+
+# ============================================
+# GROQ APIs (Fallback models - 4 keys for rotation)
+# ============================================
+GROQ_API_KEY_1=gsk_...
+GROQ_API_KEY_2=gsk_...
+GROQ_API_KEY_3=gsk_...
+GROQ_API_KEY_4=gsk_...
+```
+
+---
+
+## 🚀 Key Features
+
+### 1. Dual Flow System
+
+| Flow Type | Condition | Action |
+|-----------|-----------|--------|
+| **RECENT NEWS** | Claim within 3 days | Skip Fact Check → Search news directly |
+| **OLD INFO** | Claim older than 3 days | Fact Check API first → Skip search if found |
+
+### 2. Google Fact Check API Integration
+
+- **Multi-query search**: 3 English + 3 Vietnamese queries per claim
+- **Absolute trust**: If Fact Check returns verdict → Skip entire pipeline
+- **Fast path**: Fake claims detected in seconds vs minutes
+
+### 3. News Search Strategy
+
+Using `DDGS().news()` for actual news articles:
+
+1. **Priority 1**: Vietnamese news (region: vi-vn)
+2. **Priority 2**: International news (region: wt-wt)
+3. **Fallback**: Web search if < 5 news results
+
+### 4. Multi-Agent Cognitive System
+
+| Agent | Role | Model |
+|-------|------|-------|
+| **PLANNER** | Generate 5+ search queries | Qwen 3 32B (Cerebras) |
+| **CRITIC** | Adversarial analysis, find weaknesses | Gemini Flash |
+| **JUDGE** | Final verdict with Bayesian reasoning | Gemini Flash |
+
+### 5. Source Trust Ranking
+
 | Source Type | Trust Score | Status |
 |-------------|-------------|--------|
 | Government (.gov) | 0.95 | ✅ Trusted |
-| Tier 0 (Major News) | 0.95 | ✅ Trusted |
-| Tier 1 (Quality News) | 0.90 | ✅ Trusted |
-| Education (.edu) | 0.85 | ✅ Trusted |
+| Major News (Reuters, BBC, AP) | 0.95 | ✅ Trusted |
+| Quality News (VnExpress, VTV) | 0.90 | ✅ Trusted |
 | Default Sources | 0.55 | ✅ Accepted |
 | Social Media | 0.30 | ⚠️ Low Trust |
-| Tabloids | 0.10 | ❌ Rejected |
+| Tabloids/UGC | 0.10 | ❌ Blocked |
 
-### Claim Classification
-- **KNOWLEDGE**: Facts, history, science → Can use internal reasoning
-- **NEWS**: Current events, breaking news → Requires external evidence
+---
 
-### Robust Fallback System
-- Multi-key API rotation for rate limit handling
-- Automatic model fallback (Groq → Gemini → Cerebras)
-- 429 error recovery with exponential backoff
-
-## 4) Installation
+## 📦 Installation
 
 ### Requirements
-- Python 3.10+ (recommended 3.11/3.12)
+- Python 3.10+ (Python 3.11/3.12 recommended)
+- Windows/Linux/macOS
 
 ### Setup
+
 ```bash
 # Clone repository
 git clone https://github.com/Minwsun/ZeroFake.git
@@ -73,27 +178,16 @@ pip install -r requirements.txt
 
 # Configure API keys
 cp .env.example .env
-# Edit .env with your API keys
-
-# Start SearXNG (required for search)
-docker-compose -f docker-compose.searxng.yml up -d
+# Edit .env with your API keys (see above)
 ```
 
-### API Keys (.env)
-```env
-GROQ_API_KEY=...           # Groq API (Llama models)
-GEMINI_API_KEY=...         # Google AI (Gemini/Gemma)
-OPENWEATHER_API_KEY=...    # Weather verification
-SEARXNG_URL=http://localhost:8080  # Self-hosted SearXNG
-WARP_ENABLED=false         # Optional: Enable Cloudflare WARP
-```
+---
 
-## 5) Running
+## 🖥️ Running
 
 ### Quick Start (Windows)
 ```bash
-# Double-click run_app.bat
-# Or use scripts_bat/run_gui.bat
+# Double-click: run_app.bat
 ```
 
 ### Manual Start
@@ -101,72 +195,79 @@ WARP_ENABLED=false         # Optional: Enable Cloudflare WARP
 # Terminal 1: Backend server
 python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 
-# Terminal 2: GUI
+# Terminal 2: GUI (optional)
 python gui/main_gui.py
 ```
 
-### Endpoints
-- Health check: http://127.0.0.1:8000/
-- API docs: http://127.0.0.1:8000/docs
-
-## 6) Directory Structure
-```
-app/
-  main.py              # FastAPI server
-  agent_planner.py     # PLANNER agent
-  agent_synthesizer.py # CRITIC + JUDGE agents
-  model_clients.py     # Multi-API model clients
-  ranker.py            # Source trust ranking
-  search.py            # SearXNG (Google) + WARP proxy
-  weather.py           # Weather API integration
-  trusted_domains.json # 380+ trusted domains
-
-prompts/
-  planner_prompt.txt   # PLANNER instructions
-  critic_prompt.txt    # CRITIC adversarial prompt
-  synthesis_prompt.txt # JUDGE Bayesian reasoning
-
-gui/
-  main_gui.py          # PyQt6 Dark Mode GUI
-
-evaluation/
-  test_dataset_1000.json  # 1000 realistic test samples
-  run_evaluation.py       # Evaluation script
-```
-
-## 7) Evaluation
-
-### Test Dataset
-- 500 TRUE news (real events 2024-2025)
-- 500 FAKE news (zombie news, fabrication, scams, conspiracy)
-
-### Run Evaluation
+### Test the System
 ```bash
-# Ensure server is running first
+# Run 10-claim test
+python test_10_claims.py
+
+# Run full evaluation (1000 claims)
 python evaluation/run_evaluation.py
 ```
+
+---
+
+## 📁 Project Structure
+
+```
+app/
+├── main.py              # FastAPI server + orchestrator
+├── agent_planner.py     # PLANNER agent (query generation)
+├── agent_synthesizer.py # CRITIC + JUDGE agents
+├── fact_check.py        # Google Fact Check API integration
+├── search.py            # DDGS().news() + web search
+├── ranker.py            # Source trust ranking
+├── model_clients.py     # Multi-API model clients
+├── weather.py           # OpenWeather API
+├── tool_executor.py     # Tool orchestration + date routing
+└── trusted_domains.json # 380+ trusted domains
+
+prompts/
+├── planner_prompt.txt   # PLANNER instructions (5+ queries)
+├── critic_prompt.txt    # CRITIC adversarial prompt
+└── synthesis_prompt.txt # JUDGE Bayesian reasoning
+
+evaluation/
+├── test_dataset_1000.json  # 1000 test samples (500 true, 500 fake)
+└── run_evaluation.py       # Evaluation script
+
+gui/
+└── main_gui.py          # PyQt6 Dark Mode GUI
+```
+
+---
+
+## 📊 Evaluation
+
+### Test Dataset
+- **500 TRUE news**: Real events from 2024-2025
+- **500 FAKE news**: Zombie news, fabrication, conspiracy theories, scams
 
 ### Metrics
 - Accuracy, Precision, Recall, F1 Score
 - Confusion Matrix (TIN THẬT vs TIN GIẢ)
 - False Positive/Negative Rate
 
-## 8) Recent Updates (v2.0)
+---
+
+## 📝 Recent Updates (v2.1)
 
 ### December 2024
-- ✅ Removed all guard systems (FAST_CLASSIFIER, CRITIC_GUARD, OUTPUT_GUARD)
-- ✅ Added CRITIC agent with adversarial capabilities
-- ✅ JUDGE uses Bayesian reasoning with Presumption of Truth
-- ✅ KNOWLEDGE vs NEWS claim classification
-- ✅ Internal reasoning for KNOWLEDGE claims
-- ✅ Expanded trusted sources (380+ domains worldwide)
-- ✅ Source ranking: Accept normal sources, reject tabloids/UGC
-- ✅ Realistic test dataset (1000 samples)
-- ✅ Migrated from DuckDuckGo to SearXNG (Google-only)
-- ✅ Cloudflare WARP proxy support for rate limit bypass
-- ✅ Self-hosted SearXNG with Docker Compose
+- ✅ **Dual Flow System**: Date-based routing (3 days threshold)
+- ✅ **Google Fact Check API**: Multi-query (EN + VN) integration
+- ✅ **DDGS().news()**: Proper news search instead of web search
+- ✅ **Absolute Trust**: Fact Check verdict skips entire pipeline
+- ✅ **PLANNER 5+ queries**: Better search coverage
+- ✅ **Cerebras + Groq**: Multi-key API rotation (4 keys each)
+- ✅ **Source Ranking**: 380+ trusted domains worldwide
 
 ---
 
-**Author**: Nguyễn Nhật Minh  
-**Repository**: https://github.com/Minwsun/ZeroFake
+## 👤 Author
+
+**Nguyễn Nhật Minh**  
+GitHub: [@Minwsun](https://github.com/Minwsun)  
+Repository: https://github.com/Minwsun/ZeroFake
