@@ -1177,8 +1177,17 @@ This claim has been fact-checked by {fc_source}. The verdict is {fc_conclusion}.
 
     # =========================================================================
     # PHASE 1.5: CRITIC COUNTER-SEARCH (nếu CRITIC yêu cầu search thêm)
+    # CHỈ thực hiện khi CRITIC phát hiện vấn đề (issues_found=True)
     # =========================================================================
-    if critic_parsed.get("counter_search_needed", False):
+    critic_issues = critic_parsed.get("issues_found", False)
+    if not critic_issues:
+        # Try nested schema
+        adv_findings = critic_parsed.get("adversarial_findings", {})
+        if isinstance(adv_findings, dict):
+            critic_issues = adv_findings.get("issues_found", False)
+    
+    # CHỈ counter-search khi CRITIC phát hiện vấn đề
+    if critic_issues and critic_parsed.get("counter_search_needed", False):
         counter_queries = critic_parsed.get("counter_search_queries", [])
         if counter_queries:
             print(f"\n[CRITIC-SEARCH] CRITIC yêu cầu search thêm: {counter_queries}")
