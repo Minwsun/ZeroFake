@@ -137,13 +137,74 @@ GROQ_API_KEY_4=gsk_...
 - **High confidence skip**: If verdict >=70%, skip Search + CRITIC for speed
 - **Combined analysis**: JUDGE considers Fact Check evidence directly
 
-### 3. News Search Strategy
+### 3. Unified Search System
 
-Using `DDGS().news()` for actual news articles:
+#### Search Flow Diagram
 
-1. **Priority 1**: Vietnamese news (region: vi-vn)
-2. **Priority 2**: International news (region: wt-wt)
-3. **Fallback**: Web search if < 5 news results
+```
+                        +------------------+
+                        |   INPUT QUERY    |
+                        |  (from PLANNER)  |
+                        +--------+---------+
+                                 |
+                                 v
+                  +-----------------------------+
+                  |   STEP 1: GOOGLE NEWS       |
+                  |   - gnews library (free)    |
+                  |   - VN News (~10 results)   |
+                  |   - EN News (~10 results)   |
+                  +-------------+---------------+
+                                |
+                                v
+                  +-----------------------------+
+                  |   STEP 2: WIKIPEDIA         |
+                  |   - wikipedia-api (free)    |
+                  |   - VN + EN entity lookup   |
+                  +-------------+---------------+
+                                |
+                                v
+                       < results < 10? >
+                        /            \
+                      YES             NO
+                       |               |
+                       v               |
+          +------------------------+   |
+          |  STEP 3: GOOGLE WEB    |   |
+          |  - googlesearch-python |   |
+          |  - Top 5 URLs          |   |
+          |  - TRAFILATURA extract |   |
+          +------------+-----------+   |
+                       |               |
+                       v               |
+                < results < 5? >       |
+                 /           \         |
+               YES            NO       |
+                |              |       |
+                v              +---+---+
+     +--------------------+        |
+     |  STEP 4: DDG       |        |
+     |  - duckduckgo      |        |
+     |  - News + Web      |        |
+     +----------+---------+        |
+                |                  |
+                +--------+---------+
+                         |
+                         v
+                +------------------+
+                |  OUTPUT: 15-20   |
+                |  Evidence Items  |
+                +------------------+
+```
+
+#### Libraries Used
+
+| Library | Source | Purpose |
+|---------|--------|---------|
+| `gnews` | Google News | Latest news articles |
+| `wikipedia-api` | Wikipedia | Entity verification |
+| `googlesearch-python` | Google Web | URL extraction |
+| `trafilatura` | Any URL | Article content extraction |
+| `duckduckgo_search` | DuckDuckGo | Fallback search |
 
 ### 4. Multi-Agent Cognitive System
 
