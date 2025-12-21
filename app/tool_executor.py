@@ -284,7 +284,6 @@ async def execute_tool_plan(plan: dict, site_query_string: str, flash_mode: bool
 	from datetime import datetime, timedelta
 	
 	main_claim = plan.get("main_claim", "")
-	skip_search = False
 	
 	# Check if claim mentions recent date (within 1 week)
 	today = datetime.now().date()
@@ -361,19 +360,18 @@ async def execute_tool_plan(plan: dict, site_query_string: str, flash_mode: bool
 							"fact_check_confidence": confidence
 						})
 					
-					# ABSOLUTE TRUST: If Fact Check has verdict, use it directly
+					# Store Fact Check verdict for JUDGE to consider
 					if best_conclusion and best_confidence >= 70:
-						print(f"[FACT-CHECK] ✓ ABSOLUTE VERDICT: {best_conclusion} ({best_confidence}%) from {best_source}")
+						print(f"[FACT-CHECK] ✓ Found verdict: {best_conclusion} ({best_confidence}%) from {best_source}")
 						evidence_bundle["fact_check_verdict"] = {
 							"conclusion": best_conclusion,
 							"confidence": best_confidence,
 							"source": best_source,
-							"url": best_url,
-							"skip_pipeline": True  # Signal to skip CRITIC/JUDGE
+							"url": best_url
 						}
-						skip_search = True
+						print(f"[FACT-CHECK] Verdict added to evidence → JUDGE will make final decision")
 					else:
-						print(f"[OLD INFO] Fact Check inconclusive → Continuing with search")
+						print(f"[FACT-CHECK] Inconclusive rating, continuing with search")
 				else:
 					print(f"[OLD INFO] No Fact Check results → Continuing with search")
 			except Exception as e:
@@ -385,10 +383,7 @@ async def execute_tool_plan(plan: dict, site_query_string: str, flash_mode: bool
 		tool_name = module.get("tool_name")
 		parameters = module.get("parameters", {})
 		if tool_name == "search":
-			# Skip search if fact check already found results (for old info)
-			if skip_search:
-				print(f"[SKIP] Search skipped - Fact Check already provided evidence")
-				continue
+			# Always run search - JUDGE will consider both Fact Check + Search evidence
 			tasks.append(_execute_search_tool(parameters, site_query_string, flash_mode=flash_mode))
 		elif tool_name == "weather":
 			# Thêm tool weather với OpenWeather API
