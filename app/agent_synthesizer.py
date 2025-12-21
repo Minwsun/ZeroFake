@@ -1542,7 +1542,8 @@ This claim has been fact-checked by {fc_source}. The verdict is {fc_conclusion}.
     if not isinstance(needs_more_r1, bool):
         needs_more_r1 = str(needs_more_r1).lower() == "true"
         
-    critic_found_issues = critic_parsed.get("conclusion", {}).get("issues_found", False)
+    critic_conclusion = critic_parsed.get("conclusion", {})
+    critic_found_issues = critic_conclusion.get("issues_found", False) if isinstance(critic_conclusion, dict) else False
     # Mẫu thuẫn: CRITIC bảo OK nhưng JUDGE bảo SAI, hoặc ngược lại
     adversarial_mismatch = (critic_found_issues and conclusion_r1 == "TIN THẬT") or (not critic_found_issues and conclusion_r1 == "TIN GIẢ")
     
