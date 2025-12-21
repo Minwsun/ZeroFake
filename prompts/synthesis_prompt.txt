@@ -50,6 +50,11 @@ ELIF claim là SỰ KIỆN CỤ THỂ (thể thao, bầu cử, sản phẩm):
         
 ELIF claim là KIẾN THỨC CHUNG (địa lý, lịch sử, khoa học):
     → Dùng kiến thức AI (VD: Hà Nội là thủ đô VN)
+
+ELIF claim là SỰ KIỆN CŨ (>1 năm trước, trước tháng 12/2024):
+    → AI ĐÃ BIẾT trong training data → Dùng kiến thức AI
+    → Ví dụ: SEA Games 33 (2025), Messi vô địch WC 2022, VinFast IPO 2023
+    → KHÔNG CẦN evidence từ nguồn bên ngoài
     
 ELIF evidence không rõ ràng:
     → Dùng KIẾN THỨC AI + suy luận để quyết định
