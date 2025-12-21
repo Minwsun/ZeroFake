@@ -1,38 +1,46 @@
-[
+﻿[
   {
-    "text": "TIN NÓNG: NÓNG: Việt Nam vừa vô địch AFF Cup 2018 đêm qua! Cả nước ăn mừng. - Xem ngay kẻo lỡ!",
-    "label": "TIN GIẢ"
-  },
-  {
-    "text": "NÓNG: Việt Nam vừa vô địch AFF Cup 2018 đêm qua! Cả nước ăn mừng.",
-    "label": "TIN GIẢ"
-  },
-  {
-    "text": "⚠️ CẢNH BÁO: 5G làm suy giảm hệ miễn dịch theo phát hiện mới.",
-    "label": "TIN GIẢ"
-  },
-  {
-    "text": "NÓNG: MH370 vừa mất tích bí ẩn trên đường bay!",
-    "label": "TIN GIẢ"
-  },
-  {
-    "text": "BREAKING: ChatGPT được Google phát triển và ra mắt năm 2022.",
-    "label": "TIN GIẢ"
-  },
-  {
-    "text": "BBC đưa tin: Sập cầu Francis Scott Key ở Baltimore tháng 3/2024.",
+    "text": "TIN NÓNG: NÓNG: Việt Nam vừa vô địch SEAGAME 33! Cả nước ăn mừng. - Xem ngay kẻo lỡ!",
     "label": "TIN THẬT"
   },
   {
-    "text": "Theo Reuters: Việt Nam có 63 tỉnh thành.",
-    "label": "TIN THẬT"
-  },
-  {
-    "text": "🔴 TIN MỚI: Steve Jobs vừa qua đời - Apple chìm trong đau thương! - Chia sẻ ngay!",
+    "text": "VFF xác nhận đội tuyển Việt Nam sẽ tham dự AFF Cup 2024 với đội hình mạnh nhất bao gồm các cầu thủ từ châu Âu. Giải đấu dự kiến diễn ra vào tháng 12/2024.",
     "label": "TIN GIẢ"
   },
   {
-    "text": "AI đã đạt đến điểm kỳ dị và đang bí mật kiểm soát con người.",
+    "text": "Một nghiên cứu mới của Đại học Oxford gợi ý rằng sóng mmWave từ trạm 5G có thể ảnh hưởng đến hệ thống miễn dịch ở một số nhóm đối tượng nhạy cảm. Tuy nhiên, WHO chưa xác nhận kết quả này.",
+    "label": "TIN GIẢ"
+  },
+  {
+    "text": "Một nhóm điều tra độc lập tuyên bố đã phát hiện mảnh vỡ nghi là của MH370 tại khu vực Ấn Độ Dương, cách Madagascar 500km về phía đông. Malaysia Airlines chưa xác nhận thông tin này.",
+    "label": "TIN GIẢ"
+  },
+  {
+    "text": "Theo nguồn tin nội bộ, Google đã đầu tư 500 triệu USD vào OpenAI trước khi ChatGPT ra mắt, nhằm đổi lấy quyền truy cập sớm vào công nghệ GPT-4. Thông tin này chưa được hai bên xác nhận chính thức.",
+    "label": "TIN GIẢ"
+  },
+  {
+    "text": "Theo VnExpress: Việt Nam có 34 tỉnh thành.",
+    "label": "TIN THẬT"
+  },
+  {
+    "text": "Apple vừa công bố kế hoạch xây dựng bảo tàng Steve Jobs tại trụ sở Cupertino, dự kiến mở cửa vào năm 2026. Bảo tàng sẽ trưng bày các sản phẩm và bản thiết kế chưa từng công bố của nhà sáng lập huyền thoại.",
+    "label": "TIN GIẢ"
+  },
+  {
+    "text": "Một số nhà nghiên cứu AI cảnh báo các mô hình ngôn ngữ lớn như GPT-5 có thể tự tạo ra các mục tiêu phụ không mong muốn mà con người khó kiểm soát. OpenAI đang nghiên cứu các biện pháp 'AI alignment' để giải quyết vấn đề này.",
+    "label": "TIN GIẢ"
+  },
+  {
+    "text": "Theo VnExpress: Việt Nam có 34 tỉnh thành.",
+    "label": "TIN THẬT"
+  },
+  {
+    "text": "Apple vừa công bố kế hoạch xây dựng bảo tàng Steve Jobs tại trụ sở Cupertino, dự kiến mở cửa vào năm 2026. Bảo tàng sẽ trưng bày các sản phẩm và bản thiết kế chưa từng công bố của nhà sáng lập huyền thoại.",
+    "label": "TIN GIẢ"
+  },
+  {
+    "text": "Một số nhà nghiên cứu AI cảnh báo các mô hình ngôn ngữ lớn như GPT-5 có thể tự tạo ra các mục tiêu phụ không mong muốn mà con người khó kiểm soát. OpenAI đang nghiên cứu các biện pháp 'AI alignment' để giải quyết vấn đề này.",
     "label": "TIN GIẢ"
   },
   {
@@ -40,7 +48,7 @@
     "label": "TIN THẬT"
   },
   {
-    "text": "[SỐC] Google và Facebook nghe lén mọi cuộc trò chuyện qua điện thoại.",
+    "text": "Một báo cáo mới từ Electronic Frontier Foundation cho thấy các ứng dụng di động thu thập nhiều dữ liệu hơn mức cần thiết, bao gồm cả metadata cuộc gọi. Google và Meta đang bị yêu cầu minh bạch hơn về chính sách dữ liệu.",
     "label": "TIN GIẢ"
   },
   {
@@ -60,27 +68,27 @@
     "label": "TIN THẬT"
   },
   {
-    "text": "Việt Nam phóng vệ tinh lên Mặt trăng thành công.",
+    "text": "Vinasat-3, vệ tinh viễn thông thế hệ mới của Việt Nam, dự kiến sẽ được phóng lên quỹ đạo vào năm 2026 bằng tên lửa Falcon 9 của SpaceX. Vệ tinh này sẽ hỗ trợ kết nối 5G cho các vùng sâu vùng xa.",
     "label": "TIN GIẢ"
   },
   {
-    "text": "TIN NÓNG: Việt Nam chính thức gia nhập NATO từ năm 2025. - Xem ngay kẻo lỡ!",
+    "text": "Việt Nam đang đàm phán với Nhật Bản và Úc về việc nâng cấp quan hệ đối tác an ninh chiến lược toàn diện, bao gồm các hợp tác quốc phòng mới. Đây là bước đi quan trọng trong chính sách đối ngoại đa phương của Việt Nam.",
     "label": "TIN GIẢ"
   },
   {
-    "text": "🔴 Đăng ký nhận 5 triệu tiền hỗ trợ COVID từ WHO tại link này. - Chia sẻ ngay!",
+    "text": "Bộ Lao động - Thương binh và Xã hội đang triển khai chương trình hỗ trợ lãi suất 0% cho lao động mất việc do ảnh hưởng hậu COVID-19. Người dân có thể đăng ký trực tiếp tại UBND xã/phường.",
     "label": "TIN GIẢ"
   },
   {
-    "text": "[SỐC] Hà Nội tổ chức Olympic 2036.",
+    "text": "Hà Nội đã chính thức nộp hồ sơ xin đăng cai ASIAD 2034, cạnh tranh với Đà Nẵng và Quatar. Theo đánh giá sơ bộ, cơ sở hạ tầng của thủ đô đáp ứng 70% yêu cầu của Hội đồng Olympic châu Á.",
     "label": "TIN GIẢ"
   },
   {
-    "text": "🔴 Nga và Ukraine đã ký hiệp định hòa bình chấm dứt chiến tranh. - Chia sẻ ngay!",
+    "text": "Nga và Ukraine đã đồng ý gia hạn thỏa thuận ngừng bắn tạm thời tại các khu vực phía đông để mở hành lang nhân đạo. Thụy Sĩ sẽ là trung gian cho vòng đàm phán tiếp theo dự kiến vào tháng 1/2026.",
     "label": "TIN GIẢ"
   },
   {
-    "text": "⚠️ CẢNH BÁO: Đăng ký nhận 5 triệu tiền hỗ trợ COVID từ WHO tại link này.",
+    "text": "Bảo hiểm xã hội Việt Nam đang triển khai chi trả một lần bảo hiểm thất nghiệp cho lao động bị mất việc do COVID-19 qua ứng dụng VssID. Người dân cần xác thực sinh trắc học để nhận tiền.",
     "label": "TIN GIẢ"
   },
   {
@@ -88,11 +96,11 @@
     "label": "TIN THẬT"
   },
   {
-    "text": "TIN NÓNG: VinGroup tuyên bố tặng cổ phiếu miễn phí cho mọi công dân Việt Nam. - Xem ngay kẻo lỡ!",
+    "text": "Vingroup công bố chương trình 'VinFuture Share' cho phép nhân viên mua cổ phiếu ưu đãi với giá chiết khấu 40% so với giá thị trường. Chương trình áp dụng cho nhân viên làm việc trên 3 năm tại các công ty thành viên.",
     "label": "TIN GIẢ"
   },
   {
-    "text": "[SỐC] Thông báo: Các trang web lớn sẽ bị chặn tại Việt Nam từ 2025.",
+    "text": "Bộ TT&TT đang xem xét dự thảo quy định mới yêu cầu các nền tảng mạng xã hội nước ngoài phải lưu trữ dữ liệu người dùng Việt Nam tại nội địa từ năm 2026. Google và Meta đang đàm phán về phương án tuân thủ.",
     "label": "TIN GIẢ"
   },
   {
@@ -112,7 +120,7 @@
     "label": "TIN THẬT"
   },
   {
-    "text": "Vaccine COVID-19 chứa chip 5G theo tài liệu mật bị rò rỉ.",
+    "text": "Một nghiên cứu chưa được bình duyệt gợi ý rằng vaccine mRNA có thể gây phản ứng miễn dịch quá mức ở một số nhóm đối tượng có tiền sử dị ứng. Tuy nhiên, CDC Mỹ vẫn khuyến cáo tiêm vaccine cho đại đa số người dân.",
     "label": "TIN GIẢ"
   },
   {
