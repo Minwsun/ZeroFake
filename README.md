@@ -147,11 +147,11 @@ Using `DDGS().news()` for actual news articles:
 
 ### 4. Multi-Agent Cognitive System
 
-| Agent | Role | Model |
-|-------|------|-------|
-| **PLANNER** | Generate 5+ search queries | Qwen 3 32B (Cerebras) |
-| **CRITIC** | Adversarial analysis, find weaknesses | Llama 3.3 70B (Cerebras -> Groq fallback) |
-| **JUDGE** | Final verdict with Bayesian reasoning | Llama 3.3 70B (Cerebras -> Groq fallback) |
+| Agent | Role | Model (Primary -> Fallback) |
+|-------|------|------------------------------|
+| **PLANNER** | Generate 5+ search queries | Qwen 3 32B (Cerebras) -> Llama 8B -> Gemma |
+| **CRITIC** | Adversarial analysis, find weaknesses | Qwen 3 32B (Cerebras) -> Llama 8B -> Gemma |
+| **JUDGE** | Final verdict with Bayesian reasoning | Llama 3.3 70B (Cerebras) -> Llama 3.3 70B (Groq) -> Gemma |
 
 ### 5. Binary Source Ranking
 
