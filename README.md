@@ -142,58 +142,61 @@ GROQ_API_KEY_4=gsk_...
 #### Search Flow Diagram
 
 ```
-                        +------------------+
-                        |   INPUT QUERY    |
-                        |  (from PLANNER)  |
-                        +--------+---------+
-                                 |
-                                 v
-                  +-----------------------------+
-                  |   STEP 1: GOOGLE NEWS       |
-                  |   - gnews library (free)    |
-                  |   - VN News (~10 results)   |
-                  |   - EN News (~10 results)   |
-                  +-------------+---------------+
-                                |
-                                v
-                  +-----------------------------+
-                  |   STEP 2: WIKIPEDIA         |
-                  |   - wikipedia-api (free)    |
-                  |   - VN + EN entity lookup   |
-                  +-------------+---------------+
-                                |
-                                v
-                       < results < 10? >
-                        /            \
-                      YES             NO
-                       |               |
-                       v               |
-          +------------------------+   |
-          |  STEP 3: GOOGLE WEB    |   |
-          |  - googlesearch-python |   |
-          |  - Top 5 URLs          |   |
-          |  - TRAFILATURA extract |   |
-          +------------+-----------+   |
-                       |               |
-                       v               |
-                < results < 5? >       |
-                 /           \         |
-               YES            NO       |
-                |              |       |
-                v              +---+---+
-     +--------------------+        |
-     |  STEP 4: DDG       |        |
-     |  - duckduckgo      |        |
-     |  - News + Web      |        |
-     +----------+---------+        |
-                |                  |
-                +--------+---------+
-                         |
-                         v
-                +------------------+
-                |  OUTPUT: 15-20   |
-                |  Evidence Items  |
-                +------------------+
+                         ┌─────────────────────┐
+                         │    INPUT QUERY      │
+                         │   (from PLANNER)    │
+                         └──────────┬──────────┘
+                                    ▼
+                         ┌─────────────────────┐
+                         │   GOOGLE NEWS       │
+                         │ gnews VN + EN       │
+                         │ (~20 results)       │
+                         └──────────┬──────────┘
+                                    ▼
+                         ┌─────────────────────┐
+                         │     WIKIPEDIA       │
+                         │ wikipedia-api       │
+                         │ VN + EN lookup      │
+                         └──────────┬──────────┘
+                                    ▼
+                         ┌─────────────────────┐
+                         │   results < 10?     │
+                         └──────────┬──────────┘
+                                    │
+                    ┌───────────────┴───────────────┐
+                    ▼                               ▼
+            ┌───────────────┐               ┌───────────────┐
+            │      YES      │               │      NO       │
+            └───────┬───────┘               └───────┬───────┘
+                    ▼                               │
+            ┌───────────────┐                       │
+            │  GOOGLE WEB   │                       │
+            │ googlesearch  │                       │
+            │ + TRAFILATURA │                       │
+            └───────┬───────┘                       │
+                    ▼                               │
+            ┌───────────────┐                       │
+            │ results < 5?  │                       │
+            └───────┬───────┘                       │
+                    │                               │
+            ┌───────┴───────┐                       │
+            ▼               ▼                       │
+    ┌───────────────┐ ┌───────────┐                 │
+    │      YES      │ │    NO     │                 │
+    └───────┬───────┘ └─────┬─────┘                 │
+            ▼               │                       │
+    ┌───────────────┐       │                       │
+    │  DDG FALLBACK │       │                       │
+    │ News + Web    │       │                       │
+    └───────┬───────┘       │                       │
+            │               │                       │
+            └───────────────┴───────────────────────┘
+                            │
+                            ▼
+                    ┌───────────────────┐
+                    │  OUTPUT: 15-20    │
+                    │  Evidence Items   │
+                    └───────────────────┘
 ```
 
 #### Libraries Used
@@ -295,13 +298,19 @@ gui/
 
 ---
 
-## Recent Updates (v2.1)
+## Recent Updates (v2.2)
 
-### December 2024
+### December 2025
+- **Unified Search System**: Multi-source search with GNews + Wikipedia + Googlesearch + Trafilatura + DDG fallback
+- **Google News Integration**: gnews library for latest news (VN + EN)
+- **Wikipedia API**: Direct entity verification (wikipedia-api)
+- **Article Extraction**: trafilatura for full content extraction from URLs
+- **Anti-block Measures**: Random delays, user-agent rotation, WARP proxy support
+- **English Query Translation**: Comprehensive VN-to-EN translation dictionary
+- **JUDGE AI Reasoning**: Trust AI knowledge for old events (>1 year), trust evidence for new events (2025+)
 - **Optimized Dual Flow**: Old info (>3 days) with Fact Check verdict >=70% skips Search + CRITIC
 - **Smart Search Skip**: Saves latency when Fact Check API has high confidence result
 - **Google Fact Check API**: Multi-query (EN + VN) integration
-- **DDGS().news()**: Proper news search instead of web search
 - **PLANNER 5+ queries**: Better search coverage (backup if Fact Check fails)
 - **FAISS KB Cache**: Semantic deduplication (85% similarity threshold)
 - **Cerebras + Groq**: Multi-key API rotation (4 keys each)
