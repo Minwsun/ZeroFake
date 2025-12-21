@@ -7,57 +7,29 @@ from urllib.parse import urlparse
 from datetime import datetime
 
 
-# Danh sách các domain báo chí uy tín (để phát hiện domain giả)
-TRUSTED_NEWS_DOMAINS = {
-    "vnexpress.net", "dantri.com.vn", "tuoitre.vn", "thanhnien.vn", "vietnamnet.vn",
-    "vtv.vn", "vov.vn", "nhandan.vn", "qdnd.vn", "cand.com.vn", "ttxvn.vn",
-    "znews.vn", "laodong.vn", "tienphong.vn", "sggp.org.vn", "hanoimoi.com.vn",
-    "kenh14.vn", "vietnamplus.vn", "baotintuc.vn", "vnanet.vn",
-    "bbc.com", "nytimes.com", "reuters.com", "apnews.com", "afp.com",
-    "cnn.com", "theguardian.com", "washingtonpost.com", "wsj.com"
-}
-
-# Đuôi domain đáng ngờ (thường dùng cho domain giả)
-SUSPICIOUS_TLDS = {'.info', '.xyz', '.top', '.click', '.online', '.site', '.website', '.space', '.store', '.shop'}
+# Suspicious TLDs often used for fake domains
+SUSPICIOUS_TLDS = {'.xyz', '.top', '.click', '.online', '.site', '.website', '.space', '.store', '.shop', '.info', '.tk', '.ml', '.ga', '.cf', '.gq'}
 
 def _is_fake_domain(domain: str) -> bool:
     """
-    Phát hiện domain giả dạng báo chí.
-    Trả về True nếu domain có vẻ là giả (thêm chữ, đổi đuôi, subdomain lạ).
+    Detect fake/typosquatting domains.
+    Returns True if domain looks like a typosquat (suspicious TLD + looks like major brand).
     """
     domain_lower = domain.lower()
     
-    # Kiểm tra đuôi đáng ngờ
+    # Major brands/companies often targeted by typosquatters
+    MAJOR_BRANDS = ['vnexpress', 'dantri', 'tuoitre', 'thanhnien', 'vtv', 'vov', 
+                    'bbc', 'cnn', 'reuters', 'google', 'facebook', 'apple', 'microsoft']
+    
+    # Check for suspicious TLD + brand name
     for tld in SUSPICIOUS_TLDS:
         if domain_lower.endswith(tld):
-            # Nếu domain có tên giống báo chí nhưng dùng đuôi lạ → có thể là giả
-            for trusted in TRUSTED_NEWS_DOMAINS:
-                trusted_base = trusted.split('.')[0]  # Lấy phần đầu (ví dụ: "vnexpress" từ "vnexpress.net")
-                if trusted_base in domain_lower and domain_lower != trusted:
-                    print(f"Ranker: Phát hiện domain giả (đuôi lạ): {domain} (giống {trusted})")
+            for brand in MAJOR_BRANDS:
+                if brand in domain_lower:
+                    print(f"Ranker: Phát hiện domain giả (typosquat): {domain}")
                     return True
     
-    # Kiểm tra domain giả bằng cách thêm chữ (ví dụ: vnexpresss.com)
-    for trusted in TRUSTED_NEWS_DOMAINS:
-        trusted_parts = trusted.split('.')
-        if len(trusted_parts) >= 2:
-            trusted_base = trusted_parts[0]  # "vnexpress"
-            trusted_tld = '.' + '.'.join(trusted_parts[1:])  # ".net"
-            
-            # Kiểm tra nếu domain có tên giống nhưng thêm chữ hoặc đổi đuôi
-            if trusted_base in domain_lower:
-                # Nếu domain khác với domain uy tín → có thể là giả
-                if domain_lower != trusted and domain_lower != f"www.{trusted}":
-                    # Kiểm tra xem có phải là subdomain hợp lệ không
-                    if not domain_lower.endswith('.' + trusted):
-                        # Có thể là domain giả (thêm chữ hoặc đổi đuôi)
-                        # Ví dụ: vnexpresss.com, vnexpress.vip, vnexpress.news.today
-                        if len(domain_lower) > len(trusted) + 2:  # Thêm chữ
-                            print(f"Ranker: Phát hiện domain giả (thêm chữ): {domain} (giống {trusted})")
-                            return True
-                        elif not domain_lower.endswith(trusted_tld):  # Đổi đuôi
-                            print(f"Ranker: Phát hiện domain giả (đổi đuôi): {domain} (giống {trusted})")
-                            return True
+    return False
     
     return False
 

@@ -22,7 +22,6 @@ GOOGLE_CSE_ID = os.getenv("GOOGLE_CSE_ID")
 MAX_RESULTS = 40  # Tăng từ 20 để thu thập nhiều evidence hơn
 SEARXNG_TIMEOUT = 30  # Timeout cho SearXNG requests
 DDG_TIMEOUT = 20  # Timeout cho DuckDuckGo fallback
-_TRUSTED_DOMAINS_CACHE = None
 
 # Keywords indicating international events that need English search
 INTERNATIONAL_KEYWORDS = [
@@ -96,73 +95,14 @@ def _ensure_news_keyword(query: str) -> str:
     return query
 
 
-def _load_trusted_domains() -> tuple[set, set]:
-    global _TRUSTED_DOMAINS_CACHE
-    if _TRUSTED_DOMAINS_CACHE is not None:
-        return _TRUSTED_DOMAINS_CACHE
-
-    tier0_default = {
-        'chinhphu.vn', 'moh.gov.vn', 'moet.gov.vn', 'mof.gov.vn',
-        'sbv.gov.vn', 'vncert.gov.vn', 'who.int', 'un.org', 'worldbank.org',
-        'imf.org', 'ec.europa.eu', 'reuters.com', 'apnews.com', 'afp.com',
-        'bbc.com', 'nytimes.com', 'theguardian.com', 'washingtonpost.com',
-        'wsj.com', 'ft.com', 'vnexpress.net', 'dantri.com.vn', 'tuoitre.vn',
-        'thanhnien.vn', 'vietnamnet.vn', 'vtv.vn', 'vov.vn', 'nhandan.vn',
-        'qdnd.vn', 'cand.com.vn', 'laodong.vn', 'tienphong.vn', 'zingnews.vn',
-    }
-    tier1_default = {
-        'bloomberg.com', 'cnbc.com', 'forbes.com', 'yahoo.com', 'marketwatch.com',
-        'nature.com', 'science.org', 'sciencemag.org', 'techcrunch.com', 'wired.com',
-        'theverge.com', 'engadget.com', 'pcmag.com', 'cnet.com', 'cointelegraph.com',
-        'coindesk.com', 'apple.com', 'microsoft.com', 'google.com',
-    }
-
-    tier0 = {d.lower() for d in tier0_default}
-    tier1 = {d.lower() for d in tier1_default}
-
-    json_path = os.path.join(os.path.dirname(__file__), "trusted_domains.json")
-    try:
-        with open(json_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        tier0.update(d.lower() for d in data.get("tier0") or [])
-        tier1.update(d.lower() for d in data.get("tier1") or [])
-    except FileNotFoundError:
-        pass
-    except Exception as exc:
-        print(f"WARNING: Cannot load trusted_domains.json: {exc}")
-
-    _TRUSTED_DOMAINS_CACHE = (tier0, tier1)
-    return _TRUSTED_DOMAINS_CACHE
-
-
-def _source_tier(domain: str) -> int:
-    tier0, tier1 = _load_trusted_domains()
-    d = (domain or "").lower().replace("www.", "")
-    if d.endswith((".gov", ".gov.vn")) or d in tier0:
-        return 0
-    if d in tier1:
-        return 1
-
-    keywords = (
-        "news", "press", "times", "post", "journal", "tribune", "herald",
-        "finance", "market", "economy", "business", "weather", "climate",
-        "meteo", "forecast", "sport", "sports", "soccer", "football",
-        "tech", "technology", "science", "nature", "academy"
-    )
-    if any(k in d for k in keywords):
-        return 1
-    return 2
-
-
 def _sort_key(item: dict) -> tuple:
-    tier = item.get("source_tier", 2)
-    is_news = item.get("is_news_site", False)
+    """Simple sort by date (newest first)."""
     date_str = item.get("date") or "1970-01-01"
     try:
         ts = datetime.strptime(date_str[:10], "%Y-%m-%d").timestamp()
     except Exception:
         ts = 0
-    return (tier, not is_news, -ts)
+    return (-ts,)  # Sort by date descending
 
 
 def _create_http_client() -> httpx.Client:
@@ -300,33 +240,6 @@ def call_google_search(text_input: str, site_query_string: str) -> list:
             print(f"DuckDuckGo Search lỗi ({region}): {exc}")
             return []
 
-            # SearXNG trả về 'content' thay vì 'body'
-            snippet = r.get("content") or r.get("body") or ""
-            title = r.get("title") or ""
-            if len(snippet) < 30:
-                continue
-
-            domain = urlparse(link).netloc.lower().replace("www.", "")
-            is_news_site = any(kw in domain for kw in [
-                "vnexpress", "dantri", "tuoitre", "thanhnien", "vietnamnet", "vtv", "vov",
-                "nhandan", "qdnd", "cand", "znews", "laodong", "tienphong", "kenh14",
-                "bbc", "nytimes", "reuters", "apnews", "afp", "cnn", "theguardian",
-                "washingtonpost", "wsj", "news", "press", "post", "times"
-            ])
-
-            # SearXNG có thể trả về 'publishedDate'
-            date = r.get("publishedDate") or r.get("date") or None
-
-            all_items.append({
-                "title": title,
-                "link": link,
-                "snippet": snippet,
-                "pagemap": {},
-                "date": date,
-                "is_news_site": is_news_site,
-                "source_tier": _source_tier(domain),
-            })
-
     def _ingest_ddg(results):
         """Ingest results từ DuckDuckGo format."""
         for r in results:
@@ -340,39 +253,28 @@ def call_google_search(text_input: str, site_query_string: str) -> list:
             if len(snippet) < 30:
                 continue
 
-            domain = urlparse(link).netloc.lower().replace("www.", "")
-            is_news_site = any(kw in domain for kw in [
-                "vnexpress", "dantri", "tuoitre", "thanhnien", "vietnamnet", "vtv", "vov",
-                "nhandan", "qdnd", "cand", "znews", "laodong", "tienphong", "kenh14",
-                "bbc", "nytimes", "reuters", "apnews", "afp", "cnn", "theguardian",
-                "washingtonpost", "wsj", "news", "press", "post", "times",
-                "techcrunch", "theverge", "wired", "engadget", "cnet",
-            ])
-
             all_items.append({
                 "title": title,
                 "link": link,
                 "snippet": snippet,
                 "pagemap": {},
                 "date": r.get("date") or None,
-                "is_news_site": is_news_site,
-                "source_tier": _source_tier(domain),
             })
 
     # 1. Search Vietnamese sources
     print(f"  [DDG] Searching Vietnamese: {query_vi[:60]}...")
-    _ingest(_run_ddg(query_vi, timelimit, region="vi-vn"))
+    _ingest_ddg(_run_ddg(query_vi, timelimit, region="vi-vn"))
 
     # 2. Search worldwide (wt-wt) for international reach
     print(f"  [DDG] Searching Worldwide: {cleaned_input[:60]}...")
-    _ingest(_run_ddg(cleaned_input, timelimit, region="wt-wt"))
+    _ingest_ddg(_run_ddg(cleaned_input, timelimit, region="wt-wt"))
 
     # 3. If international event, also search in English
     if _is_international_event(text_input):
         en_query = _extract_english_query(cleaned_input)
         if en_query and len(en_query) > 10:
             print(f"  [DDG] Searching English: {en_query[:60]}...")
-            _ingest(_run_ddg(en_query, timelimit, region="wt-wt"))
+            _ingest_ddg(_run_ddg(en_query, timelimit, region="wt-wt"))
 
     # 4. Fallback enhanced queries if still < 5 results
     if len(all_items) < 5:
@@ -383,14 +285,9 @@ def call_google_search(text_input: str, site_query_string: str) -> list:
         for eq in enhanced_queries:
             if len(all_items) >= 10:
                 break
-            _ingest(_run_ddg(eq, None, region="wt-wt"))
+            _ingest_ddg(_run_ddg(eq, None, region="wt-wt"))
 
     all_items.sort(key=_sort_key)
 
-    for item in all_items:
-        item.pop("is_news_site", None)
-        item.pop("source_tier", None)
-
-    source = "DuckDuckGo (fallback)" if use_ddg_fallback else "SearXNG (Google)"
-    print(f"📊 {source}: Tổng cộng {len(all_items)} bằng chứng.")
+    print(f"📊 DuckDuckGo: Tổng cộng {len(all_items)} bằng chứng.")
     return all_items[:MAX_RESULTS]
