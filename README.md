@@ -54,17 +54,16 @@ The system uses a multi-agent cognitive architecture with:
             │                     │           ┌───────┴───────┐
             │                     │           ▼               ▼
             │                     │      Found Result    No Result
-            │                     │    (Add to Evidence)      │
+            │                     │     (Skip CRITIC)         │
             │                     │           │               ▼
             │                     │           │          DDG Search
             │                     │           │               │
+            │                     │           │               ▼
+            │                     │           │          ┌────────┐
+            │                     │           │          │ CRITIC │
+            │                     │           │          └────┬───┘
+            │                     │           │               │
             └─────────────────────┴───────────┴───────────────┘
-                                  ▼
-                         ┌─────────────────┐
-                         │     CRITIC      │
-                         │  (Adversarial   │
-                         │   Analysis)     │
-                         └────────┬────────┘
                                   ▼
                          ┌─────────────────┐
                          │     JUDGE       │
@@ -121,14 +120,16 @@ GROQ_API_KEY_4=gsk_...
 
 | Flow Type | Condition | Action |
 |-----------|-----------|--------|
-| **RECENT NEWS** | Claim within 3 days | Skip Fact Check → Search news directly |
-| **OLD INFO** | Claim older than 3 days | Fact Check API first → Add to evidence |
+| **RECENT NEWS** | Claim within 3 days | Search → CRITIC → JUDGE |
+| **OLD INFO** | Claim older than 3 days | Fact Check API first |
+| ↳ Fact Check ≥70% | High confidence verdict | Skip Search + CRITIC → JUDGE |
+| ↳ Fact Check miss | No results found | Fallback: Search → CRITIC → JUDGE |
 
 ### 2. Google Fact Check API Integration
 
 - **Multi-query search**: 3 English + 3 Vietnamese queries per claim
-- **Evidence for JUDGE**: Fact Check results added to evidence bundle for JUDGE decision
-- **Combined analysis**: JUDGE considers both Fact Check + Search results
+- **High confidence skip**: If verdict ≥70%, skip Search + CRITIC for speed
+- **Combined analysis**: JUDGE considers Fact Check evidence directly
 
 ### 3. News Search Strategy
 
@@ -255,11 +256,11 @@ gui/
 ## 📝 Recent Updates (v2.1)
 
 ### December 2024
-- ✅ **Dual Flow System**: Date-based routing (3 days threshold)
+- ✅ **Optimized Dual Flow**: Old info (>3 days) with Fact Check verdict ≥70% skips Search + CRITIC
+- ✅ **Smart Search Skip**: Saves latency when Fact Check API has high confidence result
 - ✅ **Google Fact Check API**: Multi-query (EN + VN) integration
 - ✅ **DDGS().news()**: Proper news search instead of web search
-- ✅ **Absolute Trust**: Fact Check verdict skips entire pipeline
-- ✅ **PLANNER 5+ queries**: Better search coverage
+- ✅ **PLANNER 5+ queries**: Better search coverage (backup if Fact Check fails)
 - ✅ **Cerebras + Groq**: Multi-key API rotation (4 keys each)
 - ✅ **Source Ranking**: 380+ trusted domains worldwide
 

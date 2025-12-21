@@ -383,8 +383,12 @@ async def execute_tool_plan(plan: dict, site_query_string: str, flash_mode: bool
 		tool_name = module.get("tool_name")
 		parameters = module.get("parameters", {})
 		if tool_name == "search":
-			# Always run search - JUDGE will consider both Fact Check + Search evidence
-			tasks.append(_execute_search_tool(parameters, site_query_string, flash_mode=flash_mode))
+			# Skip search if Fact Check has HIGH confidence verdict (≥70%)
+			fact_verdict = evidence_bundle.get("fact_check_verdict")
+			if fact_verdict and fact_verdict.get("confidence", 0) >= 70:
+				print(f"[SEARCH] Skipping search - Fact Check has high confidence verdict ({fact_verdict.get('confidence')}%)")
+			else:
+				tasks.append(_execute_search_tool(parameters, site_query_string, flash_mode=flash_mode))
 		elif tool_name == "weather":
 			# Thêm tool weather với OpenWeather API
 			tasks.append(_execute_weather_tool(parameters, flash_mode=flash_mode))
