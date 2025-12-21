@@ -348,11 +348,12 @@ async def _handle_check_news_internal(
 ):
     """Internal handler for check_news"""
     try:
-        # Step 1: Check KB Cache (FAISS + SQLite)
-        cached_result = await asyncio.to_thread(search_knowledge_base, request.text)
-        if cached_result:
-            logger.info("KB cache hit - returning cached result")
-            return CheckResponse(**cached_result)
+        # Step 1: Check KB Cache (FAISS + SQLite) - DISABLED for fresh testing
+        # cached_result = await asyncio.to_thread(search_knowledge_base, request.text)
+        # if cached_result:
+        #     logger.info("KB cache hit - returning cached result")
+        #     return CheckResponse(**cached_result)
+        cached_result = None  # KB disabled
         
         # Step 2: Agent 1 (Planner) creates plan
         print(f"\n{'='*60}")

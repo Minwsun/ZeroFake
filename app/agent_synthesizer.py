@@ -400,16 +400,30 @@ def _parse_json_from_text(text: str) -> dict:
     result = {}
     text_lower = cleaned.lower()
     
-    # Extract conclusion
-    if "tin giả" in text_lower or "tin gả" in text_lower or '"conclusion": "tin giả"' in text_lower:
+    # Extract conclusion - multiple patterns
+    if "tin giả" in text_lower or "tin gả" in text_lower or '"conclusion": "tin giả"' in text_lower or "fake" in text_lower:
         result["conclusion"] = "TIN GIẢ"
-    elif "tin thật" in text_lower or "tin that" in text_lower or '"conclusion": "tin thật"' in text_lower:
+    elif "tin thật" in text_lower or "tin that" in text_lower or '"conclusion": "tin thật"' in text_lower or "true news" in text_lower:
         result["conclusion"] = "TIN THẬT"
     
-    # Extract confidence from patterns like "confidence": 85 or confidence_score: 75
-    conf_match = re.search(r'(?:confidence|probability)[_\s]*(?:score)?["\s:]*(\d+)', text_lower)
-    if conf_match:
-        result["confidence_score"] = int(conf_match.group(1))
+    # Extract confidence from multiple patterns
+    # Pattern 1: "confidence": 85, "confidence_score": 75, probability_score: 90
+    conf_patterns = [
+        r'(?:confidence|probability)[_\s]*(?:score)?["\s:]+(\d+)',
+        r'"confidence_score"\s*:\s*(\d+)',
+        r'"probability_score"\s*:\s*(\d+)',
+        r'confidence[:\s]+(\d+)\s*%',
+        r'(\d+)\s*%\s*(?:confidence|chắc chắn)',
+    ]
+    for pattern in conf_patterns:
+        conf_match = re.search(pattern, text_lower)
+        if conf_match:
+            result["confidence_score"] = int(conf_match.group(1))
+            break
+    
+    # If conclusion found but no confidence, default to 70
+    if result.get("conclusion") and not result.get("confidence_score"):
+        result["confidence_score"] = 70  # Default confidence
     
     # Extract reason
     reason_match = re.search(r'"reason"\s*:\s*"([^"]+)"', cleaned, re.IGNORECASE)
@@ -417,7 +431,7 @@ def _parse_json_from_text(text: str) -> dict:
         result["reason"] = reason_match.group(1)
     
     if result.get("conclusion"):
-        print(f"[JSON FALLBACK] Extracted from raw text: {result.get('conclusion')} ({result.get('confidence_score', 'N/A')}%)")
+        print(f"[JSON FALLBACK] Extracted from raw text: {result.get('conclusion')} ({result.get('confidence_score', 70)}%)")
         return result
     
     print(f"LỖI: Agent 2 (Synthesizer) không tìm thấy JSON. Raw response: {cleaned[:300]}...")
@@ -1169,7 +1183,7 @@ This claim has been fact-checked by {fc_source}. The verdict is {fc_conclusion}.
                 if isinstance(conclusion_obj, dict):
                     issue_type = conclusion_obj.get("issue_type", "NONE")
             
-            print(f"[CRITIC] Issues found: {critic_issues}, Type: {issue_type}")
+            # Log moved to after counter-search condition check
             
         except Exception as e:
             print(f"[CRITIC] Gặp lỗi: {e}")
@@ -1186,7 +1200,11 @@ This claim has been fact-checked by {fc_source}. The verdict is {fc_conclusion}.
         if isinstance(adv_findings, dict):
             critic_issues = adv_findings.get("issues_found", False)
     
-    # CHỈ counter-search khi CRITIC phát hiện vấn đề
+    issue_type = critic_parsed.get("issue_type", "NONE")
+    print(f"[CRITIC] Issues found: {critic_issues}, Type: {issue_type}")
+    
+    # CHỈ counter-search khi CRITIC THỰC SỰ phát hiện vấn đề (issues_found=True)
+    # Bỏ qua nếu issues_found=False (dù counter_search_needed=True)
     if critic_issues and critic_parsed.get("counter_search_needed", False):
         counter_queries = critic_parsed.get("counter_search_queries", [])
         if counter_queries:
