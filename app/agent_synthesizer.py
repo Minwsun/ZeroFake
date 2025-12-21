@@ -1133,14 +1133,22 @@ async def execute_final_analysis(
         print(f"\n[COUNTER-SEARCH] JUDGE Round 1 kết luận TIN GIẢ → Tìm dẫn chứng BẢO VỆ claim...")
         
         try:
-            from app.search import call_google_search
+            from app.search import call_google_search, _is_international_event, _extract_english_query
             
-            # Search để tìm dẫn chứng XÁC NHẬN claim (phản biện CRITIC)
-            counter_queries = [
-                f"{text_input} xác nhận",
-                f"{text_input} chứng minh đúng",
-                f"{text_input} official",
-            ]
+            # IMPROVED: Multi-language counter queries
+            counter_queries = []
+            
+            # 1. Vietnamese confirmation query
+            counter_queries.append(f"{text_input} tin tức chính thống")
+            
+            # 2. English for international events (key improvement)
+            if _is_international_event(text_input):
+                en_text = _extract_english_query(text_input)
+                if en_text and len(en_text) > 10:
+                    counter_queries.append(f"{en_text} confirmed official")
+                    counter_queries.append(f"{en_text} news Reuters AP")
+            else:
+                counter_queries.append(f"{text_input} Reuters AFP BBC")
             
             counter_evidence = []
             for query in counter_queries[:2]:  # Chỉ 2 queries để nhanh
@@ -1169,13 +1177,15 @@ async def execute_final_analysis(
                 counter_prompt = counter_prompt.replace("{current_date}", current_date)
                 counter_prompt += f"""
 
-[COUNTER-SEARCH EVIDENCE]
-Đã tìm thêm dẫn chứng CÓ THỂ ủng hộ claim. Hãy xem xét lại kết luận.
+[COUNTER-SEARCH EVIDENCE - QUAN TRỌNG]
+Đã tìm thêm dẫn chứng từ nguồn tin chính thống. Hãy xem xét lại kết luận.
 
-[NGUYÊN TẮC]
-- Nếu dẫn chứng mới XÁC NHẬN claim → TIN THẬT
-- Nếu dẫn chứng mới KHÔNG liên quan → Giữ nguyên TIN GIẢ
-- CHỈ kết luận TIN GIẢ nếu có bằng chứng BÁC BỎ rõ ràng
+[NGUYÊN TẮC BẮT BUỘC - ANTI-HALLUCINATION]
+1. BẠN BẮT BUỘC phải dựa vào evidence trong bundle, KHÔNG ĐƯỢC tự suy diễn
+2. Nếu evidence mới XÁC NHẬN claim (có nguồn uy tín đưa tin) → BẮT BUỘC TIN THẬT
+3. "Không tìm thấy evidence" ≠ TIN GIẢ (Innocent until proven guilty)
+4. CHỈ kết luận TIN GIẢ nếu có bằng chứng BÁC BỎ TRỰC TIẾP claim
+5. Tin quốc tế có thể được Reuters/AP/BBC đưa tin trước báo VN
 
 [CRITIC FEEDBACK TRƯỚC ĐÓ]
 {critic_report}
@@ -1297,15 +1307,22 @@ async def execute_final_analysis(
         
         # 2. Nếu là TIN GIẢ, thêm các queries mang tính "bảo vệ" (Support Search)
         if conclusion_r1 == "TIN GIẢ":
-            unified_queries.extend([
-                f"{text_input} xác nhận",
-                f"{text_input} official news",
-                f"tin tức chính thống {text_input}"
-            ])
+            # IMPROVED: Multi-language support
+            from app.search import _is_international_event, _extract_english_query
+            
+            unified_queries.append(f"{text_input} tin tức chính thống")
+            
+            if _is_international_event(text_input):
+                en_text = _extract_english_query(text_input)
+                if en_text and len(en_text) > 10:
+                    unified_queries.append(f"{en_text} confirmed Reuters AP")
+                    unified_queries.append(f"{en_text} official news")
+            else:
+                unified_queries.append(f"{text_input} official news")
             
         # 3. Fallback queries
         if not unified_queries:
-            unified_queries = [f"{text_input} sự thật", f"{text_input} fact check"]
+            unified_queries = [f"{text_input} fact check", f"{text_input} news"]
             
         # Unique and limit queries (giới hạn 3 queries để nhanh)
         unique_queries = []
