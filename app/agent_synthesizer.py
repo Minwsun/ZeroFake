@@ -1191,8 +1191,10 @@ This claim has been fact-checked by {fc_source}. The verdict is {fc_conclusion}.
             critic_report = "Lỗi khi chạy Critic Agent."
 
     # =========================================================================
-    # PHASE 1.5: CRITIC COUNTER-SEARCH (nếu CRITIC yêu cầu search thêm)
-    # CHỈ thực hiện khi CRITIC phát hiện vấn đề (issues_found=True)
+    # PHASE 1.5: CRITIC COUNTER-SEARCH (nếu CRITIC cần search thêm)
+    # Kích hoạt khi:
+    # - CRITIC phát hiện vấn đề cần verify (issues_found=True AND issue_type != NONE)
+    # - HOẶC CRITIC thiếu bằng chứng để phản biện (evidence_verdict = INSUFFICIENT)
     # =========================================================================
     
     # CRITIC output schema: adversarial_findings.issues_found, adversarial_findings.issue_type
@@ -1205,12 +1207,20 @@ This claim has been fact-checked by {fc_source}. The verdict is {fc_conclusion}.
         critic_issues = critic_parsed.get("issues_found", False)
         issue_type = critic_parsed.get("issue_type", "NONE")
     
-    print(f"[CRITIC] Issues found: {critic_issues}, Type: {issue_type}")
+    # Check if evidence is insufficient (CRITIC cần thêm bằng chứng để phản biện)
+    evidence_assessment = critic_parsed.get("evidence_assessment", {})
+    evidence_verdict = evidence_assessment.get("evidence_verdict", "UNKNOWN") if isinstance(evidence_assessment, dict) else "UNKNOWN"
+    evidence_insufficient = evidence_verdict in ["INSUFFICIENT", "IRRELEVANT"]
     
-    # CHỈ counter-search khi:
-    # 1. CRITIC phát hiện vấn đề (issues_found=True) 
-    # 2. VÀ issue_type KHÔNG phải NONE (có vấn đề cụ thể)
-    should_counter_search = critic_issues and issue_type != "NONE" and critic_parsed.get("counter_search_needed", False)
+    print(f"[CRITIC] Issues found: {critic_issues}, Type: {issue_type}, Evidence: {evidence_verdict}")
+    
+    # Counter-search khi:
+    # 1. CRITIC phát hiện vấn đề cụ thể (issues_found=True AND issue_type != NONE)
+    # 2. HOẶC thiếu bằng chứng để phản biện (evidence_insufficient=True)
+    should_counter_search = (
+        (critic_issues and issue_type != "NONE") or 
+        evidence_insufficient
+    ) and critic_parsed.get("counter_search_needed", False)
     
     if should_counter_search:
         counter_queries = critic_parsed.get("counter_search_queries", [])
