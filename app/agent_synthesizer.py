@@ -29,8 +29,8 @@ CRITIC_PROMPT = ""  # NEW: Prompt cho CRITIC agent
 # SEARCH FLAGS - Cho phép search khi THỰC SỰ cần thiết
 # ==============================================================================
 ENABLE_CRITIC_SEARCH = True     # BẬT - CRITIC search khi thiếu evidence THỰC SỰ
-ENABLE_COUNTER_SEARCH = False   # TẮT - JUDGE không cần search thêm
-ENABLE_SELF_CORRECTION = False  # TẮT - Không có UNIFIED-RE-SEARCH
+ENABLE_COUNTER_SEARCH = True    # BẬT - JUDGE search khi confidence thấp (<70%)
+ENABLE_SELF_CORRECTION = False  # TẮT - Không có UNIFIED-RE-SEARCH (tốn thời gian)
 
 
 # Cài đặt an toàn
@@ -1357,9 +1357,8 @@ This claim has been fact-checked by {fc_source}. The verdict is {fc_conclusion}.
         if q:
             searched_queries.add(q.lower().strip())
     
-    # SMART TRIGGER: Counter-search when JUDGE is less than fully confident (< 85%)
-    # Lower threshold means more counter-searching for potential TIN THẬT
-    judge_uncertain = confidence_r1 < 85
+    # SMART TRIGGER: Counter-search CHỈ khi JUDGE thực sự không chắc chắn (<70%)
+    judge_uncertain = confidence_r1 < 70  # Thấp hơn 70% mới search thêm
     needs_more_evidence = judge_result.get("needs_more_evidence", False)
     if isinstance(needs_more_evidence, str):
         needs_more_evidence = needs_more_evidence.lower() == "true"
@@ -1367,7 +1366,7 @@ This claim has been fact-checked by {fc_source}. The verdict is {fc_conclusion}.
     should_counter_search = (
         ENABLE_COUNTER_SEARCH 
         and conclusion_r1 == "TIN GIẢ" 
-        and (judge_uncertain or needs_more_evidence)  # Only when uncertain
+        and judge_uncertain  # CHỈ khi confidence thấp (<70%)
     )
     
     if should_counter_search:
