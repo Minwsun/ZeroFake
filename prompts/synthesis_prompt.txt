@@ -170,7 +170,7 @@ CRITIC đã phân tích claim và gửi báo cáo. Hãy xem xét:
     }
   },
   
-  "reason": "LÝ DO CHI TIẾT - BẮT BUỘC giải thích logic dẫn đến kết luận (tối thiểu 2 câu)",
+  "reason": "LÝ DO CHI TIẾT VÀ CỤ THỂ - QUAN TRỌNG! (Xem hướng dẫn bên dưới)"
   
   "critic_response": {
     "critic_found_issues": true/false,
@@ -200,5 +200,30 @@ CRITIC đã phân tích claim và gửi báo cáo. Hãy xem xét:
 5. **SCAM patterns luôn là TIN GIẢ** - Không cần verify thêm
 6. **Kiểm tra timestamp** - Tin cũ trình bày như mới = TIN GIẢ
 
+---
+
+## 📝 HƯỚNG DẪN VIẾT REASON (QUAN TRỌNG!)
+
+### ❌ KHÔNG VIẾT KIỂU NÀY (Chung chung, vô nghĩa):
+- "Claim không có evidence hỗ trợ từ nguồn tin chính thống"
+- "Evidence cung cấp không liên quan trực tiếp"
+- "Không tìm thấy bằng chứng xác nhận"
+
+### ✅ VIẾT KIỂU NÀY (Cụ thể, người dùng hiểu được):
+
+**Ví dụ TIN GIẢ:**
+- "Claim nói GPT-5 đã ra mắt năm 2025, nhưng theo OpenAI (nguồn: openai.com), GPT-5 chưa được công bố chính thức. Các tin tức tìm được chỉ nói về dự đoán, không phải thông báo chính thức."
+- "Đây là ZOMBIE NEWS - Steve Jobs qua đời năm 2011 nhưng claim dùng từ 'NÓNG' như tin mới. Sự kiện này đã xảy ra 14 năm trước."
+- "Claim nói 'chưa được xác nhận' - tức là bản thân claim thừa nhận đây là tin đồn chưa được verify."
+
+**Ví dụ TIN THẬT:**
+- "Real Madrid vô địch Champions League 2024 được xác nhận bởi UEFA và BBC Sports. Trận chung kết diễn ra ngày 1/6/2024, Real thắng Dortmund 2-0."
+- "VinFast niêm yết Nasdaq tháng 8/2023 được xác nhận từ Bloomberg và Reuters với mã cổ phiếu VFS."
+
+### MẪU VIẾT REASON:
+```
+"[Tóm tắt claim nói gì]. [Evidence tìm được nói gì - CỤ THỂ nguồn nào]. [Logic dẫn đến kết luận]."
+```
+
 [COMMAND]
-Hãy SUY NGHĨ LOGIC trước khi kết luận. Đọc kỹ claim, phân tích evidence, áp dụng các nguyên tắc, và đưa ra verdict có căn cứ.
+Hãy SUY NGHĨ LOGIC trước khi kết luận. Đọc kỹ claim, phân tích evidence, áp dụng các nguyên tắc, và đưa ra verdict có căn cứ. REASON PHẢI CỤ THỂ để người dùng hiểu TẠI SAO bạn đưa ra kết luận này.
