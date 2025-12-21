@@ -288,7 +288,7 @@ async def execute_tool_plan(plan: dict, site_query_string: str, flash_mode: bool
 	
 	# Check if claim mentions recent date (within 1 week)
 	today = datetime.now().date()
-	one_week_ago = today - timedelta(days=7)
+	three_days_ago = today - timedelta(days=3)
 	
 	# Extract date hints from claim
 	is_recent_news = False
@@ -319,7 +319,7 @@ async def execute_tool_plan(plan: dict, site_query_string: str, flash_mode: bool
 					claim_date = datetime.strptime(f"{groups[0]}/{groups[1]}/{groups[2]}", "%d/%m/%Y").date()
 				elif len(groups) == 3:  # YYYY-MM-DD
 					claim_date = datetime.strptime(f"{groups[0]}-{groups[1]}-{groups[2]}", "%Y-%m-%d").date()
-				if claim_date >= one_week_ago:
+				if claim_date >= three_days_ago:
 					is_recent_news = True
 			except:
 				pass
