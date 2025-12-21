@@ -14,7 +14,7 @@ DELAY_SECONDS = 0  # No rate limiting needed
 
 class EvaluationFramework:
     def __init__(self, dataset_path="evaluation/test_dataset_1000.json"):
-        with open(dataset_path, "r", encoding="utf-8") as f:
+        with open(dataset_path, "r", encoding="utf-8-sig") as f:
             self.dataset = json.load(f)
         self.results = []
         self.start_time = None

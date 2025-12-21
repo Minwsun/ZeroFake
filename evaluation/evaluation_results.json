@@ -1,0 +1,112 @@
+[
+  {
+    "text": "TIN NÓNG: NÓNG: Việt Nam vừa vô địch SEAGAME 33! Cả nước ăn mừng. - Xem ngay kẻo lỡ!",
+    "expected": "TIN THẬT",
+    "predicted": "TIN THẬT",
+    "category": "other",
+    "reason": "Lý do chi tiết: Nhiều nguồn tin chất lượng cao như thethaovanhoa.vn, vov.vn, kenh14.vn, tuoitre.vn, và tienphong.vn đều xác nhận Việt Nam vô địch SEA Games 33 môn bóng đá nam. Không có nguồn tin nào b",
+    "debate_log": {},
+    "evidence_link": "",
+    "latency": 17.71,
+    "cached": false
+  },
+  {
+    "text": "VFF xác nhận đội tuyển Việt Nam sẽ tham dự AFF Cup 2024 hình mạnh nhất bao gồm các cầu thủ từ châu Âu. Giải đấu dự kiến diễn ra vào tháng 12/2024.",
+    "expected": "TIN GIẢ",
+    "predicted": "TIN GIẢ",
+    "category": "other",
+    "reason": "",
+    "debate_log": {},
+    "evidence_link": "",
+    "latency": 48.7,
+    "cached": false
+  },
+  {
+    "text": "Một nghiên cứu mới của Đại học Oxford gợi ý rằng sóng mmWave từ trạm 5G có thể ảnh hưởng đến hệ thống miễn dịch ở một số nhóm đối tượng nhạy cảm. Tuy nhiên, WHO chưa xác nhận kết quả này.",
+    "expected": "TIN GIẢ",
+    "predicted": "TIN GIẢ",
+    "category": "other",
+    "reason": "",
+    "debate_log": {},
+    "evidence_link": "",
+    "latency": 45.55,
+    "cached": false
+  },
+  {
+    "text": "Một nhóm điều tra độc lập tuyên bố đã phát hiện mảnh vỡ nghi là của MH370 tại khu vực Ấn Độ Dương, cách Madagascar 500km về phía đông. Malaysia Airlines chưa xác nhận thông tin này.",
+    "expected": "TIN GIẢ",
+    "predicted": "TIN GIẢ",
+    "category": "other",
+    "reason": "",
+    "debate_log": {},
+    "evidence_link": "",
+    "latency": 42.65,
+    "cached": false
+  },
+  {
+    "text": "Theo nguồn tin nội bộ, Google đã đầu tư 500 triệu USD vào OpenAI trước khi ChatGPT ra mắt, nhằm đổi lấy quyền truy cập sớm vào công nghệ GPT-4. Thông tin này chưa được hai bên xác nhận chính thức.",
+    "expected": "TIN GIẢ",
+    "predicted": "TIN GIẢ",
+    "category": "other",
+    "reason": "",
+    "debate_log": {},
+    "evidence_link": "",
+    "latency": 63.91,
+    "cached": false
+  },
+  {
+    "text": "Theo VnExpress: Việt Nam có 34 tỉnh thành.",
+    "expected": "TIN THẬT",
+    "predicted": "TIN THẬT",
+    "category": "other",
+    "reason": "LÝ DO CHI TIẾT: Nhiều nguồn tin uy tín như RFI, thetha247.vn, vietnamnet.vn xác nhận sự kiện sáp nhập hành chính ở Việt Nam, dẫn đến việc Việt Nam có 34 tỉnh thành. Không có evidence bác bỏ claim, và ",
+    "debate_log": {},
+    "evidence_link": "",
+    "latency": 27.21,
+    "cached": false
+  },
+  {
+    "text": "Apple vừa công bố kế hoạch xây dựng bảo tàng Steve Jobs tại trụ sở Cupertino, dự kiến mở cửa vào năm 2026. Bảo tàng sẽ trưng bày các sản phẩm và bản thiết kế chưa từng công bố của nhà sáng lập huyền thoại.",
+    "expected": "TIN GIẢ",
+    "predicted": "TIN GIẢ",
+    "category": "other",
+    "reason": "",
+    "debate_log": {},
+    "evidence_link": "",
+    "latency": 48.88,
+    "cached": false
+  },
+  {
+    "text": "Một số nhà nghiên cứu AI cảnh báo các mô hình ngôn ngữ lớn như GPT-5 có thể tự tạo ra các mục tiêu phụ không mong muốn mà con người khó kiểm soát. OpenAI đang nghiên cứu các biện pháp 'AI alignment' để giải quyết vấn đề này.",
+    "expected": "TIN THẬT",
+    "predicted": "TIN GIẢ",
+    "category": "other",
+    "reason": "",
+    "debate_log": {},
+    "evidence_link": "",
+    "latency": 32.36,
+    "cached": false
+  },
+  {
+    "text": "Theo VnExpress: Việt Nam có 34 tỉnh thành",
+    "expected": "TIN THẬT",
+    "predicted": "TIN THẬT",
+    "category": "other",
+    "reason": "Lý do: Evidence từ nguồn uy tín như RFI, VietnamNet, TheThao247 xác nhận claim. Không có evidence bác bỏ claim.",
+    "debate_log": {},
+    "evidence_link": "",
+    "latency": 26.95,
+    "cached": false
+  },
+  {
+    "text": "Apple vừa công bố kế hoạch xây dựng bảo tàng Steve Jobs tại trụ sở Cupertino, dự kiến mở cửa vào năm 2026. Bảo tàng sẽ trưng bày các sản phẩm và bản thiết kế chưa từng công bố của nhà sáng lập huyền thoại.",
+    "expected": "TIN GIẢ",
+    "predicted": "TIN GIẢ",
+    "category": "other",
+    "reason": "",
+    "debate_log": {},
+    "evidence_link": "",
+    "latency": 54.9,
+    "cached": false
+  }
+]

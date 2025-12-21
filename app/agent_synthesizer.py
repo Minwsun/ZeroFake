@@ -352,30 +352,76 @@ def load_critic_prompt(prompt_path="prompts/critic_prompt.txt"):
 
 
 def _parse_json_from_text(text: str) -> dict:
-    """Trích xuất JSON an toàn từ text trả về của LLM"""
+    """Trích xuất JSON an toàn từ text trả về của LLM - IMPROVED VERSION"""
     if not text:
         print("LỖI: Agent 2 (Synthesizer) không tìm thấy JSON.")
         return {}
 
     cleaned = text.strip()
+    
+    # Remove <think>...</think> blocks (common in reasoning models)
+    cleaned = re.sub(r'<think>.*?</think>', '', cleaned, flags=re.DOTALL)
+    cleaned = cleaned.strip()
+    
     # Remove Markdown code fences if present
     if cleaned.startswith("```"):
         cleaned = re.sub(r"^```[a-zA-Z0-9_-]*\s*", "", cleaned)
         cleaned = cleaned.rstrip("`").strip()
-
-    match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', cleaned, re.DOTALL)
-    if match:
+    
+    # METHOD 1: Find JSON by balanced braces
+    def find_json_object(s: str) -> str | None:
+        start = s.find('{')
+        if start == -1:
+            return None
+        depth = 0
+        for i, c in enumerate(s[start:], start):
+            if c == '{':
+                depth += 1
+            elif c == '}':
+                depth -= 1
+                if depth == 0:
+                    return s[start:i+1]
+        return None
+    
+    json_str = find_json_object(cleaned)
+    if json_str:
         try:
-            return json.loads(match.group(0))
+            return json.loads(json_str)
         except json.JSONDecodeError:
-            print(f"LỖI: Agent 2 (Synthesizer) trả về JSON không hợp lệ. Text: {cleaned[:300]}...")
-            return {}
-    # Try direct JSON load if regex failed
+            pass  # Continue to fallback
+    
+    # METHOD 2: Try direct JSON load
     try:
         return json.loads(cleaned)
     except Exception:
-        print(f"LỖI: Agent 2 (Synthesizer) không tìm thấy JSON. Raw response: {cleaned[:300]}...")
-        return {}
+        pass
+    
+    # METHOD 3: FALLBACK - Extract conclusion from raw text
+    result = {}
+    text_lower = cleaned.lower()
+    
+    # Extract conclusion
+    if "tin giả" in text_lower or "tin gả" in text_lower or '"conclusion": "tin giả"' in text_lower:
+        result["conclusion"] = "TIN GIẢ"
+    elif "tin thật" in text_lower or "tin that" in text_lower or '"conclusion": "tin thật"' in text_lower:
+        result["conclusion"] = "TIN THẬT"
+    
+    # Extract confidence from patterns like "confidence": 85 or confidence_score: 75
+    conf_match = re.search(r'(?:confidence|probability)[_\s]*(?:score)?["\s:]*(\d+)', text_lower)
+    if conf_match:
+        result["confidence_score"] = int(conf_match.group(1))
+    
+    # Extract reason
+    reason_match = re.search(r'"reason"\s*:\s*"([^"]+)"', cleaned, re.IGNORECASE)
+    if reason_match:
+        result["reason"] = reason_match.group(1)
+    
+    if result.get("conclusion"):
+        print(f"[JSON FALLBACK] Extracted from raw text: {result.get('conclusion')} ({result.get('confidence_score', 'N/A')}%)")
+        return result
+    
+    print(f"LỖI: Agent 2 (Synthesizer) không tìm thấy JSON. Raw response: {cleaned[:300]}...")
+    return {}
 
 
 # Track if Fact Check API was used (only CRITIC OR JUDGE can use, not both)
