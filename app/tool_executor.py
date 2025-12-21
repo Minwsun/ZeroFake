@@ -71,29 +71,21 @@ async def _execute_search_tool(parameters: dict, site_query_string: str, flash_m
 			except Exception:
 				pass
 
-		source_tier = _get_source_tier(domain)
-
 		evidence_item = {
 			"source": domain,
 			"url": link,
 			"snippet": (item.get('snippet', '') or ''),
 			"rank_score": rank_score,
 			"date": date_str,
-			"is_old": is_old,  # Đánh dấu thông tin cũ
-			"source_tier": source_tier,  # Độ chính thống của nguồn
+			"is_old": is_old,
 		}
 		if rank_score >= 0.5:  # BINARY: USABLE sources go to layer_2
 			layer_2.append(evidence_item)
 		else:  # BLOCKED sources (social, blog, tabloid) go to layer_4
 			layer_4.append(evidence_item)
 
-	# Sắp xếp theo:
-	# 1) Nguồn chính thống hơn (source_tier thấp hơn)
-	# 2) Không cũ (is_old = False)
-	# 3) Ngày mới hơn
-	# 4) rank_score cao hơn
+	# Sort by: date (newest first), rank_score (highest first)
 	def sort_key(item):
-		source_tier = item.get('source_tier', 2)
 		is_old = item.get('is_old', False)
 		date_str = item.get('date') or '1970-01-01'
 		rank_score = item.get('rank_score', 0.0)
@@ -103,11 +95,9 @@ async def _execute_search_tool(parameters: dict, site_query_string: str, flash_m
 			date_timestamp = date_obj.timestamp()
 		except Exception:
 			date_timestamp = 0
-		# tier: thấp hơn = tốt hơn; is_old False tốt hơn; date mới hơn tốt hơn; rank_score cao hơn tốt hơn
-		return (source_tier, is_old, -date_timestamp, -rank_score)
+		return (is_old, -date_timestamp, -rank_score)
 	
 	layer_2.sort(key=sort_key)
-	layer_3.sort(key=sort_key)
 
 	# Re-enabled article scraping for top 5 high-trust sources (accuracy > speed)
 	top_evidence = layer_2[:5]  # Only scrape top 5 layer_2 for speed
