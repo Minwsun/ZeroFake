@@ -1193,19 +1193,25 @@ This claim has been fact-checked by {fc_source}. The verdict is {fc_conclusion}.
     # PHASE 1.5: CRITIC COUNTER-SEARCH (nếu CRITIC yêu cầu search thêm)
     # CHỈ thực hiện khi CRITIC phát hiện vấn đề (issues_found=True)
     # =========================================================================
-    critic_issues = critic_parsed.get("issues_found", False)
-    if not critic_issues:
-        # Try nested schema
-        adv_findings = critic_parsed.get("adversarial_findings", {})
-        if isinstance(adv_findings, dict):
-            critic_issues = adv_findings.get("issues_found", False)
     
-    issue_type = critic_parsed.get("issue_type", "NONE")
+    # CRITIC output schema: adversarial_findings.issues_found, adversarial_findings.issue_type
+    adv_findings = critic_parsed.get("adversarial_findings", {})
+    if isinstance(adv_findings, dict):
+        critic_issues = adv_findings.get("issues_found", False)
+        issue_type = adv_findings.get("issue_type", "NONE")
+    else:
+        # Fallback to top-level (old schema)
+        critic_issues = critic_parsed.get("issues_found", False)
+        issue_type = critic_parsed.get("issue_type", "NONE")
+    
     print(f"[CRITIC] Issues found: {critic_issues}, Type: {issue_type}")
     
-    # CHỈ counter-search khi CRITIC THỰC SỰ phát hiện vấn đề (issues_found=True)
-    # Bỏ qua nếu issues_found=False (dù counter_search_needed=True)
-    if critic_issues and critic_parsed.get("counter_search_needed", False):
+    # CHỈ counter-search khi:
+    # 1. CRITIC phát hiện vấn đề (issues_found=True) 
+    # 2. VÀ issue_type KHÔNG phải NONE (có vấn đề cụ thể)
+    should_counter_search = critic_issues and issue_type != "NONE" and critic_parsed.get("counter_search_needed", False)
+    
+    if should_counter_search:
         counter_queries = critic_parsed.get("counter_search_queries", [])
         if counter_queries:
             print(f"\n[CRITIC-SEARCH] CRITIC yêu cầu search thêm: {counter_queries}")
