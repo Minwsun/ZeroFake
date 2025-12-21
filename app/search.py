@@ -261,12 +261,18 @@ def call_google_search(text_input: str, site_query_string: str) -> list:
                 "date": r.get("date") or None,
             })
 
+    # 0. PRIORITY: Search Google News first (higher quality)
+    en_query = _extract_english_query(cleaned_input)
+    if en_query and len(en_query) > 10:
+        news_query = f"{en_query} site:news.google.com OR site:bing.com/news"
+        print(f"  [DDG] Priority News Search: {en_query[:50]}...")
+        _ingest_ddg(_run_ddg(news_query, timelimit, region="wt-wt"))
+    
     # 1. Search Vietnamese sources
     print(f"  [DDG] Searching Vietnamese: {query_vi[:60]}...")
     _ingest_ddg(_run_ddg(query_vi, timelimit, region="vi-vn"))
 
     # 2. Search worldwide with ENGLISH query for international reach
-    en_query = _extract_english_query(cleaned_input)
     if en_query and len(en_query) > 10:
         print(f"  [DDG] Searching Worldwide (EN): {en_query[:60]}...")
         _ingest_ddg(_run_ddg(en_query, timelimit, region="wt-wt"))
@@ -275,7 +281,7 @@ def call_google_search(text_input: str, site_query_string: str) -> list:
         print(f"  [DDG] Searching Worldwide: {cleaned_input[:60]}...")
         _ingest_ddg(_run_ddg(cleaned_input, timelimit, region="wt-wt"))
 
-    # 4. Fallback enhanced queries if still < 5 results
+    # 3. Fallback enhanced queries if still < 5 results
     if len(all_items) < 5:
         enhanced_queries = [
             f"{cleaned_input} confirmed official",

@@ -14,6 +14,7 @@ from app.model_clients import (
     RateLimitError,
 )
 from app.tool_executor import execute_tool_plan  # Import for Re-Search
+from app.fact_check import call_google_fact_check, interpret_fact_check_rating, format_fact_check_evidence  # NEW: Fact Check API
 
 load_dotenv()
 
@@ -376,6 +377,54 @@ def _parse_json_from_text(text: str) -> dict:
         print(f"LỖI: Agent 2 (Synthesizer) không tìm thấy JSON. Raw response: {cleaned[:300]}...")
         return {}
 
+
+# Track if Fact Check API was used (only CRITIC OR JUDGE can use, not both)
+_fact_check_used_by = None  # "CRITIC" or "JUDGE" or None
+
+
+async def _agent_fact_check(agent_name: str, query: str) -> dict:
+    """
+    Allow CRITIC or JUDGE to call Fact Check API (only one can use per claim).
+    Returns: {"used": bool, "results": list, "conclusion": str, "confidence": int}
+    """
+    global _fact_check_used_by
+    
+    # Only one agent can use fact check
+    if _fact_check_used_by is not None:
+        print(f"[FACT-CHECK] {agent_name} skipped - already used by {_fact_check_used_by}")
+        return {"used": False, "results": [], "conclusion": "", "confidence": 0}
+    
+    print(f"[FACT-CHECK] {agent_name} calling Fact Check API for: {query[:50]}...")
+    _fact_check_used_by = agent_name
+    
+    results = await call_google_fact_check(query)
+    
+    if results:
+        # Find highest confidence result
+        best_conclusion = ""
+        best_confidence = 0
+        for r in results:
+            conclusion, confidence = interpret_fact_check_rating(r.get("rating", ""))
+            if confidence > best_confidence:
+                best_conclusion = conclusion
+                best_confidence = confidence
+        
+        print(f"[FACT-CHECK] {agent_name} got {len(results)} results, best: {best_conclusion} ({best_confidence}%)")
+        return {
+            "used": True,
+            "results": results,
+            "conclusion": best_conclusion,
+            "confidence": best_confidence,
+            "evidence_text": format_fact_check_evidence(results)
+        }
+    
+    return {"used": True, "results": [], "conclusion": "", "confidence": 0}
+
+
+def _reset_fact_check_state():
+    """Reset fact check usage tracking for new claim."""
+    global _fact_check_used_by
+    _fact_check_used_by = None
 
 def _trim_snippet(s: str, max_len: int = 350) -> str:
     """
@@ -977,6 +1026,9 @@ async def execute_final_analysis(
         raise ValueError("Synthesis prompt (prompt 2) chưa được tải.")
     if not CRITIC_PROMPT:
         print("WARNING: Critic prompt chưa được tải, dùng mặc định.")
+
+    # Reset fact check state for new claim (only CRITIC or JUDGE can use, not both)
+    _reset_fact_check_state()
 
     # =========================================================================
     # SYNTH: Để LLM tự phân loại claim (không dùng pattern cứng)
