@@ -15,6 +15,7 @@ from app.model_clients import (
 )
 from app.tool_executor import execute_tool_plan  # Import for Re-Search
 from app.fact_check import call_google_fact_check, interpret_fact_check_rating, format_fact_check_evidence  # NEW: Fact Check API
+from app.search_helper import quick_fact_check, search_google_news, search_wikipedia  # NEW: Direct search for JUDGE/CRITIC
 
 load_dotenv()
 
