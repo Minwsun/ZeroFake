@@ -336,22 +336,44 @@ async def execute_tool_plan(plan: dict, site_query_string: str, flash_mode: bool
 				fact_results = await call_google_fact_check(main_claim)
 				
 				if fact_results:
-					# Add fact check results as high-trust evidence
-					for r in fact_results[:3]:  # Max 3 results
+					# Get best verdict from fact check
+					best_conclusion = ""
+					best_confidence = 0
+					best_source = ""
+					best_url = ""
+					
+					for r in fact_results[:3]:
 						conclusion, confidence = interpret_fact_check_rating(r.get("rating", ""))
+						if confidence > best_confidence:
+							best_conclusion = conclusion
+							best_confidence = confidence
+							best_source = r.get("publisher", "Unknown")
+							best_url = r.get("url", "")
+						
+						# Add to evidence for reference
 						evidence_bundle["layer_2_high_trust"].append({
 							"source": f"[FACT-CHECK] {r.get('publisher', 'Unknown')}",
 							"url": r.get("url", ""),
 							"snippet": f"Claim: {r.get('claim', '')[:100]}... Rating: {r.get('rating', 'N/A')}",
-							"rank_score": 0.95,  # High trust for fact checks
+							"rank_score": 0.95,
 							"date": r.get("review_date", ""),
 							"fact_check_conclusion": conclusion,
 							"fact_check_confidence": confidence
 						})
 					
-					# If fact check returns results, SKIP search entirely
-					print(f"[OLD INFO] Fact Check found {len(fact_results)} results → SKIPPING search")
-					skip_search = True
+					# ABSOLUTE TRUST: If Fact Check has verdict, use it directly
+					if best_conclusion and best_confidence >= 70:
+						print(f"[FACT-CHECK] ✓ ABSOLUTE VERDICT: {best_conclusion} ({best_confidence}%) from {best_source}")
+						evidence_bundle["fact_check_verdict"] = {
+							"conclusion": best_conclusion,
+							"confidence": best_confidence,
+							"source": best_source,
+							"url": best_url,
+							"skip_pipeline": True  # Signal to skip CRITIC/JUDGE
+						}
+						skip_search = True
+					else:
+						print(f"[OLD INFO] Fact Check inconclusive → Continuing with search")
 				else:
 					print(f"[OLD INFO] No Fact Check results → Continuing with search")
 			except Exception as e:

@@ -380,6 +380,23 @@ async def _handle_check_news_internal(
         evidence_bundle = await execute_tool_plan(plan, SITE_QUERY_STRING, flash_mode=flash_mode)
         evidence_bundle = _merge_planner_findings_into_bundle(evidence_bundle, planner_findings)
         
+        # EARLY RETURN: If Fact Check has definitive verdict, skip entire pipeline
+        fact_check_verdict = evidence_bundle.get("fact_check_verdict")
+        if fact_check_verdict and fact_check_verdict.get("skip_pipeline"):
+            conclusion = fact_check_verdict.get("conclusion", "TIN THẬT")
+            confidence = fact_check_verdict.get("confidence", 90)
+            source = fact_check_verdict.get("source", "Fact Check")
+            url = fact_check_verdict.get("url", "")
+            
+            print(f"\n[FAST PATH] 🚀 Fact Check verdict trusted absolutely: {conclusion}")
+            return CheckResponse(
+                conclusion=conclusion,
+                confidence_score=confidence,
+                reason=f"Verified by {source} fact check organization",
+                evidence_link=url,
+                debate_log="[FACT CHECK] Verdict from trusted fact check source - pipeline skipped"
+            )
+        
         # Count evidence
         total_evidence = sum(len(evidence_bundle.get(layer, [])) for layer in ["layer_1_api", "layer_2_high_trust", "layer_3_general", "layer_4_social_low"])
         print(f"[SEARCH] Found {total_evidence} evidence items")
