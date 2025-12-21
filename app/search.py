@@ -204,27 +204,73 @@ def _run_ddg_fallback(query: str, timelimit: str = "m") -> list:
 
 def call_google_search(text_input: str, site_query_string: str) -> list:
     """
-    Enhanced DuckDuckGo search with:
-    1. Multi-region search (Vietnamese + Worldwide)
-    2. Smart query cleaning
-    3. English search for international events
+    IMPROVED: Use DDGS().news() for proper news search instead of text() with site: query.
+    Priority: VN News → International News → Web fallback
     """
-    print(f"Đang gọi DuckDuckGo Search cho: {text_input}")
+    print(f"Đang gọi Search cho: {text_input}")
     
     # Clean the query first
     cleaned_input = _clean_query(text_input)
+    en_query = _extract_english_query(cleaned_input)
     query_vi = _ensure_news_keyword(cleaned_input)
     
     # Determine timelimit
-    timelimit = None  # No time limit for broader results
-    if any(kw in query_vi.lower() for kw in ["mới nhất", "latest", "recent", "hôm nay", "today"]):
-        timelimit = "w"
+    timelimit = None
+    if any(kw in query_vi.lower() for kw in ["mới nhất", "latest", "hôm nay", "today", "vừa"]):
+        timelimit = "w"  # This week
 
     all_items = []
     seen = set()
-    use_ddg_fallback = False
 
-    def _run_ddg(q: str, tl: str | None, region: str = "vi-vn"):
+    def _ingest_ddg(results, source_type="web"):
+        """Ingest results from DuckDuckGo."""
+        for r in results:
+            # DDG .news() returns different keys than .text()
+            link = r.get("url") or r.get("href")
+            if not link or link in seen:
+                continue
+            seen.add(link)
+
+            snippet = r.get("body") or r.get("snippet") or ""
+            title = r.get("title") or ""
+            date_raw = r.get("date") or ""
+            source = r.get("source") or ""  # .news() often has source field
+
+            # Skip if snippet too short
+            if len(snippet) < 30 and "youtube.com" not in link:
+                continue
+
+            # Show source in title if available
+            display_title = title
+            if source and source not in title:
+                display_title = f"[{source}] {title}"
+
+            all_items.append({
+                "title": display_title,
+                "link": link,
+                "snippet": snippet,
+                "source": source,
+                "pagemap": {},
+                "date": date_raw,
+            })
+
+    def _run_ddg_news(q: str, tl: str | None, region: str = "vi-vn"):
+        """Use DDGS().news() for actual news articles."""
+        try:
+            with DDGS() as ddgs:
+                return ddgs.news(
+                    keywords=q,
+                    region=region,
+                    safesearch="off",
+                    timelimit=tl,
+                    max_results=MAX_RESULTS
+                ) or []
+        except Exception as exc:
+            print(f"  DDG NEWS error ({region}): {exc}")
+            return []
+
+    def _run_ddg_text(q: str, tl: str | None, region: str = "vi-vn"):
+        """Fallback to web search."""
         try:
             with DDGS() as ddgs:
                 kwargs = {
@@ -237,62 +283,32 @@ def call_google_search(text_input: str, site_query_string: str) -> list:
                     kwargs["timelimit"] = tl
                 return ddgs.text(**kwargs) or []
         except Exception as exc:
-            print(f"DuckDuckGo Search lỗi ({region}): {exc}")
+            print(f"  DDG TEXT error ({region}): {exc}")
             return []
 
-    def _ingest_ddg(results):
-        """Ingest results từ DuckDuckGo format."""
-        for r in results:
-            link = r.get("href")
-            if not link or link in seen:
-                continue
-            seen.add(link)
+    # --- NEW SEARCH STRATEGY ---
 
-            snippet = r.get("body") or ""
-            title = r.get("title") or ""
-            if len(snippet) < 30:
-                continue
+    # 1. PRIORITY 1: Vietnamese News (using .news() for real news articles)
+    print(f"  [DDG-NEWS] Tìm tin tức VN: {cleaned_input[:50]}...")
+    _ingest_ddg(_run_ddg_news(cleaned_input, timelimit, region="vi-vn"), source_type="news")
 
-            all_items.append({
-                "title": title,
-                "link": link,
-                "snippet": snippet,
-                "pagemap": {},
-                "date": r.get("date") or None,
-            })
+    # 2. PRIORITY 2: International News (if English query available)
+    if en_query and len(en_query) > 10 and en_query != cleaned_input:
+        print(f"  [DDG-NEWS] Tìm tin tức QT: {en_query[:50]}...")
+        _ingest_ddg(_run_ddg_news(en_query, timelimit, region="wt-wt"), source_type="news")
 
-    # 0. PRIORITY: Search Google News first (higher quality)
-    en_query = _extract_english_query(cleaned_input)
-    if en_query and len(en_query) > 10:
-        news_query = f"{en_query} site:news.google.com OR site:bing.com/news"
-        print(f"  [DDG] Priority News Search: {en_query[:50]}...")
-        _ingest_ddg(_run_ddg(news_query, timelimit, region="wt-wt"))
-    
-    # 1. Search Vietnamese sources
-    print(f"  [DDG] Searching Vietnamese: {query_vi[:60]}...")
-    _ingest_ddg(_run_ddg(query_vi, timelimit, region="vi-vn"))
-
-    # 2. Search worldwide with ENGLISH query for international reach
-    if en_query and len(en_query) > 10:
-        print(f"  [DDG] Searching Worldwide (EN): {en_query[:60]}...")
-        _ingest_ddg(_run_ddg(en_query, timelimit, region="wt-wt"))
-    else:
-        # Fallback to original query if extraction fails
-        print(f"  [DDG] Searching Worldwide: {cleaned_input[:60]}...")
-        _ingest_ddg(_run_ddg(cleaned_input, timelimit, region="wt-wt"))
-
-    # 3. Fallback enhanced queries if still < 5 results
+    # 3. FALLBACK: If few news results, use web search
     if len(all_items) < 5:
-        enhanced_queries = [
-            f"{cleaned_input} confirmed official",
-            f"{cleaned_input} news",
-        ]
-        for eq in enhanced_queries:
-            if len(all_items) >= 10:
-                break
-            _ingest_ddg(_run_ddg(eq, None, region="wt-wt"))
+        print(f"  [DDG-WEB] Fallback tìm kiếm web: {query_vi[:50]}...")
+        _ingest_ddg(_run_ddg_text(query_vi, timelimit, region="vi-vn"), source_type="web")
+        
+        # Also try English web fallback if needed
+        if en_query and len(en_query) > 10 and len(all_items) < 8:
+            _ingest_ddg(_run_ddg_text(en_query, timelimit, region="wt-wt"), source_type="web")
 
+    # Sort by date (newest first)
     all_items.sort(key=_sort_key)
 
-    print(f"📊 DuckDuckGo: Tổng cộng {len(all_items)} bằng chứng.")
+    print(f"📊 Search: Tổng cộng {len(all_items)} bằng chứng.")
     return all_items[:MAX_RESULTS]
+
