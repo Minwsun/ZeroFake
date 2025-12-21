@@ -54,26 +54,24 @@ ELIF claim là TIN TỨC BÌNH THƯỜNG + evidence không rõ ràng:
 
 | Điều kiện | Ví dụ | Logic |
 |-----------|-------|-------|
-| **Claim CÓ NGUỒN UY TÍN** (AP, BBC, Reuters, VnExpress) | "Theo AP: Apple ra mắt Vision Pro..." | Nguồn level-1 → TIN THẬT |
+| **Evidence XÁC NHẬN từ BẤT KỲ nguồn tin nào** (không phải blocklist) | Báo điện tử, Wikipedia, trang tin tức | Có nguồn → Có cơ sở |
 | **Sự kiện đã xảy ra** có thể verify | "Real Madrid vô địch Champions League 2024" | Kiểm chứng được |
-| **Thông tin sản phẩm chính thức** | "Vision Pro giá $3,499" | Có thể verify từ Apple |
+| **Thông tin sản phẩm/công nghệ** có thể verify | "Vision Pro giá $3,499", "GPT-5 ra mắt" | Verify được từ nguồn chính thức |
 | **Số liệu thống kê hợp lý** | "Internet users > 5 tỷ" | Phù hợp với xu hướng |
-| **Tin tức công nghệ/AI từ nguồn tech** | "OpenAI nghiên cứu AI alignment" | OpenAI thực sự có team này |
+| **Tin tức có nguồn rõ ràng** | "Theo AP:", "BBC đưa tin:", "VnExpress:" | Có nguồn cụ thể |
 
-### 🔥 QUY TẮC ĐẶC BIỆT VỀ NGUỒN:
+### 🚫 NGUỒN KHÔNG ĐÁNG TIN (BLOCKLIST) - KHÔNG TIN:
 
 ```
-NẾU claim BẮT ĐẦU BẰNG:
-  - "Theo AP:", "Thông tin từ AP:", "AP đưa tin:"
-  - "BBC đưa tin:", "Theo BBC:", "Reuters cho biết:"
-  - "VnExpress:", "Theo VnExpress:"
-  
-VÀ nội dung claim LÀ:
-  - Sự kiện có thể xảy ra (không phi thường)
-  - Số liệu hợp lý (không phóng đại)
-  - Thời điểm rõ ràng và hợp lý
-  
-→ CÓ XU HƯỚNG LÀ TIN THẬT (trừ khi có bằng chứng bác bỏ rõ ràng)
+CHỈ NGHI NGỜ evidence từ các nguồn SAU:
+- Báo lá cải: Người Đưa Tin, Kênh 14, 24h tabloid content
+- Forum/Diễn đàn: Facebook groups, Reddit posts, VOZ forum
+- Social media: Facebook posts, Twitter/X, TikTok, YouTube comments
+- User-generated: Medium blogs, WordPress cá nhân, Blogspot
+- Anonymous sources: "Nguồn tin nội bộ cho biết...", "Theo một người biết rõ..."
+
+TẤT CẢ CÁC NGUỒN KHÁC → CHẤP NHẬN LÀ TIN CẬY 
+(Wikipedia, báo điện tử, trang tin tức, trang công ty chính thức, etc.)
 ```
 
 ### ❌ XÁC ĐỊNH TIN GIẢ KHI:
