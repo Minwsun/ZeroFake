@@ -348,8 +348,11 @@ async def _handle_check_news_internal(
 ):
     """Internal handler for check_news"""
     try:
-        # Step 1: Check KB Cache - DISABLED FOR EVALUATION
-        logger.info("KB cache DISABLED for evaluation - processing all through agents.")
+        # Step 1: Check KB Cache (FAISS + SQLite)
+        cached_result = await asyncio.to_thread(search_knowledge_base, request.text)
+        if cached_result:
+            logger.info("KB cache hit - returning cached result")
+            return CheckResponse(**cached_result)
         
         # Step 2: Agent 1 (Planner) creates plan
         print(f"\n{'='*60}")
@@ -420,8 +423,12 @@ async def _handle_check_news_internal(
         print(f"[JUDGE] Reason: {reason}...")
         print(f"{'='*60}\n")
         
-        # Step 5: KB save - DISABLED FOR EVALUATION
-        logger.info("KB save DISABLED for evaluation.")
+        # Step 5: Save to KB for future deduplication
+        try:
+            await asyncio.to_thread(add_to_knowledge_base, request.text, gemini_result)
+            logger.info("Result saved to KB cache")
+        except Exception as kb_err:
+            logger.warning(f"KB save failed (non-fatal): {kb_err}")
         
         return CheckResponse(**gemini_result)
     
