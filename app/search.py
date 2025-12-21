@@ -6,6 +6,7 @@ from datetime import datetime
 from urllib.parse import urlparse, urlencode
 
 from duckduckgo_search import DDGS
+from gnews import GNews
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -19,7 +20,7 @@ WARP_ENABLED = os.getenv("WARP_ENABLED", "false").lower() == "true"
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 GOOGLE_CSE_ID = os.getenv("GOOGLE_CSE_ID")
 
-MAX_RESULTS = 15  # Giảm để tiết kiệm CSE quota (100/day)
+MAX_RESULTS = 20  # Lấy đủ evidence cho tất cả nguồn
 SEARXNG_TIMEOUT = 30  # Timeout cho SearXNG requests
 DDG_TIMEOUT = 20  # Timeout cho DuckDuckGo fallback
 
@@ -347,37 +348,74 @@ def call_google_search(text_input: str, site_query_string: str) -> list:
                 "date": "",
             })
 
-    # --- OPTIMIZED SEARCH STRATEGY ---
-    # Priority: Google CSE (1 query) → DDG fallback (if CSE fails)
+    # --- GOOGLE NEWS + DDG COMPREHENSIVE SEARCH ---
     
-    # 1. TRY GOOGLE CSE FIRST (1 query only)
-    print(f"  [CSE] Trying Google CSE: {cleaned_input[:50]}...")
-    cse_results = _run_google_cse(cleaned_input)
+    # 0. GOOGLE NEWS (Primary - via gnews library, free, no API)
+    def _run_gnews(query: str, language: str = "vi", country: str = "VN") -> list:
+        """Search Google News using gnews library."""
+        try:
+            gn = GNews(language=language, country=country, max_results=10)
+            results = gn.get_news(query)
+            print(f"  [GNEWS-{language.upper()}] Found {len(results)} results")
+            return results
+        except Exception as exc:
+            print(f"  [GNEWS] Error: {exc}")
+            return []
     
-    if cse_results is not None:
-        # CSE worked - use these results
-        _ingest_cse(cse_results)
-        
-        # If EN query available, try one more CSE query
-        if en_query and len(en_query) > 10 and len(all_items) < 5:
-            print(f"  [CSE] Trying EN query: {en_query[:50]}...")
-            cse_results_en = _run_google_cse(en_query)
-            if cse_results_en:
-                _ingest_cse(cse_results_en)
+    def _ingest_gnews(results: list):
+        """Ingest Google News results."""
+        if not results:
+            return
+        for r in results:
+            link = r.get("url", "")
+            if not link or link in seen:
+                continue
+            seen.add(link)
+            
+            title = r.get("title", "")
+            description = r.get("description", "")
+            publisher = r.get("publisher", {}).get("title", "")
+            pub_date = r.get("published date", "")
+            
+            # Combine title + description for better evidence
+            snippet = f"{title}. {description}" if description else title
+            
+            if len(snippet) < 30:
+                continue
+                
+            all_items.append({
+                "title": title,
+                "link": link,
+                "snippet": snippet,
+                "source": f"google_news_{publisher}",
+                "pagemap": {},
+                "date": pub_date,
+            })
     
-    # 2. DDG FALLBACK (only if CSE failed or no results)
-    if cse_results is None or len(all_items) < 3:
-        print(f"  [DDG] Fallback: CSE unavailable, using DuckDuckGo...")
-        
-        # News search
-        _ingest_ddg(_run_ddg_news(cleaned_input, timelimit or "m", region="vi-vn"), source_type="news")
-        
-        if en_query and len(en_query) > 5:
-            _ingest_ddg(_run_ddg_news(en_query, timelimit or "m", region="wt-wt"), source_type="news")
-        
-        # Web search if still few results
-        if len(all_items) < 5:
-            _ingest_ddg(_run_ddg_text(query_vi, None, region="vi-vn"), source_type="web")
+    # 1. GOOGLE NEWS VN: Tin tức từ Google News tiếng Việt
+    print(f"  [GNEWS-VN] Tìm Google News VN: {cleaned_input[:50]}...")
+    _ingest_gnews(_run_gnews(cleaned_input, language="vi", country="VN"))
+    
+    # 2. GOOGLE NEWS EN: Tin tức quốc tế từ Google News
+    if en_query and len(en_query) > 5:
+        print(f"  [GNEWS-EN] Tìm Google News QT: {en_query[:50]}...")
+        _ingest_gnews(_run_gnews(en_query, language="en", country="US"))
+    
+    # 3. DDG NEWS (Fallback/Supplement)
+    print(f"  [DDG-NEWS-VN] Tìm tin tức VN: {cleaned_input[:50]}...")
+    _ingest_ddg(_run_ddg_news(cleaned_input, timelimit or "m", region="vi-vn"), source_type="news")
+    
+    if en_query and len(en_query) > 5:
+        print(f"  [DDG-NEWS-EN] Tìm tin tức QT: {en_query[:50]}...")
+        _ingest_ddg(_run_ddg_news(en_query, timelimit or "m", region="wt-wt"), source_type="news")
+    
+    # 4. WEB SEARCH (Wikipedia, etc.)
+    print(f"  [DDG-WEB-VN] Tìm kiếm web VN: {query_vi[:50]}...")
+    _ingest_ddg(_run_ddg_text(query_vi, None, region="vi-vn"), source_type="web")
+    
+    if en_query and len(en_query) > 5:
+        print(f"  [DDG-WEB-EN] Tìm Wikipedia EN: {en_query[:50]}...")
+        _ingest_ddg(_run_ddg_text(en_query, None, region="wt-wt"), source_type="web")
 
     # Sort by date (newest first)
     all_items.sort(key=_sort_key)

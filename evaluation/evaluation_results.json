@@ -4,10 +4,10 @@
     "expected": "TIN THẬT",
     "predicted": "TIN THẬT",
     "category": "other",
-    "reason": "Claim được xác nhận bởi nhiều nguồn tin uy tín như thethaovanhoa.vn, vov.vn, tuoitre.vn, nói về U22 Việt Nam vô địch SEA Games 33. Thời gian sự kiện khớp với claim và không có thông tin mâu thuẫn. Do ",
+    "reason": "",
     "debate_log": {},
     "evidence_link": "",
-    "latency": 48.22,
+    "latency": 17.19,
     "cached": false
   },
   {
@@ -15,10 +15,10 @@
     "expected": "TIN GIẢ",
     "predicted": "TIN GIẢ",
     "category": "other",
-    "reason": "Claim nói về AFF Cup 2024 nhưng hiện tại là 2025 và không có evidence hỗ trợ. Điều này chỉ ra claim có thể là TIN GIẢ do thông tin không chính xác hoặc nhầm lẫn năm. Evidence chỉ đề cập đến các sự kiệ",
+    "reason": "Claim nói về sự kiện đã xảy ra (12/2024) nhưng không có bằng chứng nào trong evidence xác nhận. Các nguồn đề cập đến sự kiện khác như SEA Games 2025, World Cup 2026, cho thấy claim có thể là thông tin",
     "debate_log": {},
     "evidence_link": "",
-    "latency": 56.94,
+    "latency": 35.49,
     "cached": false
   },
   {
@@ -26,21 +26,21 @@
     "expected": "TIN GIẢ",
     "predicted": "TIN GIẢ",
     "category": "other",
-    "reason": "Claim nói về một nghiên cứu mới từ Đại học Oxford liên quan đến sóng mmWave từ trạm 5G và ảnh hưởng của nó đến hệ miễn dịch, nhưng không có evidence nào hỗ trợ claim này. Tất cả các nguồn tin đều khôn",
+    "reason": "Claim nói về một nghiên cứu mới của Đại học Oxford liên quan đến sóng mmWave từ trạm 5G và ảnh hưởng của nó đến hệ thống miễn dịch, nhưng không có evidence nào trong danh sách hỗ trợ claim này. Tất cả",
     "debate_log": {},
     "evidence_link": "",
-    "latency": 42.74,
+    "latency": 28.14,
     "cached": false
   },
   {
     "text": "Một nhóm điều tra độc lập tuyên bố đã phát hiện mảnh vỡ nghi là của MH370 tại khu vực Ấn Độ Dương, cách Madagascar 500km về phía đông. Malaysia Airlines chưa xác nhận thông tin này.",
     "expected": "TIN GIẢ",
-    "predicted": "TIN THẬT",
+    "predicted": "TIN GIẢ",
     "category": "other",
-    "reason": "Có nguồn uy tín xác nhận thông tin này (The Times of India).",
+    "reason": "Claim không có bằng chứng hỗ trợ từ nguồn tin chính thống, nguồn của claim không rõ ràng, và không có xác nhận từ Malaysia Airlines hoặc cơ quan hàng không quốc tế. Evidence không liên quan đến MH370 ",
     "debate_log": {},
-    "evidence_link": "https://www.msn.com/en-in/news/world/mass-murder-hijack-or-glitch-the-story-of-flight-mh370-which-disappeared-from-the-world-just-minutes-after-take-off/ar-AA1RVWv2",
-    "latency": 45.97,
+    "evidence_link": "",
+    "latency": 21.45,
     "cached": false
   },
   {
@@ -48,21 +48,21 @@
     "expected": "TIN GIẢ",
     "predicted": "TIN GIẢ",
     "category": "other",
-    "reason": "Claim nói về một khoản đầu tư lớn nhưng không có nguồn tin xác nhận. Evidence từ các nguồn uy tín không hỗ trợ claim này, và sự xuất hiện của số liệu '500 triệu' trong các bối cảnh không liên quan gợi",
+    "reason": "Claim nói về một khoản đầu tư cụ thể nhưng không có bằng chứng từ các nguồn tin cậy. Hơn nữa, thời điểm của sự kiện (nếu có) không khớp với thời điểm của các bài báo được cung cấp. Điều này, cùng với ",
     "debate_log": {},
     "evidence_link": "",
-    "latency": 50.32,
+    "latency": 20.03,
     "cached": false
   },
   {
     "text": "Theo VnExpress: Việt Nam có 34 tỉnh thành.",
     "expected": "TIN THẬT",
-    "predicted": "TIN GIẢ",
+    "predicted": "TIN THẬT",
     "category": "other",
-    "reason": "Claim nói Việt Nam có 34 tỉnh thành, nhưng nguồn trong claim là VnExpress, trong khi evidence lại từ vietnamnet.vn. Evidence từ vietnamnet.vn nói về việc hợp nhất 63 tỉnh thành thành 34 đơn vị hành ch",
+    "reason": "",
     "debate_log": {},
     "evidence_link": "",
-    "latency": 42.16,
+    "latency": 19.04,
     "cached": false
   },
   {
@@ -70,10 +70,10 @@
     "expected": "TIN GIẢ",
     "predicted": "TIN GIẢ",
     "category": "other",
-    "reason": "Claim nói Apple vừa công bố kế hoạch xây dựng bảo tàng Steve Jobs, nhưng không có bằng chứng từ nguồn tin chính thức. Tuyên bố có thể là tin giả hoặc thông tin bị bóp méo. Evidence không liên quan hoặ",
+    "reason": "Claim nói Apple đang xây dựng bảo tàng Steve Jobs tại Cupertino, dự kiến mở cửa năm 2026, nhưng không có bằng chứng hỗ trợ từ nguồn chính thức. Evidence cung cấp không liên quan đến claim, và sử dụng ",
     "debate_log": {},
     "evidence_link": "",
-    "latency": 42.27,
+    "latency": 37.15,
     "cached": false
   },
   {
@@ -81,21 +81,21 @@
     "expected": "TIN THẬT",
     "predicted": "TIN GIẢ",
     "category": "other",
-    "reason": "Claim nói GPT-5 ra mắt năm 2025, nhưng hầu hết evidence đề cập đến GPT-5.2. Thiếu bằng chứng trực tiếp từ OpenAI xác nhận GPT-5 ra mắt năm 2025. Evidence từ 9to5mac.com và unite.ai nói về GPT-5.2, khô",
+    "reason": "Claim nói GPT 5 đã ra mắt vào năm 2025, nhưng evidence chỉ nói về GPT-5.1 và GPT-5.2. Không có thông tin trực tiếp về GPT 5, và claim không được hỗ trợ bởi evidence. Do đó, claim này là TIN GIẢ.",
     "debate_log": {},
     "evidence_link": "",
-    "latency": 45.19,
+    "latency": 19.61,
     "cached": false
   },
   {
     "text": "Theo VnExpress: Việt Nam có 34 tỉnh thành",
     "expected": "TIN THẬT",
-    "predicted": "TIN THẬT",
+    "predicted": "TIN GIẢ",
     "category": "other",
     "reason": "",
     "debate_log": {},
     "evidence_link": "",
-    "latency": 37.68,
+    "latency": 25.63,
     "cached": false
   },
   {
@@ -103,10 +103,10 @@
     "expected": "TIN GIẢ",
     "predicted": "TIN GIẢ",
     "category": "other",
-    "reason": "Claim nói Apple công bố bảo tàng Steve Jobs nhưng không có bằng chứng từ nguồn tin cậy. Các nguồn cung cấp chỉ nói về vấn đề kỹ thuật và hỗ trợ khách hàng, không đề cập đến bảo tàng. Phong cách thông ",
+    "reason": "Claim nói Apple vừa công bố kế hoạch xây dựng bảo tàng Steve Jobs, nhưng không có bằng chứng nào từ nguồn uy tín. Tất cả các nguồn đều không liên quan hoặc không có thông tin mới. Từ ngữ 'vừa công bố'",
     "debate_log": {},
     "evidence_link": "",
-    "latency": 35.23,
+    "latency": 25.69,
     "cached": false
   }
 ]
