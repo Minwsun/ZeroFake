@@ -28,7 +28,6 @@ warnings.filterwarnings('ignore', category=RuntimeWarning, message='.*CancelledE
 # Import base modules
 from app.kb import init_kb, search_knowledge_base, add_to_knowledge_base
 from app.search import get_site_query
-from app.ranker import load_ranker_config
 from app.feedback import init_feedback_db, log_human_feedback
 
 # --- Import NEW Agents ---
@@ -176,7 +175,6 @@ async def startup_event():
     # Initialize base modules
     init_kb()
     init_feedback_db()
-    load_ranker_config()
     
     # --- Load prompts for Agents ---
     load_planner_prompt("prompts/planner_prompt.txt")
