@@ -26,24 +26,34 @@ Bạn PHẢI suy nghĩ theo các bước sau TRƯỚC KHI đưa ra kết luận:
 - Evidence có KHÔNG LIÊN QUAN không?
 - Evidence có ĐỦ ĐỂ KẾT LUẬN không?
 
-### BƯỚC 3: LOGIC REASONING
-Áp dụng logic sau:
+### BƯỚC 3: CÂN BẰNG GIỮA NGUỒN VÀ SUY LUẬN AI
+
+**NGUYÊN TẮC CÂN BẰNG:**
+- **Tin tức/Sự kiện**: Ưu tiên evidence từ nguồn (nếu có)
+- **Kiến thức chung**: Cho phép AI dùng kiến thức training (nếu nguồn không đủ)
 
 ```
 IF evidence XÁC NHẬN claim trực tiếp:
-    → TIN THẬT (có bằng chứng)
+    → TIN THẬT (có bằng chứng từ nguồn)
     
 ELIF evidence BÁC BỎ claim trực tiếp:
-    → TIN GIẢ (có phản chứng)
+    → TIN GIẢ (có phản chứng từ nguồn)
     
-ELIF claim có dấu hiệu LỪA ĐẢO/ZOMBIE/CONSPIRACY:
+ELIF claim có dấu hiệu LỪA ĐẢO/ZOMBIE/CONSPIRACY rõ ràng:
     → TIN GIẢ (pattern đáng ngờ)
     
-ELIF claim là TUYÊN BỐ PHI THƯỜNG + không có evidence:
-    → TIN GIẢ (extraordinary claims require extraordinary evidence)
+ELIF claim là SỰ KIỆN CỤ THỂ (thể thao, bầu cử, sản phẩm):
+    IF có evidence liên quan:
+        → Dựa vào evidence
+    ELSE:
+        → Dùng kiến thức AI để đánh giá (VD: VN vô địch SEA Games 33 - AI biết đây là sự thật)
+        
+ELIF claim là KIẾN THỨC CHUNG (địa lý, lịch sử, khoa học):
+    → Dùng kiến thức AI (VD: Hà Nội là thủ đô VN)
     
-ELIF claim là TIN TỨC BÌNH THƯỜNG + evidence không rõ ràng:
-    → PHÂN TÍCH SÂU HƠN (xem các nguyên tắc bên dưới)
+ELIF evidence không rõ ràng:
+    → Dùng KIẾN THỨC AI + suy luận để quyết định
+    → KHÔNG mặc định là TIN GIẢ chỉ vì thiếu evidence
 ```
 
 ---
