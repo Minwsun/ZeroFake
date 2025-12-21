@@ -242,7 +242,7 @@ gui/
 - **Google Fact Check API**: Multi-query (EN + VN) integration
 - **DDGS().news()**: Proper news search instead of web search
 - **PLANNER 5+ queries**: Better search coverage (backup if Fact Check fails)
-- **FAISS KB Cache**: Semantic deduplication to avoid duplicate queries (98% similarity threshold)
+- **FAISS KB Cache**: Semantic deduplication (85% similarity threshold)
 - **Cerebras + Groq**: Multi-key API rotation (4 keys each)
 
 ---

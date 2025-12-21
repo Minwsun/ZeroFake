@@ -60,10 +60,13 @@ def init_kb():
     conn.close()
 
 
-def search_knowledge_base(text_input: str, similarity_threshold: float = 0.98) -> Optional[dict]:
+def search_knowledge_base(text_input: str, similarity_threshold: float = 0.85) -> Optional[dict]:
     """
     Tìm kiếm trong Knowledge Base.
     Trả về dict nếu tìm thấy, None nếu không.
+    
+    Threshold 0.85 = Bắt các câu tương tự về ngữ nghĩa (semantic similarity)
+    Ví dụ: "iPhone 16 ra mắt" ~ "Apple công bố iPhone 16" sẽ được match
     """
     global faiss_index, MODEL_BI_ENCODER
     
