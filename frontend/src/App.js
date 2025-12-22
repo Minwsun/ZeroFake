@@ -1,7 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { IconCheck } from '@tabler/icons-react';
 import { CheckCircle, XCircle, AlertCircle, FileText, TrendingUp, Shield, X, Clock } from 'lucide-react';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import HistorySidebar from './HistorySidebar';
+import AuthModal from './AuthModal';
+import { auth, db } from './firebase';
 import './App.css';
 
 /* URL API backend */
@@ -17,8 +21,13 @@ const PROGRESS_STEPS = [
 function App() {
   /* State quản lý nội dung tin tức và cấu hình */
   const [text, setText] = useState('');
-  const [agent1Model, setAgent1Model] = useState('models/gemini-2.5-flash');
-  const [agent2Model, setAgent2Model] = useState('models/gemini-2.5-pro');
+  // Fallback model
+  const [agent1Model] = useState('models/gemma-3-4b-it');
+  const [agent2Model] = useState('models/gemini-2.5-flash');
+
+  /* State quản lý người dùng (auth) */
+  const [user, setUser] = useState(null);
+  const [showAuthModal, setShowAuthModal] = useState(false);
 
   /* State quản lý trạng thái loading và tiến trình */
   const [loading, setLoading] = useState(false);
@@ -42,7 +51,16 @@ function App() {
   const [selectedCorrection, setSelectedCorrection] = useState('');
   const [correctionNotes, setCorrectionNotes] = useState('');
 
-  /* Quản lý hiển thị tiến trình loading và vô hiệu hóa scroll */
+  /* Lắng nghe trạng thái đăng nhập Firebase */
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+      setUser(firebaseUser);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  /* Loading */
   useEffect(() => {
     if (!loading) {
       setCurrentStep(0);
@@ -50,7 +68,6 @@ function App() {
       return;
     }
 
-    /* Vô hiệu hóa scroll khi đang loading */
     document.body.style.overflow = 'hidden';
 
     const stepTimers = [];
@@ -79,6 +96,19 @@ function App() {
       document.body.style.overflow = '';
     };
   }, [loading]);
+
+  /* Đăng xuất */
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+    } catch (err) {
+      console.error('Logout error:', err);
+    }
+  };
+
+  const handleOpenAuth = () => {
+    setShowAuthModal(true);
+  };
 
   /* Xử lý kiểm tra tin tức */
   const handleCheck = async () => {
@@ -119,14 +149,10 @@ function App() {
       setActiveTab('reason');
       setCurrentStep(PROGRESS_STEPS.length);
       setLoading(false);
+      setShowResultModal(true);
 
-      /* Lưu vào lịch sử */
-      saveToHistory(text.trim(), data);
-
-      /* Hiển thị modal kết quả sau khi loading xong */
-      setTimeout(() => {
-        setShowResultModal(true);
-      }, 300);
+      /* Lưu vào lịch sử cho user hiện tại (Firestore) - không chặn UI */
+      saveToHistory(user, text.trim(), data);
     } catch (err) {
       setError(err.message || 'Đã xảy ra lỗi. Vui lòng kiểm tra kết nối và thử lại.');
       setLoading(false);
@@ -232,25 +258,24 @@ function App() {
     return colorMap[conclusion] || '#6c757d';
   };
 
-  /* Lưu kết quả kiểm tra vào lịch sử localStorage */
-  const saveToHistory = (newsText, resultData) => {
+  /* Lưu kết quả kiểm tra vào lịch sử Firestore theo từng người dùng */
+  const saveToHistory = async (currentUser, newsText, resultData) => {
+    if (!currentUser) {
+      // Nếu chưa đăng nhập thì không lưu lịch sử
+      return;
+    }
+
     try {
-      const historyItem = {
-        id: Date.now().toString(),
-        text: newsText,
-        conclusion: resultData.conclusion || 'KHÔNG XÁC ĐỊNH',
-        reason: resultData.reason || '',
-        cached: resultData.cached || false,
-        timestamp: new Date().toISOString(),
-      };
-
-      const existing = localStorage.getItem('zerofake_history');
-      const history = existing ? JSON.parse(existing) : [];
-      history.push(historyItem);
-
-      /* Chỉ giữ lại 100 mục gần nhất */
-      const limitedHistory = history.slice(-100);
-      localStorage.setItem('zerofake_history', JSON.stringify(limitedHistory));
+      await addDoc(
+        collection(db, 'users', currentUser.uid, 'history'),
+        {
+          text: newsText,
+          conclusion: resultData.conclusion || 'KHÔNG XÁC ĐỊNH',
+          reason: resultData.reason || '',
+          cached: resultData.cached || false,
+          timestamp: serverTimestamp(),
+        }
+      );
     } catch (error) {
       console.error('Error saving to history:', error);
     }
@@ -285,14 +310,39 @@ function App() {
             <h1 className="fancy">ZeroFake</h1>
             <p className="subtitle">Kiểm tra tin tức thật giả</p>
           </div>
-          <button
-            className="history-button"
-            onClick={() => setShowHistorySidebar(true)}
-            title="Xem lịch sử kiểm tra"
-          >
-            <Clock size={20} />
-            <span>Lịch sử</span>
-          </button>
+          <div className="header-right">
+            {user && (
+              <button
+                className="history-button"
+                onClick={() => setShowHistorySidebar(true)}
+                title="Xem lịch sử kiểm tra"
+              >
+                <Clock size={20} />
+                <span>Lịch sử</span>
+              </button>
+            )}
+            {user ? (
+              <button
+                className="account-button"
+                onClick={handleLogout}
+                title={user.email}
+              >
+                <span className="account-email">
+                  {user.email}
+                </span>
+                <span className="account-action">
+                  Đăng xuất
+                </span>
+              </button>
+            ) : (
+              <button
+                className="auth-button"
+                onClick={handleOpenAuth}
+              >
+                Đăng nhập
+              </button>
+            )}
+          </div>
         </header>
 
         <div className="main-content">
@@ -306,42 +356,6 @@ function App() {
               placeholder="Dán hoặc nhập tin tức cần kiểm tra tại đây..."
               rows="6"
             />
-          </div>
-
-          <div className="model-selection">
-            <div className="model-group">
-              <label htmlFor="agent1">Agent 1 model:</label>
-              <select
-                id="agent1"
-                value={agent1Model}
-                onChange={(e) => setAgent1Model(e.target.value)}
-                className="model-select"
-              >
-                <option value="models/gemini-2.5-flash">Gemini Flash</option>
-                <option value="models/gemma-3-4b-it">Gemma 3 4B IT</option>
-                <option value="models/gemma-3-1b-it">Gemma 3 1B IT</option>
-                <option value="models/gemma-3n-e2b-it">Gemma 3n E2B IT</option>
-                <option value="models/gemma-3n-e4b-it">Gemma 3n E4B IT</option>
-              </select>
-            </div>
-
-            <div className="model-group">
-              <label htmlFor="agent2">Agent 2 model:</label>
-              <select
-                id="agent2"
-                value={agent2Model}
-                onChange={(e) => setAgent2Model(e.target.value)}
-                className="model-select"
-              >
-                <option value="models/gemini-2.5-pro">Gemini Pro</option>
-                <option value="models/gemini-2.5-flash">Gemini Flash</option>
-                <option value="models/gemma-3-27b-it">Gemma 3 27B IT</option>
-                <option value="models/gemma-3-12b-it">Gemma 3 12B IT</option>
-                <option value="models/gemma-3-4b-it">Gemma 3 4B IT</option>
-                <option value="models/gemma-3n-e4b-it">Gemma 3n E4B IT</option>
-                <option value="models/gemma-3n-e2b-it">Gemma 3n E2B IT</option>
-              </select>
-            </div>
           </div>
 
           <div className="button-group">
@@ -565,6 +579,7 @@ function App() {
 
       {/* Sidebar hiển thị lịch sử kiểm tra */}
       <HistorySidebar
+        user={user}
         isOpen={showHistorySidebar}
         onClose={() => setShowHistorySidebar(false)}
         onSelectHistory={handleSelectHistory}
@@ -659,6 +674,13 @@ function App() {
           </div>
         </div>
       )}
+
+      {/* Modal đăng nhập / đăng ký */}
+      <AuthModal
+        isOpen={showAuthModal}
+        onClose={() => setShowAuthModal(false)}
+        onAuthSuccess={(firebaseUser) => setUser(firebaseUser)}
+      />
     </div>
   );
 }

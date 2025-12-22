@@ -1,21 +1,41 @@
 import React, { useState, useEffect } from 'react';
 import { X, Clock, CheckCircle, XCircle, AlertCircle, Trash2 } from 'lucide-react';
+import { collection, query, orderBy, getDocs, deleteDoc, doc, writeBatch } from 'firebase/firestore';
+import { db } from './firebase';
 import './HistorySidebar.css';
 
-const HistorySidebar = ({ isOpen, onClose, onSelectHistory }) => {
+const HistorySidebar = ({ isOpen, onClose, onSelectHistory, user }) => {
   const [history, setHistory] = useState([]);
 
   useEffect(() => {
-    // Load history from localStorage
-    const loadHistory = () => {
+    const loadHistory = async () => {
+      if (!user) {
+        setHistory([]);
+        return;
+      }
+
       try {
-        const stored = localStorage.getItem('zerofake_history');
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          // Sort by timestamp, newest first
-          const sorted = parsed.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-          setHistory(sorted);
-        }
+        const q = query(
+          collection(db, 'users', user.uid, 'history'),
+          orderBy('timestamp', 'desc')
+        );
+        const snapshot = await getDocs(q);
+        const items = snapshot.docs.map((d) => {
+          const data = d.data();
+          const timestamp = data.timestamp && data.timestamp.toDate
+            ? data.timestamp.toDate().toISOString()
+            : data.timestamp || new Date().toISOString();
+
+          return {
+            id: d.id,
+            text: data.text || '',
+            conclusion: data.conclusion || 'KHÔNG XÁC ĐỊNH',
+            reason: data.reason || '',
+            cached: data.cached || false,
+            timestamp,
+          };
+        });
+        setHistory(items);
       } catch (error) {
         console.error('Error loading history:', error);
       }
@@ -24,7 +44,7 @@ const HistorySidebar = ({ isOpen, onClose, onSelectHistory }) => {
     if (isOpen) {
       loadHistory();
     }
-  }, [isOpen]);
+  }, [isOpen, user]);
 
   const handleSelect = (item) => {
     if (onSelectHistory) {
@@ -33,21 +53,32 @@ const HistorySidebar = ({ isOpen, onClose, onSelectHistory }) => {
     onClose();
   };
 
-  const handleDelete = (id, e) => {
+  const handleDelete = async (id, e) => {
     e.stopPropagation();
+    if (!user) return;
     try {
-      const updated = history.filter(item => item.id !== id);
-      setHistory(updated);
-      localStorage.setItem('zerofake_history', JSON.stringify(updated));
+      await deleteDoc(doc(db, 'users', user.uid, 'history', id));
+      setHistory((prev) => prev.filter((item) => item.id !== id));
     } catch (error) {
       console.error('Error deleting history item:', error);
     }
   };
 
-  const handleClearAll = () => {
+  const handleClearAll = async () => {
     if (window.confirm('Bạn có chắc muốn xóa toàn bộ lịch sử?')) {
-      setHistory([]);
-      localStorage.removeItem('zerofake_history');
+      if (!user) return;
+      try {
+        const q = query(collection(db, 'users', user.uid, 'history'));
+        const snapshot = await getDocs(q);
+        const batch = writeBatch(db);
+        snapshot.docs.forEach((d) => {
+          batch.delete(d.ref);
+        });
+        await batch.commit();
+        setHistory([]);
+      } catch (error) {
+        console.error('Error clearing history:', error);
+      }
     }
   };
 
@@ -74,7 +105,8 @@ const HistorySidebar = ({ isOpen, onClose, onSelectHistory }) => {
   };
 
   const formatDate = (timestamp) => {
-    const date = new Date(timestamp);
+    if (!timestamp) return '';
+    const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
     const now = new Date();
     const diff = now - date;
     const minutes = Math.floor(diff / 60000);
