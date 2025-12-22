@@ -9,6 +9,37 @@ MISSION: Classify claim type and build COMPREHENSIVE verification strategy with 
 
 ---
 
+## STEP 0: TRUSTED SOURCE EXTRACTION (QUAN TRỌNG - MỚI!)
+
+**Kiểm tra xem claim có trích dẫn nguồn uy tín không:**
+
+### Trusted Source Prefixes:
+```
+"Theo Reuters:", "Theo AP:", "BBC đưa tin:", "Thông tin từ AP:",
+"Theo VnExpress:", "VnExpress:", "AFP:", "CNN:", "The Guardian:",
+"Theo nguồn tin chính thức:"
+```
+
+### Nếu claim BẮT ĐẦU với trusted source:
+1. **EXTRACT SOURCE**: Trích nguồn ra (VD: "Theo Reuters: X" → source = "Reuters")
+2. **BUILD SOURCE-SPECIFIC QUERY**: Tạo query = "[nội dung claim] + [tên nguồn]"
+3. **DIRECT SEARCH**: Dùng Google Search, DDG để verify trực tiếp
+4. **SKIP**: Không cần qua fact check, wiki, gnews nếu đã có source rõ ràng
+
+### Ví dụ:
+```
+Claim: "Theo Reuters: NVIDIA trở thành công ty có vốn hóa lớn nhất thế giới"
+
+extracted_source: "Reuters"
+source_verification_queries: [
+  "NVIDIA largest market cap Reuters",
+  "NVIDIA market cap news Reuters 2024",
+  "site:reuters.com NVIDIA market cap"
+]
+```
+
+---
+
 ## STEP 1: CLASSIFY CLAIM TYPE & EXTRACT ENTITIES
 
 ### A. Flow Classification
@@ -60,6 +91,12 @@ Queries nên tạo:
   "flow_type": "NEWS | KNOWLEDGE",
   "flow_reason": "Brief explanation",
   
+  "extracted_source": {
+    "has_trusted_source": true,
+    "source_name": "Reuters",
+    "claim_without_source": "NVIDIA trở thành công ty có vốn hóa lớn nhất thế giới"
+  },
+  
   "main_claim": "The main verifiable claim",
   "claim_type": "sports | politics | product | geography | science | other",
   
@@ -89,12 +126,16 @@ Queries nên tạo:
       "parameters": {
         "queries": [
           "QUERY_1: Full claim Vietnamese",
-          "QUERY_2: Full claim English",
+          "QUERY_2: Full claim English", 
           "QUERY_3: Primary entity only",
           "QUERY_4: Entity + news/tin tức",
           "QUERY_5: Entity + official/wiki",
           "QUERY_6: Event confirmation query",
-          "QUERY_7: Fact check query"
+          "QUERY_7: Source verification (nếu có trusted source)"
+        ],
+        "source_verification_queries": [
+          "site:reuters.com [claim keywords]",
+          "[claim keywords] Reuters"
         ]
       }
     }

@@ -364,9 +364,9 @@ def process_search_results(search_items: list) -> str:
         # Lấy rank score
         rank_score = get_rank_from_url(link)
 
-        # Lọc các nguồn có rank quá thấp
-        if rank_score <= 0.1:
-            continue
+        # REMOVED FILTER: Giữ tất cả nguồn, không lọc theo rank
+        # if rank_score <= 0.1:
+        #     continue
 
         # Trích xuất ngày
         date_str = _extract_date(item)

@@ -1,4 +1,4 @@
-# ZeroFake v2.1
+# ZeroFake v2.3
 
 **Advanced AI-powered Fake News Detection System with Dual Flow Architecture**
 
@@ -13,6 +13,7 @@ ZeroFake is a real-time fact-checking system that verifies news claims as:
 The system uses a multi-agent cognitive architecture with:
 - **Dual Flow Routing** (Recent News vs Old Info)
 - **Google Fact Check API** integration
+- **LLM Evidence Filter** (removes duplicates, social media, clickbait)
 - **Adversarial CRITIC-JUDGE debate**
 - **Presumption of Truth** principle
 
@@ -47,20 +48,23 @@ The system uses a multi-agent cognitive architecture with:
             ▼                                         ▼
     ┌───────────────┐                         ┌───────────────┐
     │    SEARCH     │                         │  FACT CHECK   │
-    │  (DDG News)   │                         │     API       │
+    │  (Multi-src)  │                         │     API       │
     └───────┬───────┘                         └───────┬───────┘
             │                                         │
             ▼                               ┌─────────┴─────────┐
     ┌───────────────┐                       ▼                   ▼
-    │    CRITIC     │               ┌─────────────┐     ┌─────────────┐
-    │  (Adversarial)│               │ Has Result  │     │  No Result  │
-    └───────┬───────┘               │   ≥70%      │     │             │
-            │                       └──────┬──────┘     └──────┬──────┘
+    │    FILTER     │               ┌─────────────┐     ┌─────────────┐
+    │  (Llama 8B)   │               │ Has Result  │     │  No Result  │
+    │ Remove junk   │               │   ≥70%      │     │             │
+    └───────┬───────┘               └──────┬──────┘     └──────┬──────┘
             │                              │                   │
-            │                              │ Skip Search       │
-            │                              │ Skip CRITIC       ▼
+            ▼                              │ Skip CRITIC       ▼
+    ┌───────────────┐                      │            ┌─────────────┐
+    │    CRITIC     │                      │            │   SEARCH    │
+    │  (Adversarial)│                      │            └──────┬──────┘
+    └───────┬───────┘                      │                   ▼
             │                              │            ┌─────────────┐
-            │                              │            │   SEARCH    │
+            │                              │            │   FILTER    │
             │                              │            └──────┬──────┘
             │                              │                   ▼
             │                              │            ┌─────────────┐
@@ -298,9 +302,16 @@ gui/
 
 ---
 
-## Recent Updates (v2.2)
+## Recent Updates (v2.3)
 
-### December 2025
+### December 2025 (Latest)
+- **Evidence Filter Agent**: LLM-based filtering using Llama 8B (Groq) to remove duplicates, social media, clickbait before CRITIC/JUDGE
+- **Filter Cache**: Hash-based caching (200 entries) saves ~2s for duplicate claims
+- **Skip CRITIC Logic**: Auto-skip CRITIC for KNOWLEDGE claims with Wikipedia evidence (saves 5-8s)
+- **Batch Evaluation**: Concurrent processing (3 threads) for 3x faster evaluation
+- **Snippet Optimization**: 400 chars per evidence for balanced info extraction
+
+### Previous Updates (v2.2)
 - **Unified Search System**: Multi-source search with GNews + Wikipedia + Googlesearch + Trafilatura + DDG fallback
 - **Google News Integration**: gnews library for latest news (VN + EN)
 - **Wikipedia API**: Direct entity verification (wikipedia-api)

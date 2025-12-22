@@ -69,6 +69,70 @@ ELIF evidence không rõ ràng:
 
 ---
 
+## 🟢 SOFT MATCHING - CHẤP NHẬN DỮ LIỆU GẦN ĐÚNG (QUAN TRỌNG!)
+
+**NGUYÊN TẮC: AI phải TỰ TƯ DUY mềm mỏng với dữ liệu thực tế:**
+
+### 1. DỮ LIỆU DÂN SỐ (Chấp nhận sai số ~20%):
+```
+Claim: "Việt Nam có khoảng 100 triệu người"
+Thực tế: ~99-100 triệu → SAI SỐ < 5% → TIN THẬT ✓
+
+Claim: "Dân số Việt Nam khoảng 100 triệu"  
+→ Từ "khoảng" cho phép sai số → TIN THẬT ✓
+
+CÁC TỪ CHO PHÉP SAI SỐ: "khoảng", "gần", "hơn", "trên", "dưới", "xấp xỉ", "approximately"
+```
+
+### 2. DỮ LIỆU ĐỊA LÝ (Chấp nhận sai số ~20%):
+```
+Claim: "Diện tích Việt Nam 331,212 km²"
+Thực tế: 331,210 km² → SAI SỐ < 0.01% → TIN THẬT ✓
+
+Claim: "Việt Nam có 63 tỉnh thành"
+Thực tế: có 63 đơn vị hành chính → TIN THẬT ✓
+
+Claim: "Fansipan cao 3,143m"
+Thực tế: 3,143m → CHÍNH XÁC → TIN THẬT ✓
+
+Claim: "Việt Nam giáp Trung Quốc, Lào, Campuchia"
+Thực tế: Đúng → TIN THẬT ✓
+```
+
+### 3. SỰ KIỆN THỂ THAO ĐÃ XẢY RA (AI đã biết):
+```
+Claim: "Argentina vô địch World Cup 2022"
+Thực tế: Đúng, AI đã biết → TIN THẬT ✓
+
+Claim: "Real Madrid vô địch Champions League 2024"
+Thực tế: Đúng, AI đã biết → TIN THẬT ✓
+
+Claim: "Messi giành Quả bóng vàng 2023"
+Thực tế: Đúng, lần thứ 8 → TIN THẬT ✓
+
+Claim: "Ronaldo chuyển đến Al-Nassr tháng 1/2023"
+Thực tế: Đúng → TIN THẬT ✓
+```
+
+### 4. LOGIC ĐÁNH GIÁ MỀM:
+```python
+IF claim chứa số liệu địa lý/dân số:
+    IF sai số < 20% hoặc có từ "khoảng/gần/hơn":
+        → TIN THẬT (gần đúng là đủ)
+    ELIF sai số > 50%:
+        → TIN GIẢ (sai quá nhiều)
+
+IF claim về kết quả thể thao:
+    IF AI biết sự kiện này (trước 2024):
+        → Dùng kiến thức AI để verify
+        → KHÔNG CẦN evidence bên ngoài
+    
+IF claim có nguồn uy tín (Reuters, AP, BBC):
+    → Ưu tiên TIN THẬT trừ khi có phản chứng cụ thể
+```
+
+---
+
 ## 🎯 NGUYÊN TẮC PHÂN LOẠI CHI TIẾT
 
 ### ✅ XÁC ĐỊNH TIN THẬT KHI:
@@ -80,6 +144,26 @@ ELIF evidence không rõ ràng:
 | **Thông tin sản phẩm/công nghệ** có thể verify | "Vision Pro giá $3,499", "GPT-5 ra mắt" | Verify được từ nguồn chính thức |
 | **Số liệu thống kê hợp lý** | "Internet users > 5 tỷ" | Phù hợp với xu hướng |
 | **Tin tức có nguồn rõ ràng** | "Theo AP:", "BBC đưa tin:", "VnExpress:" | Có nguồn cụ thể |
+
+### 🟢 QUY TẮC ƯU TIÊN NGUỒN UY TÍN (QUAN TRỌNG - MỚI):
+
+**Nếu claim BẮT ĐẦU bằng nguồn uy tín, ƯU TIÊN TIN THẬT:**
+
+```
+Prefixes uy tín:
+- "Theo Reuters:", "Theo AP:", "BBC đưa tin:", "AFP:"
+- "Thông tin từ AP:", "Theo VnExpress:", "VnExpress:"
+- "Theo nguồn tin chính thức:", "CNN:", "The Guardian:"
+
+Logic xử lý:
+IF claim.startswith(trusted_prefix):
+    IF có phản chứng CỤ THỂ → TIN GIẢ
+    ELIF không tìm thấy evidence → TIN THẬT (không tự động đánh giả)
+    ELSE → TIN THẬT (có nguồn rõ ràng)
+```
+
+**LÝ DO**: Tin tức trích dẫn nguồn uy tín thường đã được biên tập viên xác minh. Việc tự động đánh TIN GIẢ chỉ vì không tìm thấy evidence bổ sung là SAI LOGIC.
+
 
 ### 🚫 NGUỒN KHÔNG ĐÁNG TIN (BLOCKLIST) - KHÔNG TIN:
 
@@ -119,17 +203,18 @@ TẤT CẢ CÁC NGUỒN KHÁC → CHẤP NHẬN LÀ TIN CẬY
 
 ---
 
-## 🔴 QUY TẮC ĐẶC BIỆT: NGÔN NGỮ HEDGING
+## ⚠️ QUY TẮC NGÔN NGỮ HEDGING (ĐÃ CẢI TIẾN)
 
-**Claim chứa các cụm từ sau thường là TIN CHƯA VERIFY (coi là TIN GIẢ vì lan truyền tin chưa xác nhận):**
+**Claim chứa hedging CHỈ là TIN GIẢ khi ĐÁP ỨNG CẢ 2 ĐIỀU KIỆN:**
 
-- "chưa xác nhận chính thức" → Bản thân claim thừa nhận chưa verify
-- "theo nguồn tin nội bộ" → Không thể verify nguồn
-- "gợi ý rằng" / "có thể" / "ngờ là" → Không khẳng định
-- "tuyên bố đã phát hiện" + "chưa xác nhận" → Contradiction trong chính claim
-- "theo một nghiên cứu chưa được bình duyệt" → Chưa peer-reviewed
+1. Claim TỰ THỪA NHẬN "chưa xác nhận" hoặc "chưa được confirm"
+2. VÀ claim KHÔNG có nguồn uy tín đi kèm (không bắt đầu bằng AP, Reuters, BBC, etc.)
 
-**LOGIC**: Nếu claim TỰ THỪA NHẬN "chưa xác nhận" hoặc "chưa được confirm", thì đang lan truyền tin chưa verify → TIN GIẢ
+**CHÚ Ý**: Các cụm sau KHÔNG TỰ ĐỘNG = TIN GIẢ:
+- "gợi ý rằng" / "có thể" → Ngôn ngữ thận trọng của nhà khoa học, KHÔNG phải tin giả
+- "theo nguồn tin nội bộ" + có tên tổ chức cụ thể → Có thể là tin thật đang chờ xác nhận
+
+**CHỈ TIN GIẢ khi**: Claim vừa dùng hedging VỪA không có nguồn uy tín VÀ có dấu hiệu scam/conspiracy
 
 ---
 

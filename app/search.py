@@ -428,6 +428,80 @@ def call_google_search(text_input: str, site_query_string: str) -> list:
     # --- OPTIMIZED SEARCH STRATEGY ---
     # Priority: GNews (fast) → Wikipedia (fast) → DDG (fallback if < 5 results)
     
+    # =========================================================================
+    # NEW: SITE-SPECIFIC QUERY DETECTION (Skip GNews/Wiki for trusted sources)
+    # =========================================================================
+    is_site_query = text_input.strip().lower().startswith("site:")
+    
+    if is_site_query:
+        print(f"  [SITE-QUERY] Detected site: query - using DDG primary, Google backup")
+        
+        # Skip GNews and Wikipedia for site: queries
+        # Priority: DDG (works better) → Google with English
+        
+        site_query = text_input.strip()
+        
+        # Extract domain and claim content
+        site_match = re.match(r'^site:(\S+)\s+(.+)$', site_query, re.IGNORECASE)
+        domain = ""
+        claim_content = site_query
+        if site_match:
+            domain = site_match.group(1)
+            claim_content = site_match.group(2).strip()
+        
+        # 1. DDG WEB SEARCH (Primary - works best with site: queries)
+        print(f"  [DDG-SITE] Tìm DDG: {site_query[:60]}...")
+        _ingest_ddg(_run_ddg_text(site_query, None, region="wt-wt"), source_type="web")
+        
+        # 2. DDG search claim content only (Vietnamese)
+        if claim_content != site_query:
+            print(f"  [DDG-CLAIM-VN] Tìm DDG claim: {claim_content[:50]}...")
+            _ingest_ddg(_run_ddg_text(claim_content + " tin tức", timelimit or "m", region="vi-vn"), source_type="web")
+        
+        # 3. DDG search claim content (English) for international news
+        en_claim = _extract_english_query(claim_content)
+        if en_claim and len(en_claim) > 10:
+            print(f"  [DDG-CLAIM-EN] Tìm DDG EN: {en_claim[:50]}...")
+            _ingest_ddg(_run_ddg_text(en_claim + " news", None, region="wt-wt"), source_type="web")
+        
+        # 4. GOOGLE WEB with English query (backup)
+        if domain and en_claim:
+            google_site_query = f"site:{domain} {en_claim}"
+            print(f"  [GOOGLE-SITE-EN] Tìm Google EN: {google_site_query[:60]}...")
+            try:
+                time.sleep(random.uniform(0.5, 1.5))
+                urls = list(google_search(google_site_query, num_results=5, lang="en"))
+                print(f"  [GOOGLE-SITE-EN] Found {len(urls)} URLs")
+                for url in urls[:3]:
+                    if url not in seen:
+                        seen.add(url)
+                        try:
+                            downloaded = trafilatura.fetch_url(url)
+                            if downloaded:
+                                content = trafilatura.extract(downloaded, include_comments=False)
+                                if content and len(content) > 50:
+                                    all_items.append({
+                                        "title": url.split("/")[-1][:50],
+                                        "link": url,
+                                        "snippet": content[:400],
+                                        "source": "google_site",
+                                        "pagemap": {},
+                                        "date": "",
+                                    })
+                        except Exception:
+                            pass
+            except Exception as exc:
+                print(f"  [GOOGLE-SITE-EN] Error: {exc}")
+        
+        # Sort and return early
+        all_items.sort(key=_sort_key)
+        print(f"📊 Site-Search: Tổng cộng {len(all_items)} bằng chứng từ DDG/Google.")
+        return all_items[:MAX_RESULTS]
+    
+    # =========================================================================
+    # NORMAL FLOW (for non-site: queries)
+    # =========================================================================
+    
     # 1. GOOGLE NEWS: Primary news source (fast, reliable)
     print(f"  [GNEWS-VN] Tìm Google News VN: {cleaned_input[:50]}...")
     _ingest_gnews(_run_gnews(cleaned_input, language="vi", country="VN"))

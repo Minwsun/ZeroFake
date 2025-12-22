@@ -464,7 +464,10 @@ def _optimize_search_query(query: str, text_input: str) -> str:
 
 
 def _generate_search_queries(text_input: str, plan_struct: dict) -> list[str]:
-    """Create a richer set of search queries to improve recall."""
+    """Create a richer set of search queries to improve recall.
+    
+    NEW: If input has trusted source prefix, extract source and generate site:source.com queries
+    """
     from datetime import datetime
 
     candidates = []
@@ -482,6 +485,67 @@ def _generate_search_queries(text_input: str, plan_struct: dict) -> list[str]:
     time_refs = plan_struct.get("time_references") or {}
     entities = plan_struct.get("entities_and_values") or {}
 
+    # ========================================================================
+    # NEW: TRUSTED SOURCE EXTRACTION AND SITE-SPECIFIC QUERIES
+    # ========================================================================
+    TRUSTED_SOURCE_MAPPINGS = {
+        # Prefix pattern -> (source_name, domain)
+        "theo reuters:": ("Reuters", "reuters.com"),
+        "reuters:": ("Reuters", "reuters.com"),
+        "theo ap:": ("AP News", "apnews.com"),
+        "thông tin từ ap:": ("AP News", "apnews.com"),
+        "ap news:": ("AP News", "apnews.com"),
+        "bbc đưa tin:": ("BBC", "bbc.com"),
+        "bbc:": ("BBC", "bbc.com"),
+        "cnn:": ("CNN", "cnn.com"),
+        "theo cnn:": ("CNN", "cnn.com"),
+        "afp:": ("AFP", "afp.com"),
+        "theo afp:": ("AFP", "afp.com"),
+        "theo vnexpress:": ("VnExpress", "vnexpress.net"),
+        "vnexpress:": ("VnExpress", "vnexpress.net"),
+        "tuổi trẻ:": ("Tuổi Trẻ", "tuoitre.vn"),
+        "thanh niên:": ("Thanh Niên", "thanhnien.vn"),
+        "dân trí:": ("Dân Trí", "dantri.com.vn"),
+        "the guardian:": ("The Guardian", "theguardian.com"),
+        "new york times:": ("NY Times", "nytimes.com"),
+        "washington post:": ("Washington Post", "washingtonpost.com"),
+    }
+    
+    extracted_source = None
+    source_domain = None
+    claim_content = base  # Content without source prefix
+    
+    for prefix, (source_name, domain) in TRUSTED_SOURCE_MAPPINGS.items():
+        if text_lower.startswith(prefix):
+            extracted_source = source_name
+            source_domain = domain
+            # Extract claim content without source prefix
+            claim_content = base[len(prefix):].strip()
+            print(f"[PLANNER] Extracted trusted source: {source_name} ({domain})")
+            print(f"[PLANNER] Claim content: {claim_content}")
+            break
+    
+    # If trusted source found, generate site-specific queries FIRST (priority)
+    if extracted_source and source_domain and claim_content:
+        # PRIORITY 1: site:domain.com + claim keywords
+        add(f"site:{source_domain} {claim_content}")
+        
+        # PRIORITY 2: claim + source name  
+        add(f"{claim_content} {extracted_source}")
+        
+        # PRIORITY 3: key entities + source
+        # Extract key words from claim (remove common words)
+        common_words = {'là', 'có', 'được', 'trong', 'với', 'và', 'của', 'đã', 'sẽ', 'để', 'cho', 'từ', 'về'}
+        keywords = [w for w in claim_content.split() if w.lower() not in common_words and len(w) > 2][:5]
+        if keywords:
+            add(f"site:{source_domain} {' '.join(keywords)}")
+            add(f"{' '.join(keywords)} {extracted_source}")
+        
+        print(f"[PLANNER] Generated {len(candidates)} source-specific queries")
+    
+    # ========================================================================
+    # ORIGINAL LOGIC (FALLBACK if no trusted source)
+    # ========================================================================
     if base:
         add(base)  # giữ nguyên câu gốc
         add(f"{base} tin tức")
@@ -541,8 +605,15 @@ def _generate_search_queries(text_input: str, plan_struct: dict) -> list[str]:
                 add(f"tình hình chiến sự {loc}")
                 add(f"chiến sự {loc} mới nhất")
 
-    # SPEED OPTIMIZATION: Giới hạn 1 query để giảm thời gian search
-    return (candidates or [base or text_input])[:1]
+    # If trusted source was found, prioritize site-specific queries (move to front)
+    if extracted_source:
+        # Reorder: site queries first, then others
+        site_queries = [q for q in candidates if "site:" in q or extracted_source in q]
+        other_queries = [q for q in candidates if "site:" not in q and extracted_source not in q]
+        candidates = site_queries + other_queries
+
+    # Limit to top queries for speed
+    return (candidates or [base or text_input])[:5]  # Increased from 1 to 5 for source verification
 
 
 

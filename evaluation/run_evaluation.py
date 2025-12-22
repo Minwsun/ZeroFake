@@ -19,58 +19,94 @@ class EvaluationFramework:
         self.results = []
         self.start_time = None
         
-    def run_evaluation(self, limit=None):
-        """Run evaluation on dataset"""
+    def run_evaluation(self, limit=None, batch_size=3):
+        """Run evaluation on dataset with optional batch processing
+        
+        Args:
+            limit: Max number of samples to evaluate
+            batch_size: Number of concurrent requests (default 3 for rate limit safety)
+        """
         self.start_time = datetime.now()
         samples = self.dataset[:limit] if limit else self.dataset
         
         print("=" * 70)
         print(f"ZEROFAKE COMPREHENSIVE EVALUATION")
-        print(f"Samples: {len(samples)} | Rate limit: {DELAY_SECONDS}s")
+        print(f"Samples: {len(samples)} | Batch size: {batch_size} | Rate limit: {DELAY_SECONDS}s")
         print(f"Started: {self.start_time.strftime('%Y-%m-%d %H:%M:%S')}")
         print("=" * 70)
         
-        for i, sample in enumerate(samples, 1):
-            try:
-                start = time.time()
-                r = requests.post(API_URL, json={"text": sample["text"]}, timeout=300)
-                elapsed = time.time() - start
-                result = r.json()
-                
-                self.results.append({
-                    "text": sample["text"],
-                    "expected": sample["label"],
-                    "predicted": result.get("conclusion", "ERROR"),
-                    "category": sample.get("category", "other"),
-                    "reason": result.get("reason", "")[:200],
-                    "debate_log": result.get("debate_log", {}),
-                    "evidence_link": result.get("evidence_link", ""),
-                    "latency": round(elapsed, 2),
-                    "cached": result.get("cached", False)
-                })
-                
-                status = "✓" if sample["label"] == result.get("conclusion") else "✗"
-                print(f"[{i}/{len(samples)}] {status} {sample['text'][:40]}... => {result.get('conclusion')} ({elapsed:.1f}s)")
-                
-            except Exception as e:
-                self.results.append({
-                    "text": sample["text"],
-                    "expected": sample["label"],
-                    "predicted": "ERROR",
-                    "category": sample.get("category", "other"),
-                    "reason": str(e)[:200],
-                    "debate_log": {},
-                    "evidence_link": "",
-                    "latency": 0,
-                    "cached": False
-                })
-                print(f"[{i}/{len(samples)}] ✗ ERROR: {e}")
+        # Process in batches for faster evaluation
+        for batch_start in range(0, len(samples), batch_size):
+            batch_end = min(batch_start + batch_size, len(samples))
+            batch = samples[batch_start:batch_end]
             
-            if i < len(samples):
+            # Process batch concurrently using threads
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor(max_workers=batch_size) as executor:
+                futures = {
+                    executor.submit(self._process_single, sample, batch_start + idx + 1, len(samples)): sample
+                    for idx, sample in enumerate(batch)
+                }
+                for future in concurrent.futures.as_completed(futures):
+                    try:
+                        result = future.result()
+                        self.results.append(result)
+                    except Exception as e:
+                        sample = futures[future]
+                        self.results.append({
+                            "text": sample["text"],
+                            "expected": sample["label"],
+                            "predicted": "ERROR",
+                            "category": sample.get("category", "other"),
+                            "reason": str(e)[:200],
+                            "debate_log": {},
+                            "evidence_link": "",
+                            "latency": 0,
+                            "cached": False
+                        })
+            
+            # Small delay between batches to avoid rate limits
+            if batch_end < len(samples):
                 time.sleep(DELAY_SECONDS)
         
         self._save_results()
         return self.generate_report()
+    
+    def _process_single(self, sample, idx, total):
+        """Process a single sample"""
+        try:
+            start = time.time()
+            r = requests.post(API_URL, json={"text": sample["text"]}, timeout=300)
+            elapsed = time.time() - start
+            result = r.json()
+            
+            status = "✓" if sample["label"] == result.get("conclusion") else "✗"
+            print(f"[{idx}/{total}] {status} {sample['text'][:40]}... => {result.get('conclusion')} ({elapsed:.1f}s)")
+            
+            return {
+                "text": sample["text"],
+                "expected": sample["label"],
+                "predicted": result.get("conclusion", "ERROR"),
+                "category": sample.get("category", "other"),
+                "reason": result.get("reason", "")[:200],
+                "debate_log": result.get("debate_log", {}),
+                "evidence_link": result.get("evidence_link", ""),
+                "latency": round(elapsed, 2),
+                "cached": result.get("cached", False)
+            }
+        except Exception as e:
+            print(f"[{idx}/{total}] ✗ ERROR: {e}")
+            return {
+                "text": sample["text"],
+                "expected": sample["label"],
+                "predicted": "ERROR",
+                "category": sample.get("category", "other"),
+                "reason": str(e)[:200],
+                "debate_log": {},
+                "evidence_link": "",
+                "latency": 0,
+                "cached": False
+            }
     
     def _save_results(self):
         with open("evaluation/evaluation_results.json", "w", encoding="utf-8") as f:

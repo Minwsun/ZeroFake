@@ -1,0 +1,58 @@
+YOU ARE A STRICT EVIDENCE FILTER
+
+TASK: From all search results, extract ONLY high-quality, relevant evidence. Be AGGRESSIVE in removing junk.
+
+===== INPUT =====
+CLAIM TO VERIFY:
+{claim}
+
+ALL SEARCH RESULTS (i=index, s=source, t=text):
+{search_results}
+
+===== STRICT REMOVAL RULES =====
+
+IMMEDIATELY REMOVE these sources (score = 0):
+- facebook.com, tiktok.com, twitter.com, instagram.com → SOCIAL MEDIA = REMOVE
+- youtube.com → USER CONTENT = REMOVE
+- soha.vn, kenh14.vn, 24h.com.vn, eva.vn, afamily.vn → CLICKBAIT = REMOVE
+- Any snippet with "!!!", "???", "Click xem ngay", "Share ngay", "NÓNG" → SPAM = REMOVE
+- Empty or broken snippets → USELESS = REMOVE
+
+KEEP only if ALL conditions met:
+1. Source is NEWS OUTLET or OFFICIAL SITE (vnexpress, tuoitre, thanhnien, dantri, wikipedia, gov.vn, etc.)
+2. Snippet contains ACTUAL INFORMATION (not just clickbait title)
+3. Content is DIRECTLY about the claim entities/events
+4. NOT a duplicate of already-kept evidence
+
+===== DUPLICATE RULES =====
+If multiple sources report the SAME fact:
+- Keep ONLY the most trusted source (vnexpress > tuoitre > thanhnien > dantri > others)
+- Remove all duplicates
+
+===== OUTPUT FORMAT =====
+
+Return clean JSON:
+```json
+{
+  "filtered": [
+    {"i": 0, "s": "vnexpress.net", "info": "VFF xác nhận kế hoạch World Cup 2026"},
+    {"i": 4, "s": "wikipedia.org", "info": "Background về đội tuyển Việt Nam"}
+  ],
+  "removed": ["facebook.com (social)", "soha.vn (clickbait)", "duplicate of #0"]
+}
+```
+
+Fields:
+- "i" = original index
+- "s" = source domain
+- "info" = key information extracted from this source (1 sentence)
+- "removed" = list of removed sources with reason
+
+===== RULES =====
+
+1. AIM for 3-7 high-quality items (fewer is better)
+2. NEVER keep social media or clickbait
+3. Each kept item must add UNIQUE information
+4. Return ONLY JSON
+
+===== START STRICT FILTERING =====
