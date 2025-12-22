@@ -33,18 +33,121 @@ TIME_STOPWORDS = {
 }
 
 
+def _smart_weather_classifier(text: str) -> Dict:
+    """
+    LLM-based intelligent classifier to determine if text is about weather.
+    More flexible than pattern matching - can understand context.
+    
+    Returns: {"is_weather": bool, "location": str|None, "confidence": float}
+    """
+    import os
+    import json
+    
+    # Quick pre-filter: must have SOME weather-related word (diacritics-aware)
+    text_lower = text.lower()
+    quick_check_words = ["thời tiết", "mưa", "nắng", "bão", "weather", "rain", "forecast", "temperature", "nhiệt độ"]
+    if not any(w in text_lower for w in quick_check_words):
+        return {"is_weather": False, "location": None, "confidence": 1.0}
+    
+    # Use LLM to classify
+    try:
+        import google.generativeai as genai
+        
+        api_key = os.getenv("GEMINI_API_KEY")
+        if not api_key:
+            print("[Weather Classifier] No GEMINI_API_KEY, falling back to heuristics")
+            return {"is_weather": None, "location": None, "confidence": 0}  # Let caller use fallback
+        
+        genai.configure(api_key=api_key)
+        
+        # Use Gemma models for classification (lighter, faster)
+        # Try Gemma 4B first, fallback to 12B if needed
+        models_to_try = ["models/gemma-3-4b-it", "models/gemma-3-12b-it"]
+        
+        prompt = f'''Phân loại câu sau có phải là TIN THỜI TIẾT về một ĐỊA ĐIỂM CỤ THỂ không?
+
+Câu: "{text}"
+
+Trả lời JSON (chỉ JSON, không giải thích):
+{{"is_weather_claim": true/false, "location": "tên địa điểm" hoặc null, "reason": "lý do ngắn"}}
+
+LƯU Ý:
+- "mua" = MUA (buy), "mưa" = MƯA (rain) - khác nhau!
+- Tên người (Nguyễn, Trần...) KHÔNG phải địa điểm
+- Tin về bão số X ở vùng Y = weather claim
+- "Thời tiết hôm nay" không có địa điểm = false
+- Tin về người nói về thời tiết = false (không phải claim thời tiết)'''
+
+        response = None
+        for model_name in models_to_try:
+            try:
+                model = genai.GenerativeModel(model_name)
+                response = model.generate_content(
+                    prompt,
+                    generation_config={"temperature": 0, "max_output_tokens": 200}
+                )
+                print(f"[Weather Classifier] Using model: {model_name}")
+                break
+            except Exception as model_error:
+                print(f"[Weather Classifier] Model {model_name} failed: {model_error}")
+                continue
+        
+        if not response:
+            return {"is_weather": None, "location": None, "confidence": 0}
+        
+        result_text = response.text.strip()
+        # Extract JSON from response
+        if "```json" in result_text:
+            result_text = result_text.split("```json")[1].split("```")[0].strip()
+        elif "```" in result_text:
+            result_text = result_text.split("```")[1].split("```")[0].strip()
+        
+        result = json.loads(result_text)
+        
+        is_weather = result.get("is_weather_claim", False)
+        location = result.get("location")
+        
+        print(f"[Weather Classifier] LLM result: is_weather={is_weather}, location={location}")
+        
+        return {
+            "is_weather": is_weather,
+            "location": location if is_weather else None,
+            "confidence": 0.9
+        }
+        
+    except Exception as e:
+        print(f"[Weather Classifier] LLM error: {e}, falling back to heuristics")
+        return {"is_weather": None, "location": None, "confidence": 0}
+
+
 def extract_weather_info(text: str) -> Optional[Dict]:
     """
-    (MODIFIED)
-    Detect weather news and extract location NAME, no geocoding needed.
+    (MODIFIED - LLM-POWERED)
+    Detect weather news and extract location NAME.
+    Uses LLM for intelligent classification, falls back to heuristics if needed.
     """
+    # STEP 1: Try LLM-based classification first (smarter, context-aware)
+    llm_result = _smart_weather_classifier(text)
+    
+    if llm_result["confidence"] > 0.5:
+        # LLM gave a confident answer
+        if not llm_result["is_weather"]:
+            return None
+        if llm_result["location"]:
+            return {
+                "city": llm_result["location"],
+                "original_text": text,
+                "is_weather_keyword": True,
+                "detected_by": "llm"
+            }
+    
+    # STEP 2: Fallback to simple heuristics if LLM failed or no location found
     text_lower = text.lower()
-    weather_keywords = [
-        "tuyet", "snow", "mua", "rain", "nang", "sunny", "nong", "hot",
-        "lanh", "cold", "bao", "storm", "gio", "wind", "suong mu", "fog",
-        "nhiet do", "temperature", "thoi tiet", "weather", "nhiệt độ", "thời tiết", "mưa", "gió", "bão"
-        ]
-    if not any(kw in _norm(text_lower) for kw in weather_keywords):
+    text_norm = _norm(text_lower)
+    
+    # Simple keyword check as fallback
+    weather_keywords = ["thời tiết", "mưa", "rain", "forecast", "dự báo", "nhiệt độ", "temperature"]
+    if not any(kw in text_norm for kw in weather_keywords):
         return None
 
     def valid_candidate(s: str) -> bool:
@@ -125,8 +228,73 @@ def extract_weather_info(text: str) -> Optional[Dict]:
     if not location_name:
         return {"city": None, "original_text": text, "is_weather_keyword": True}
 
+    # QUAN TRỌNG: Validate location bằng geopy để đảm bảo đây là địa danh hành chính thật
+    # Tránh nhầm lẫn với tên người, tổ chức, etc.
+    validated_location = None
+    try:
+        from geopy.geocoders import Nominatim
+        from geopy.exc import GeocoderTimedOut, GeocoderServiceError
+        
+        geolocator = Nominatim(user_agent="ZeroFake-LocationValidator/1.1")
+        result = geolocator.geocode(location_name, timeout=5, language='en', exactly_one=True)
+        
+        if result:
+            # Kiểm tra type của location - chỉ chấp nhận các loại địa danh hành chính
+            address_type = result.raw.get('type', '') if hasattr(result, 'raw') else ''
+            valid_types = ['city', 'town', 'village', 'municipality', 'county', 'state', 
+                          'administrative', 'district', 'province', 'country', 'region',
+                          'suburb', 'neighbourhood', 'quarter', 'hamlet', 'borough']
+            
+            # Cũng kiểm tra class
+            address_class = result.raw.get('class', '') if hasattr(result, 'raw') else ''
+            valid_classes = ['place', 'boundary', 'landuse']
+            
+            if any(vt in address_type.lower() for vt in valid_types) or address_class in valid_classes:
+                validated_location = location_name
+                print(f"Geopy: Validated '{location_name}' as administrative location (type={address_type}, class={address_class})")
+            else:
+                # Nếu type không rõ ràng nhưng có lat/lon, vẫn chấp nhận nếu không phải tên người/org
+                if result.latitude and result.longitude:
+                    # Loại bỏ các pattern tên người/tổ chức phổ biến
+                    # + Vietnamese news headline patterns that are NOT locations
+                    non_location_patterns = [
+                        'FIFA', 'UEFA', 'World Cup', 'Olympic', 'Corporation', 
+                        'Company', 'Inc', 'Ltd', 'Foundation', 'Organization',
+                        'President', 'Minister', 'Director', 'CEO', 'Mr', 'Mrs', 'Dr',
+                        # Vietnamese news headline patterns (commonly mistaken as locations)
+                        'TIN NÓNG', 'TIN MỚI', 'TIN SỐC', 'TIN TỨC', 'CẢNH BÁO',
+                        'KHẨN CẤP', 'BREAKING', 'SỐC', 'HOT', 'URGENT', 'ALERT',
+                        'NÓNG', 'ĐỘC QUYỀN', 'TIN GIẢ', 'TIN THẬT', 'Tin nóng',
+                        'Tin mới', 'Cảnh báo', 'Breaking', 'Urgent', 'Alert',
+                        'XEM NGAY', 'SHARE', 'CHIA SẺ'
+                    ]
+                    if not any(nlp in location_name for nlp in non_location_patterns):
+                        validated_location = location_name
+                        print(f"Geopy: Accepted '{location_name}' (has coordinates, no org/person pattern)")
+                    else:
+                        print(f"Geopy: Rejected '{location_name}' - matches organization/person pattern")
+                else:
+                    print(f"Geopy: Rejected '{location_name}' - type={address_type}, class={address_class} not in valid types")
+        else:
+            print(f"Geopy: Location '{location_name}' not found in OpenStreetMap")
+    except ImportError:
+        # geopy không có sẵn, fallback về logic cũ
+        validated_location = location_name
+        print(f"Geopy: Not available, using unvalidated location '{location_name}'")
+    except (GeocoderTimedOut, GeocoderServiceError) as e:
+        # Lỗi mạng, fallback về logic cũ
+        validated_location = location_name
+        print(f"Geopy: Service error ({e}), using unvalidated location '{location_name}'")
+    except Exception as e:
+        print(f"Geopy: Error validating location '{location_name}': {e}")
+        # Không có validated location → không phải weather claim
+    
+    if not validated_location:
+        # Location không hợp lệ → không phải weather claim (chỉ có keyword thời tiết nhưng không có địa điểm rõ ràng)
+        return {"city": None, "original_text": text, "is_weather_keyword": True}
+
     return {
-        "city": location_name,
+        "city": validated_location,
         "original_text": text,
         "is_weather_keyword": True
     }

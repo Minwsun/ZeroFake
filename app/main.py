@@ -28,13 +28,12 @@ warnings.filterwarnings('ignore', category=RuntimeWarning, message='.*CancelledE
 # Import base modules
 from app.kb import init_kb, search_knowledge_base, add_to_knowledge_base
 from app.search import get_site_query
-from app.ranker import load_ranker_config
 from app.feedback import init_feedback_db, log_human_feedback
 
 # --- Import NEW Agents ---
 from app.agent_planner import load_planner_prompt, create_action_plan
 from app.tool_executor import execute_tool_plan, enrich_plan_with_evidence
-from app.agent_synthesizer import load_synthesis_prompt, execute_final_analysis
+from app.agent_synthesizer import load_synthesis_prompt, load_critic_prompt, execute_final_analysis
 # ------------------------------
 
 # (MODIFIED) Only import detection function
@@ -59,7 +58,7 @@ def _sanitize_check_response(obj: dict) -> dict:
     """Ensure CheckResponse fields are strings, avoid None causing Pydantic errors."""
     if obj is None:
         obj = {}
-    for k in ["conclusion", "reason", "style_analysis", "key_evidence_snippet", "key_evidence_source"]:
+    for k in ["conclusion", "reason", "style_analysis", "key_evidence_snippet", "key_evidence_source", "evidence_link"]:
         v = obj.get(k)
         if v is None:
             obj[k] = ""
@@ -176,11 +175,11 @@ async def startup_event():
     # Initialize base modules
     init_kb()
     init_feedback_db()
-    load_ranker_config()
     
     # --- Load prompts for Agents ---
-    load_planner_prompt("planner_prompt.txt")
-    load_synthesis_prompt("synthesis_prompt.txt")
+    load_planner_prompt("prompts/planner_prompt.txt")
+    load_synthesis_prompt("prompts/synthesis_prompt.txt")
+    load_critic_prompt("prompts/critic_prompt.txt")  # NEW: Load CRITIC prompt
     # ---------------------------------
     
     try:
@@ -257,6 +256,7 @@ class CheckResponse(BaseModel):
     style_analysis: str
     key_evidence_snippet: str
     key_evidence_source: str
+    evidence_link: str = ""
     cached: bool = False
 
 
@@ -348,36 +348,62 @@ async def _handle_check_news_internal(
 ):
     """Internal handler for check_news"""
     try:
-        # Step 1: Check KB Cache (Keep as is)
-        logger.info("Checking KB cache...")
-        cached_result = await asyncio.to_thread(search_knowledge_base, request.text)
-        if cached_result:
-            logger.info("Found in cache!")
-            return CheckResponse(**_sanitize_check_response(cached_result))
+        # Step 1: Check KB Cache (FAISS + SQLite) - DISABLED for fresh testing
+        # cached_result = await asyncio.to_thread(search_knowledge_base, request.text)
+        # if cached_result:
+        #     logger.info("KB cache hit - returning cached result")
+        #     return CheckResponse(**cached_result)
+        cached_result = None  # KB disabled
         
         # Step 2: Agent 1 (Planner) creates plan
-        logger.info("Agent 1 (Planner) is creating plan...")
+        print(f"\n{'='*60}")
+        print(f"[INPUT] {request.text}")
+        print(f"{'='*60}")
+        
         plan = await create_action_plan(
             request.text,
             model_key=agent1_model,
             flash_mode=flash_mode,
         )
-        logger.info(f"Plan: {json.dumps(plan, ensure_ascii=False, indent=2)}")
+        
+        # Log plan summary
+        main_claim = plan.get("main_claim", request.text[:50])
+        search_queries = []
+        for tool in plan.get("required_tools", []):
+            if tool.get("tool_name") == "search":
+                queries = tool.get("parameters", {}).get("queries", [])
+                search_queries = queries[:3]  # Show max 3 queries
+        
+        print(f"[PLANNER] Main claim: {main_claim}")
+        if search_queries:
+            print(f"[SEARCH] Queries: {search_queries}")
+        
         planner_findings = plan.get("browse_findings") if isinstance(plan.get("browse_findings"), list) else []
-        if planner_findings:
-            logger.info(f"Planner provided {len(planner_findings)} browse finding(s) via Gemini Flash.")
         
         # Step 3: Collect evidence (always run DDG search)
-        logger.info("Tool Executor (DDG Search) is collecting evidence...")
         evidence_bundle = await execute_tool_plan(plan, SITE_QUERY_STRING, flash_mode=flash_mode)
         evidence_bundle = _merge_planner_findings_into_bundle(evidence_bundle, planner_findings)
+        
+        # Check if Fact Check found results (will be passed to JUDGE)
+        fact_check_verdict = evidence_bundle.get("fact_check_verdict")
+        if fact_check_verdict:
+            source = fact_check_verdict.get("source", "Fact Check")
+            conclusion = fact_check_verdict.get("conclusion", "")
+            confidence = fact_check_verdict.get("confidence", 0)
+            print(f"\n[FACT-CHECK] Found verdict from {source}: {conclusion} ({confidence}%)")
+            print(f"[FACT-CHECK] Skipping CRITIC → Going directly to JUDGE...")
+        
+        # Count evidence
+        total_evidence = sum(len(evidence_bundle.get(layer, [])) for layer in ["layer_1_api", "layer_2_high_trust", "layer_3_general", "layer_4_social_low"])
+        print(f"[SEARCH] Found {total_evidence} evidence items")
 
         # Enrich plan with collected evidence
         enriched_plan = enrich_plan_with_evidence(plan, evidence_bundle)
-        logger.info(f"Plan (enriched): {json.dumps(enriched_plan, ensure_ascii=False, indent=2)}")
         
         # Step 4: Agent 2 (Synthesizer) makes judgment
-        logger.info("Agent 2 (Synthesizer) is synthesizing...")
+        # Skip CRITIC if Fact Check already has verdict
+        skip_critic = fact_check_verdict is not None
+        
         current_date = datetime.datetime.now().strftime('%Y-%m-%d')
         gemini_result = await execute_final_analysis(
             request.text,
@@ -385,20 +411,25 @@ async def _handle_check_news_internal(
             current_date,
             model_key=agent2_model,
             flash_mode=flash_mode,
+            site_query_string=SITE_QUERY_STRING,
+            skip_critic=skip_critic,  # NEW: Skip CRITIC when Fact Check has verdict
         )
         gemini_result = _sanitize_check_response(gemini_result)
-        logger.info(f"Agent 2 result: {gemini_result.get('conclusion', 'N/A')}")
         
-        # Step 5: Conditionally update KB (Keep as is)
-        plan_volatility = plan.get('volatility', 'medium')
-        if gemini_result.get("conclusion") and plan_volatility in ['static', 'low']:
-            logger.info(f"Saving result (Volatility: {plan_volatility}) to KB...")
-            try:
-                background_tasks.add_task(add_to_knowledge_base, request.text, gemini_result)
-            except Exception as e:
-                logger.warning(f"KB update error (not critical): {str(e)}")
-        else:
-            logger.info(f"Skipping KB save (Volatility: {plan_volatility}). This news changes quickly.")
+        # Log final result
+        conclusion = gemini_result.get('conclusion', 'N/A')
+        confidence = gemini_result.get('confidence_score', 'N/A')
+        reason = gemini_result.get('reason', gemini_result.get('final_message', ''))[:100]
+        print(f"[JUDGE] Conclusion: {conclusion} (Confidence: {confidence})")
+        print(f"[JUDGE] Reason: {reason}...")
+        print(f"{'='*60}\n")
+        
+        # Step 5: Save to KB for future deduplication
+        try:
+            await asyncio.to_thread(add_to_knowledge_base, request.text, gemini_result)
+            logger.info("Result saved to KB cache")
+        except Exception as kb_err:
+            logger.warning(f"KB save failed (non-fatal): {kb_err}")
         
         return CheckResponse(**gemini_result)
     

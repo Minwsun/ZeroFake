@@ -9,6 +9,9 @@ faiss-cpu
 requests
 PyQt6
 numpy
+httpx[socks]
 duckduckgo-search
 geopy
-
+cloudscraper
+groq
+cerebras-cloud-sdk

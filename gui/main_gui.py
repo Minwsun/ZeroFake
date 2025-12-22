@@ -108,13 +108,6 @@ class MainWindow(QMainWindow):
         # Store current result
         self.current_result = None
         self.current_text_input = None
-        self.flash_models = {
-            "models/gemini-2.5-flash",
-            "gemini-2.5-flash",
-            "gemini_flash",
-        }
-        self.default_agent1_model = "models/gemini-2.5-flash"
-        self.default_agent2_model = "models/gemini-2.5-pro"
 
         # Create UI
         self.init_ui()
@@ -145,33 +138,9 @@ class MainWindow(QMainWindow):
         self.input_text.setMaximumHeight(150)
         layout.addWidget(self.input_text)
         
-        # Model selection area
-        model_layout = QHBoxLayout()
-        
-        self.agent1_label = QLabel("Agent 1 model:")
-        model_layout.addWidget(self.agent1_label)
-        
-        self.agent1_combo = QComboBox()
-        self.agent1_combo.addItem("Gemini Flash", "models/gemini-2.5-flash")
-        self.agent1_combo.addItem("Gemma 3 4B IT", "models/gemma-3-4b-it")
-        self.agent1_combo.addItem("Gemma 3 2B IT", "models/gemma-3-4b-it")  # Fallback to 4B
-        self.agent1_combo.addItem("Gemma 3 1B IT", "models/gemma-3-1b-it")
-        self.agent1_combo.setCurrentIndex(0)
-        model_layout.addWidget(self.agent1_combo)
-        
-        self.agent2_label = QLabel("Agent 2 model:")
-        model_layout.addWidget(self.agent2_label)
-        
-        self.agent2_combo = QComboBox()
-        self.agent2_combo.addItem("Gemini Pro", "models/gemini-2.5-pro")
-        self.agent2_combo.addItem("Gemini Flash", "models/gemini-2.5-flash")
-        self.agent2_combo.addItem("Gemma 3 27B IT", "models/gemma-3-27b-it")
-        self.agent2_combo.addItem("Gemma 3 12B IT", "models/gemma-3-12b-it")
-        self.agent2_combo.addItem("Gemma 3 4B IT", "models/gemma-3-4b-it")
-        self.agent2_combo.setCurrentIndex(0)
-        model_layout.addWidget(self.agent2_combo)
-        
-        layout.addLayout(model_layout)
+        # Model selection removed - system auto-fallbacks to best available model
+        # Fallback chain: Gemini Flash -> Gemma 4B -> Gemma 1B (Agent 1)
+        # Fallback chain: Gemini Pro -> Gemini Flash -> Gemma 27B -> Gemma 12B (Agent 2)
         
         # Button area
         button_layout = QHBoxLayout()
@@ -217,7 +186,7 @@ class MainWindow(QMainWindow):
         
         # Disable button
         self.check_button.setEnabled(False)
-        self.status_bar.showMessage("Checking...")
+        self.status_bar.showMessage("Đang kiểm tra với Adversarial Dialectic...")
         self.result_browser.clear()
         
         # Hide feedback buttons
@@ -226,18 +195,16 @@ class MainWindow(QMainWindow):
         
         # Tạo thread và worker
         self.thread = QThread()
-        agent1_model = self.agent1_combo.currentData() or self.default_agent1_model
-        agent2_model = self.agent2_combo.currentData() or self.default_agent2_model
-        flash_mode = self._is_flash_mode_selected(agent1_model, agent2_model)
-
+        
+        # Auto-fallback mode: backend will choose best model with fallback chain
         payload = {
             "text": text_input,
-            "agent1_model": agent1_model,
-            "agent2_model": agent2_model,
-            "flash_mode": flash_mode,
+            # Models are auto-selected by backend with fallback chain
+            # Agent 1: Gemini Flash -> Gemma 4B -> Gemma 1B
+            # Agent 2: Gemini Pro -> Gemini Flash -> Gemma 27B -> Gemma 12B
         }
         endpoint = f"{API_URL}/check_news"
-        timeout = None if flash_mode else 120
+        timeout = 180  # Longer timeout for auto-fallback
         
         self.worker = Worker(endpoint, payload, timeout=timeout)
         self.worker.moveToThread(self.thread)
@@ -256,9 +223,6 @@ class MainWindow(QMainWindow):
         # Start thread
         self.thread.start()
 
-    def _is_flash_mode_selected(self, agent1_model: str, agent2_model: str) -> bool:
-        return agent1_model in self.flash_models and agent2_model in self.flash_models
-
     
     def update_ui(self, result: dict):
         """Update UI with result"""
@@ -271,40 +235,70 @@ class MainWindow(QMainWindow):
         key_evidence_snippet = result.get("key_evidence_snippet", "N/A")
         key_evidence_source = result.get("key_evidence_source", "N/A")
         cached = result.get("cached", False)
+        confidence_score = result.get("confidence_score", "N/A")
+        
+        # Get debate_log for Adversarial Dialectic display
+        debate_log = result.get("debate_log", {})
+        red_team = debate_log.get("red_team_argument", "")
+        blue_team = debate_log.get("blue_team_argument", "")
+        judge_reasoning = debate_log.get("judge_reasoning", "")
         
         # Colors for conclusion
         color_map = {
             "TIN THẬT": "#28a745",
             "TIN GIẢ": "#dc3545",
-            "GÂY HIỂU LẦM": "#ffc107"
+            "GÂY HIỂU LẦM": "#ffc107",
+            "CHƯA KIỂM CHỨNG": "#6c757d"
         }
         color = color_map.get(conclusion, "#6c757d")
+        
+        # Build debate HTML if available
+        debate_html = ""
+        if red_team or blue_team or judge_reasoning:
+            debate_html = f"""
+            <h3>⚔️ Tranh Biện Đối Kháng (Adversarial Dialectic):</h3>
+            
+            <div style="background-color: #2a1515; padding: 10px; border-left: 4px solid #dc3545; margin-bottom: 10px;">
+                <strong style="color: #dc3545;">🔴 RED TEAM (Phe Công Tố):</strong>
+                <p style="color: #e6e6e6; margin: 5px 0;">{red_team}</p>
+            </div>
+            
+            <div style="background-color: #151f2a; padding: 10px; border-left: 4px solid #007bff; margin-bottom: 10px;">
+                <strong style="color: #007bff;">🔵 BLUE TEAM (Phe Biện Hộ):</strong>
+                <p style="color: #e6e6e6; margin: 5px 0;">{blue_team}</p>
+            </div>
+            
+            <div style="background-color: #2a2515; padding: 10px; border-left: 4px solid #ffc107; margin-bottom: 10px;">
+                <strong style="color: #ffc107;">⚖️ JUDGE (Thẩm Phán):</strong>
+                <p style="color: #e6e6e6; margin: 5px 0;">{judge_reasoning}</p>
+            </div>
+            """
         
         html = f"""
         <div style="font-family: Arial, sans-serif; color: #e6e6e6;">
             <h2 style="color: {color};">
-                Conclusion: <strong>{conclusion}</strong>
+                Kết Luận: <strong>{conclusion}</strong>
+                {f'<span style="font-size: 12px; color: #6c757d;">(Độ tin cậy: {confidence_score}%)</span>' if confidence_score != "N/A" else ''}
                 {'<span style="font-size: 12px; color: #6c757d;">(From Cache)</span>' if cached else ''}
             </h2>
             
-            <h3>Reason:</h3>
+            {debate_html}
+            
+            <h3>📝 Lý Do:</h3>
             <p style="background-color: #1f1f1f; color: #e6e6e6; padding: 10px; border-radius: 5px;">
                 {reason}
             </p>
             
-            <h3>Style Analysis:</h3>
-            <p style="background-color: #1f1f1f; color: #e6e6e6; padding: 10px; border-radius: 5px;">
-                {style_analysis}
-            </p>
-            
-            <h3>Key Evidence:</h3>
+            <h3>🔍 Bằng Chứng Quan Trọng:</h3>
             <p style="background-color: #242424; color: #e6e6e6; padding: 10px; border-radius: 5px; font-style: italic;">
                 "{key_evidence_snippet}"
             </p>
             
             <p style="color: #6c757d; font-size: 12px;">
-                Source: {key_evidence_source}
+                📎 Nguồn: <a href="{key_evidence_source}" style="color: #007bff;">{key_evidence_source}</a>
             </p>
+            
+            {f'<h3>✍️ Phân Tích Văn Phong:</h3><p style="background-color: #1f1f1f; padding: 10px; border-radius: 5px;">{style_analysis}</p>' if style_analysis and style_analysis != "N/A" else ''}
         </div>
         """
         
