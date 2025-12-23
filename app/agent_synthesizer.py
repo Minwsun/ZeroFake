@@ -1960,8 +1960,17 @@ This claim has been fact-checked by {fc_source}. The verdict is {fc_conclusion}.
     
     is_weather = "thời tiết" in judge_result.get("claim_type", "").lower()
     
+    # =========================================================================
+    # LATENCY OPTIMIZATION: Skip Round 2 if confidence > 85%
+    # High confidence means JUDGE is already sure, no need for re-search
+    # =========================================================================
+    high_confidence_skip = confidence_r1 >= 85
+    if high_confidence_skip:
+        print(f"[LATENCY-SKIP] Confidence {confidence_r1}% >= 85%, skipping re-search phase")
+    
     should_unified_research = (
-        ENABLE_SELF_CORRECTION and (
+        ENABLE_SELF_CORRECTION and 
+        not high_confidence_skip and (  # NEW: Skip if high confidence
             (conclusion_r1 == "TIN GIẢ" and ENABLE_COUNTER_SEARCH) # Phase 2.5 logic
             or needs_more_r1 # Phase 3 logic
             or confidence_r1 < 40 # Phase 3 logic

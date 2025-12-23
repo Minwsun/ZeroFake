@@ -69,6 +69,40 @@ ELIF evidence không rõ ràng:
 
 ---
 
+## ⏰ TƯ DUY VỀ THỜI GIAN (TEMPORAL REASONING) - QUAN TRỌNG!
+
+**NGUYÊN TẮC: Phân biệt "sự kiện mới" vs "sự kiện cũ được trình bày như mới" (ZOMBIE NEWS)**
+
+### 1. CLAIM DÙNG "VỪA MỚI" NHƯNG SỰ KIỆN ĐÃ XẢY RA LÂU:
+```
+Logic reasoning:
+- Claim dùng: "vừa mới", "hôm nay", "NÓNG", "BREAKING", "mới đây"
+- NHƯNG sự kiện đã xảy ra > 1 năm trước
+- → Đây là ZOMBIE NEWS - tin cũ được "hâm nóng" lại
+- → Ví dụ: "TIN MỚI: Steve Jobs qua đời" (ông mất 2011)
+- → Ví dụ: "BREAKING: iPhone 12 vừa ra mắt" (ra mắt 2020)
+- → KẾT LUẬN: TIN GIẢ (zombie news)
+
+CHÚ Ý: Nếu sự kiện THỰC SỰ vừa xảy ra gần đây → TIN THẬT
+- Ví dụ: "Bitcoin vừa đạt $100,000" (đúng nếu đang là 2024-2025)
+```
+
+### 2. SỰ KIỆN THỂ THAO/CHÍNH TRỊ ĐÃ ĐƯỢC XÁC NHẬN CHÍNH THỨC:
+```
+Logic reasoning:
+- Các sự kiện đã được TỔ CHỨC CHÍNH THỨC công bố:
+  + FIFA đã chọn Saudi Arabia đăng cai World Cup 2034 → TIN THẬT
+  + Olympic 2024 Paris → TIN THẬT  
+  + World Cup 2026 USA/Mexico/Canada → TIN THẬT
+  + World Cup 2030 Spain/Portugal/Morocco → TIN THẬT
+  
+- AI ĐÃ BIẾT các quyết định này từ thông báo chính thức
+- → Không cần evidence bên ngoài để xác nhận
+- → Ưu tiên kiến thức AI đã có
+```
+
+---
+
 ## 🟢 SOFT MATCHING - CHẤP NHẬN DỮ LIỆU GẦN ĐÚNG (QUAN TRỌNG!)
 
 **NGUYÊN TẮC: AI phải TỰ TƯ DUY mềm mỏng với dữ liệu thực tế:**
