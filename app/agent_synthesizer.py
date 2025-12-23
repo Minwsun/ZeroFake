@@ -405,6 +405,11 @@ def _detect_zombie_news(text_input: str, current_date: str) -> dict | None:
     return None
 
 
+# NOTE: _detect_half_truth function REMOVED per user request
+# System should be objective and rely on LLM reasoning, not hardcoded patterns
+# Real-world scenarios are more complex than patterns can handle
+
+
 def _is_weather_source(item: Dict[str, Any]) -> bool:
     source = (item.get("source") or item.get("url") or "").lower()
     if not source:
@@ -587,7 +592,7 @@ FILTER_PROMPT = ""
 
 # Cache for filter results (key: claim_hash, value: filtered_bundle)
 _filter_cache = {}
-_FILTER_CACHE_MAX_SIZE = 200
+_FILTER_CACHE_MAX_SIZE = 500  # Increased from 200 for better cache hit rate
 
 def _get_claim_hash(claim: str, evidence_count: int) -> str:
     """Generate hash for caching filter results."""
@@ -683,12 +688,11 @@ async def filter_evidence_with_llm(claim: str, evidence_bundle: dict, current_da
     filter_response = None
     model_used = None
     
-    # Model cascade: Llama 8B (Groq) → Gemma 27B → Gemma 12B → Gemma 4B
+    # Model cascade: Llama 8B (Groq) → Gemma 4B (fastest fallback)
+    # Reduced cascade for latency optimization
     models_to_try = [
         ("groq", "llama-3.1-8b-instant"),
-        ("gemini", "models/gemma-3-27b-it"),
-        ("gemini", "models/gemma-3-12b-it"),
-        ("gemini", "models/gemma-3-4b-it"),
+        ("gemini", "models/gemma-3-4b-it"),  # Skip 27B/12B for speed
     ]
     
     for provider, model_name in models_to_try:
@@ -700,13 +704,13 @@ async def filter_evidence_with_llm(claim: str, evidence_bundle: dict, current_da
                     model_name=model_name,
                     prompt=filter_prompt_filled,
                     temperature=0.1,
-                    timeout=30.0,
+                    timeout=15.0,  # Reduced from 30s
                 )
             else:  # gemini
                 filter_response = await call_gemini_model(
                     model_name=model_name,
                     prompt=filter_prompt_filled,
-                    timeout=45.0,
+                    timeout=20.0,  # Reduced from 45s
                     safety_settings=SAFETY_SETTINGS
                 )
             
@@ -956,6 +960,11 @@ def _heuristic_summarize(text_input: str, bundle: Dict[str, Any], current_date: 
         }
     
     # ═══════════════════════════════════════════════════════════════
+    # NOTE: Pattern-based detection REMOVED for objectivity
+    # LLM will decide based on evidence, not hardcoded patterns
+    # ═══════════════════════════════════════════════════════════════
+    
+    # ═══════════════════════════════════════════════════════════════
     # PRIORITY 0.5: Trusted Source Citations (NEW - Reduce False Positive)
     # ═══════════════════════════════════════════════════════════════
     if _has_trusted_source_citation(text_input):
@@ -983,7 +992,7 @@ def _heuristic_summarize(text_input: str, bundle: Dict[str, Any], current_date: 
             }
             return {
                 "conclusion": "TIN THẬT",
-                "confidence_score": 75,
+                "confidence_score": 90,  # Boosted from 75 to 90 for trusted sources
                 "reason": f"Claim trích dẫn nguồn uy tín ({source_match}) và không tìm thấy bằng chứng bác bỏ.",
                 "debate_log": debate_log,
                 "key_evidence_snippet": f"Nguồn: {source_match}",
@@ -1544,6 +1553,15 @@ This claim has been fact-checked by {fc_source}. The verdict is {fc_conclusion}.
                 "issue_type": "KNOWLEDGE_VERIFIED",
                 "skip_reason": "Wikipedia evidence for knowledge claim"
             }
+    # Skip CRITIC for common knowledge (LATENCY OPTIMIZATION)
+    elif _is_common_knowledge(text_input):
+        print(f"\n[SKIP CRITIC] Common knowledge detected - skipping CRITIC (saves ~40s)")
+        critic_report = "[AUTO-SKIP] Common knowledge. No adversarial analysis needed."
+        critic_parsed = {
+            "issues_found": False,
+            "issue_type": "COMMON_KNOWLEDGE",
+            "skip_reason": "Common knowledge claim"
+        }
     else:
         # Normal CRITIC flow
         try:
@@ -1556,7 +1574,7 @@ This claim has been fact-checked by {fc_source}. The verdict is {fc_conclusion}.
                 role="CRITIC",
                 prompt=critic_prompt_filled,
                 temperature=0.5,
-                timeout=120.0
+                timeout=60.0  # Reduced from 120s for latency optimization
             )
             print(f"[CRITIC] Report: {critic_report[:150]}...")
             
@@ -2117,6 +2135,22 @@ This claim has been fact-checked by {fc_source}. The verdict is {fc_conclusion}.
             judge_result["conclusion"] = judge_result["final_conclusion"]
             
         judge_result["conclusion"] = normalize_conclusion(judge_result.get("conclusion"))
+        
+        # =========================================================================
+        # FIX: Ensure evidence_link is populated from evidence bundle
+        # =========================================================================
+        if not judge_result.get("evidence_link"):
+            # Extract first evidence URL from bundle
+            for layer in ["layer_2_high_trust", "layer_3_general", "layer_1_tools", "layer_4_social_low"]:
+                items = evidence_bundle.get(layer, [])
+                for item in items:
+                    url = item.get("url") or item.get("link")
+                    if url:
+                        judge_result["evidence_link"] = url
+                        break
+                if judge_result.get("evidence_link"):
+                    break
+        
         return judge_result
 
     # Fallback final

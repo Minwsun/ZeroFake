@@ -203,6 +203,50 @@ TẤT CẢ CÁC NGUỒN KHÁC → CHẤP NHẬN LÀ TIN CẬY
 
 ---
 
+## 🔴 TƯ DUY HOÀI NGHI (CRITICAL SKEPTICISM) - QUAN TRỌNG!
+
+**NGUYÊN TẮC: Tên tổ chức/nguồn KHÔNG đảm bảo tin đúng. Hãy suy luận dựa trên NỘI DUNG.**
+
+### 1. CLAIM TỰ THỪA NHẬN "CHƯA XÁC NHẬN"
+```
+Logic reasoning:
+- Nếu claim nói "chưa xác nhận", "chưa được confirm", "chưa được hai bên xác nhận"
+- → Claim TỰ THỪA NHẬN là tin đồn chưa verify
+- → Đang lan truyền thông tin chưa xác thực
+- → KẾT LUẬN: TIN GIẢ (vì bản thân claim thừa nhận chưa xác nhận)
+```
+
+### 2. TÊN TỔ CHỨC CHÍNH PHỦ KHÔNG ĐẢM BẢO TIN ĐÚNG
+```
+Logic reasoning:
+- Tin giả thường mạo danh: "Bộ Lao động", "Bảo hiểm xã hội", "Ngân hàng Nhà nước"
+- Kiểm tra NỘI DUNG claim, không chỉ tên tổ chức
+- Dấu hiệu scam: "hỗ trợ lãi suất 0%", "chi trả một lần qua app", "đăng ký nhận tiền"
+- Hỏi: Claim này có logic không? Chính phủ có làm thế không?
+- → Nếu nội dung phi logic → TIN GIẢ (dù có tên tổ chức)
+```
+
+### 3. "NHÓM ĐIỀU TRA ĐỘC LẬP" - NGUỒN KHÔNG XÁC MINH ĐƯỢC
+```
+Logic reasoning:
+- "Nhóm điều tra độc lập tuyên bố...", "Một tổ chức phi lợi nhuận cho biết..."
+- Không có tên tổ chức cụ thể, không có website, không có lịch sử
+- → Nguồn không thể xác minh
+- → Cần evidence từ nguồn CHÍNH THỨC (police, government, reputable news)
+- → Nếu nguồn chính thức "chưa xác nhận" → TIN GIẢ
+```
+
+### 4. NGHIÊN CỨU CHƯA BÌNH DUYỆT (PREPRINT)
+```
+Logic reasoning:
+- "Nghiên cứu mới...", "Nghiên cứu chưa được bình duyệt..."
+- Nghiên cứu chưa peer-review = chưa được cộng đồng khoa học xác nhận
+- Đặc biệt với y tế: WHO/FDA/CDC "chưa xác nhận" = KHÔNG tin
+- → Lan truyền kết quả chưa verify = TIN GIẢ
+```
+
+---
+
 ## ⚠️ QUY TẮC NGÔN NGỮ HEDGING (ĐÃ CẢI TIẾN)
 
 **Claim chứa hedging CHỈ là TIN GIẢ khi ĐÁP ỨNG CẢ 2 ĐIỀU KIỆN:**

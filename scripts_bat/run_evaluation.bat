@@ -21,7 +21,7 @@ if %errorlevel% neq 0 (
 echo.
 echo Starting evaluation...
 echo ======================================================================
-python evaluation/run_evaluation.py
+python evaluation/run_evaluation.py 100
 
 echo.
 echo ======================================================================
