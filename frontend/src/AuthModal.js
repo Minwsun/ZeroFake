@@ -4,13 +4,16 @@ import { auth } from './firebase';
 import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
+  updateProfile,
 } from 'firebase/auth';
 import './App.css';
 
 const AuthModal = ({ isOpen, onClose, onAuthSuccess }) => {
   const [mode, setMode] = useState('login'); // 'login' | 'signup'
   const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -18,7 +21,9 @@ const AuthModal = ({ isOpen, onClose, onAuthSuccess }) => {
 
   const resetForm = () => {
     setEmail('');
+    setUsername('');
     setPassword('');
+    setConfirmPassword('');
     setError('');
   };
 
@@ -32,8 +37,26 @@ const AuthModal = ({ isOpen, onClose, onAuthSuccess }) => {
     e.preventDefault();
     setError('');
 
-    if (!email || !password) {
-      setError('Vui lòng nhập email và mật khẩu.');
+    const normalizedEmail = email.trim();
+    const normalizedUsername = username.trim();
+
+    if (!normalizedEmail || !password) {
+      setError('Please enter email and password.');
+      return;
+    }
+
+    if (mode === 'signup' && !normalizedUsername) {
+      setError('Please enter a username.');
+      return;
+    }
+
+    if (mode === 'signup' && !confirmPassword) {
+      setError('Please confirm your password.');
+      return;
+    }
+
+    if (mode === 'signup' && password !== confirmPassword) {
+      setError('Password confirmation does not match.');
       return;
     }
 
@@ -41,26 +64,35 @@ const AuthModal = ({ isOpen, onClose, onAuthSuccess }) => {
     try {
       let userCredential;
       if (mode === 'login') {
-        userCredential = await signInWithEmailAndPassword(auth, email, password);
+        userCredential = await signInWithEmailAndPassword(auth, normalizedEmail, password);
       } else {
-        userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        userCredential = await createUserWithEmailAndPassword(auth, normalizedEmail, password);
+
+        // Lưu username vào displayName để hiển thị trên nút tài khoản
+        if (normalizedUsername) {
+          try {
+            await updateProfile(userCredential.user, { displayName: normalizedUsername });
+          } catch (profileErr) {
+            console.error('Failed to update profile:', profileErr);
+          }
+        }
       }
 
       onAuthSuccess && onAuthSuccess(userCredential.user);
       resetForm();
       onClose && onClose();
     } catch (err) {
-      let message = 'Đăng nhập/đăng ký thất bại. Vui lòng thử lại.';
+      let message = 'Sign in/sign up failed. Please try again.';
       if (err.code === 'auth/email-already-in-use') {
-        message = 'Email này đã được sử dụng.';
+        message = 'This email is already in use.';
       } else if (err.code === 'auth/invalid-email') {
-        message = 'Email không hợp lệ.';
+        message = 'Invalid email.';
       } else if (err.code === 'auth/weak-password') {
-        message = 'Mật khẩu quá yếu (ít nhất 6 ký tự).';
+        message = 'Weak password (minimum 6 characters).';
       } else if (err.code === 'auth/user-not-found') {
-        message = 'Không tìm thấy tài khoản. Vui lòng đăng ký.';
+        message = 'Account not found. Please sign up.';
       } else if (err.code === 'auth/wrong-password') {
-        message = 'Mật khẩu không chính xác.';
+        message = 'Incorrect password.';
       }
       setError(message);
     } finally {
@@ -69,18 +101,18 @@ const AuthModal = ({ isOpen, onClose, onAuthSuccess }) => {
   };
 
   return (
-    <div className="auth-modal-overlay" onClick={handleClose}>
-      <div className="auth-modal" onClick={(e) => e.stopPropagation()}>
+    <div className="auth-modal-overlay">
+      <div className="auth-modal">
         <button className="auth-modal-close" onClick={handleClose}>
           <X size={18} />
         </button>
         <h2 className="auth-modal-title">
-          {mode === 'login' ? 'Đăng nhập' : 'Đăng ký tài khoản'}
+          {mode === 'login' ? 'Sign in' : 'Create account'}
         </h2>
         <p className="auth-modal-subtitle">
           {mode === 'login'
-            ? 'Đăng nhập để xem và đồng bộ lịch sử tra cứu của bạn.'
-            : 'Tạo tài khoản để lưu lịch sử tra cứu theo từng người dùng.'}
+            ? 'Sign in to view and sync your search history.'
+            : 'Create an account to save search history per user.'}
         </p>
 
         <form className="auth-modal-form" onSubmit={handleSubmit}>
@@ -91,19 +123,50 @@ const AuthModal = ({ isOpen, onClose, onAuthSuccess }) => {
               className="auth-modal-input"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
+              placeholder="your@email.com"
+              autoComplete="email"
             />
           </label>
+
+          {mode === 'signup' && (
+            <label className="auth-modal-label">
+              Username
+              <input
+                type="text"
+                className="auth-modal-input"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder="Display name"
+                autoComplete="username"
+              />
+            </label>
+          )}
+
           <label className="auth-modal-label">
-            Mật khẩu
+            Password
             <input
               type="password"
               className="auth-modal-input"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="Ít nhất 6 ký tự"
+              placeholder="At least 6 characters"
+              autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
             />
           </label>
+
+          {mode === 'signup' && (
+            <label className="auth-modal-label">
+              Confirm password
+              <input
+                type="password"
+                className="auth-modal-input"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="Re-enter password"
+                autoComplete="new-password"
+              />
+            </label>
+          )}
 
           {error && <div className="auth-modal-error">{error}</div>}
 
@@ -113,40 +176,44 @@ const AuthModal = ({ isOpen, onClose, onAuthSuccess }) => {
             disabled={loading}
           >
             {loading
-              ? 'Đang xử lý...'
+              ? 'Processing...'
               : mode === 'login'
-                ? 'Đăng nhập'
-                : 'Đăng ký'}
+                ? 'Sign in'
+                : 'Sign up'}
           </button>
         </form>
 
         <div className="auth-modal-footer">
           {mode === 'login' ? (
             <span>
-              Chưa có tài khoản?{' '}
+              No account yet?{' '}
               <button
                 type="button"
                 className="auth-modal-link"
                 onClick={() => {
                   setMode('signup');
+                  setConfirmPassword('');
+                  setPassword('');
                   setError('');
                 }}
               >
-                Đăng ký ngay
+                Sign up
               </button>
             </span>
           ) : (
             <span>
-              Đã có tài khoản?{' '}
+              Already have an account?{' '}
               <button
                 type="button"
                 className="auth-modal-link"
                 onClick={() => {
                   setMode('login');
+                  setConfirmPassword('');
+                  setPassword('');
                   setError('');
                 }}
               >
-                Đăng nhập
+                Sign in
               </button>
             </span>
           )}

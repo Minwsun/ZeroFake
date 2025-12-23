@@ -1,4 +1,4 @@
-/* Import fonts từ Google Fonts */
+
 @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap");
 
 /* Reset CSS mặc định */
@@ -158,36 +158,85 @@ body {
 
 .account-button {
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  padding: 8px 14px;
-  background: rgba(255, 255, 255, 0.06);
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(15px);
+  -webkit-backdrop-filter: blur(15px);
   border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.2);
   color: #e5e7eb;
-  font-size: 0.85rem;
+  font-size: 1rem;
+  font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
   transition: all 0.2s ease;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.1);
 }
 
 .account-button:hover {
-  background: rgba(255, 255, 255, 0.09);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(74, 158, 255, 0.5);
+  color: #ffffff;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(74, 158, 255, 0.4),
+    0 0 20px rgba(74, 158, 255, 0.2), 0 0 0 1px rgba(74, 158, 255, 0.3);
+}
+
+.account-menu-wrapper {
+  position: relative;
+}
+
+.account-dropdown {
+  position: absolute;
+  right: 0;
+  margin-top: 8px;
+  background: rgba(21, 23, 33, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5);
+  min-width: 180px;
+  padding: 6px;
+  z-index: 20;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.account-dropdown-item {
+  width: 100%;
+  text-align: left;
+  padding: 10px 12px;
+  background: transparent;
+  border: none;
+  color: #e5e7eb;
+  font-size: 0.95rem;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.account-dropdown-item:hover {
+  background: rgba(74, 158, 255, 0.12);
+  color: #ffffff;
+}
+
+.account-dropdown-item.danger:hover {
+  background: rgba(239, 68, 68, 0.12);
+  color: #fca5a5;
 }
 
 .account-email {
-  max-width: 180px;
+  max-width: 160px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-weight: 500;
+  font-weight: 600;
 }
 
-.account-action {
-  font-size: 0.75rem;
-  color: #9ca3af;
+.account-icon {
+  flex-shrink: 0;
 }
 
 .history-button {
@@ -225,6 +274,59 @@ body {
 
 .history-button svg {
   flex-shrink: 0;
+}
+
+.history-button-label {
+  display: inline-block;
+}
+
+.more-button {
+  display: none;
+  margin-left: auto;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  width: 38px;
+  height: 38px;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: #e5e7eb;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  transition: all 0.2s ease;
+}
+
+.more-button:hover {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(74, 158, 255, 0.7);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(74, 158, 255, 0.4);
+}
+
+.more-icon {
+  position: relative;
+  width: 16px;
+  height: 2px;
+  background: transparent;
+}
+
+.more-icon::before,
+.more-icon::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  border-radius: 999px;
+  background: #e5e7eb;
+}
+
+.more-icon::before {
+  top: -4px;
+}
+
+.more-icon::after {
+  top: 4px;
 }
 
 /* Phần nội dung chính với hiệu ứng glassmorphism */
@@ -440,6 +542,74 @@ body {
   to {
     opacity: 1;
   }
+}
+
+.logout-confirm-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2500;
+  padding: 16px;
+}
+
+.logout-confirm-dialog {
+  background: #111827;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 20px 22px;
+  max-width: 420px;
+  width: 100%;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+}
+
+.logout-confirm-title {
+  margin: 0 0 8px 0;
+  color: #ffffff;
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+
+.logout-confirm-text {
+  margin: 0 0 16px 0;
+  color: #d1d5db;
+  line-height: 1.5;
+  font-size: 0.98rem;
+}
+
+.logout-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.logout-confirm-button {
+  padding: 10px 16px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  font-weight: 600;
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  color: #fff;
+  transition: all 0.2s ease;
+}
+
+.logout-confirm-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(239, 68, 68, 0.35);
+}
+
+.logout-confirm-button.secondary {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #e5e7eb;
+}
+
+.logout-confirm-button.secondary:hover {
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow: none;
 }
 
 .loading-content {
@@ -1065,10 +1235,19 @@ body {
     width: auto;
     margin-left: auto;
     flex-shrink: 0;
+    padding: 10px 12px;
+  }
+
+  .history-button-label {
+    display: none;
   }
 
   .header-right {
-    margin-left: auto;
+    display: none;
+  }
+
+  .more-button {
+    display: flex;
   }
 
   .model-selection {

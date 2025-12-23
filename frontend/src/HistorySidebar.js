@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { X, Clock, CheckCircle, XCircle, AlertCircle, Trash2 } from 'lucide-react';
+import { X, Clock, CheckCircle, XCircle, AlertCircle, Trash2, User } from 'lucide-react';
 import { collection, query, orderBy, getDocs, deleteDoc, doc, writeBatch } from 'firebase/firestore';
 import { db } from './firebase';
 import './HistorySidebar.css';
 
-const HistorySidebar = ({ isOpen, onClose, onSelectHistory, user }) => {
+const HistorySidebar = ({ isOpen, onClose, onSelectHistory, user, onOpenAuth, onLogout }) => {
   const [history, setHistory] = useState([]);
 
   useEffect(() => {
@@ -65,7 +65,7 @@ const HistorySidebar = ({ isOpen, onClose, onSelectHistory, user }) => {
   };
 
   const handleClearAll = async () => {
-    if (window.confirm('Bạn có chắc muốn xóa toàn bộ lịch sử?')) {
+    if (window.confirm('Are you sure you want to delete all history?')) {
       if (!user) return;
       try {
         const q = query(collection(db, 'users', user.uid, 'history'));
@@ -95,6 +95,19 @@ const HistorySidebar = ({ isOpen, onClose, onSelectHistory, user }) => {
     }
   };
 
+  const getConclusionLabel = (conclusion) => {
+    switch (conclusion) {
+      case 'TIN THẬT':
+        return 'REAL';
+      case 'TIN GIẢ':
+        return 'FAKE';
+      case 'GÂY HIỂU LẦM':
+        return 'MISLEADING';
+      default:
+        return 'UNDETERMINED';
+    }
+  };
+
   const getConclusionColor = (conclusion) => {
     const colorMap = {
       'TIN THẬT': '#28a745',
@@ -113,11 +126,11 @@ const HistorySidebar = ({ isOpen, onClose, onSelectHistory, user }) => {
     const hours = Math.floor(diff / 3600000);
     const days = Math.floor(diff / 86400000);
 
-    if (minutes < 1) return 'Vừa xong';
-    if (minutes < 60) return `${minutes} phút trước`;
-    if (hours < 24) return `${hours} giờ trước`;
-    if (days < 7) return `${days} ngày trước`;
-    return date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    if (minutes < 1) return 'Just now';
+    if (minutes < 60) return `${minutes} minutes ago`;
+    if (hours < 24) return `${hours} hours ago`;
+    if (days < 7) return `${days} days ago`;
+    return date.toLocaleDateString('en-US', { day: '2-digit', month: '2-digit', year: 'numeric' });
   };
 
   const truncateText = (text, maxLength = 100) => {
@@ -130,13 +143,13 @@ const HistorySidebar = ({ isOpen, onClose, onSelectHistory, user }) => {
       {isOpen && <div className="history-sidebar-overlay" onClick={onClose} />}
       <div className={`history-sidebar ${isOpen ? 'open' : ''}`}>
         <div className="history-sidebar-header">
-          <h2 className="history-sidebar-title">Lịch sử kiểm tra</h2>
+          <h2 className="history-sidebar-title">Check history</h2>
           <div className="history-sidebar-actions">
             {history.length > 0 && (
               <button
                 className="history-clear-button"
                 onClick={handleClearAll}
-                title="Xóa tất cả"
+                title="Delete all"
               >
                 <Trash2 size={18} />
               </button>
@@ -144,7 +157,7 @@ const HistorySidebar = ({ isOpen, onClose, onSelectHistory, user }) => {
             <button
               className="history-close-button"
               onClick={onClose}
-              title="Đóng"
+              title="Close"
             >
               <X size={20} />
             </button>
@@ -155,8 +168,8 @@ const HistorySidebar = ({ isOpen, onClose, onSelectHistory, user }) => {
           {history.length === 0 ? (
             <div className="history-empty">
               <Clock size={48} className="history-empty-icon" />
-              <p className="history-empty-text">Chưa có lịch sử kiểm tra</p>
-              <p className="history-empty-subtext">Các kết quả kiểm tra sẽ được lưu tại đây</p>
+              <p className="history-empty-text">No history yet</p>
+              <p className="history-empty-subtext">Your verification results will appear here</p>
             </div>
           ) : (
             <div className="history-list">
@@ -175,7 +188,7 @@ const HistorySidebar = ({ isOpen, onClose, onSelectHistory, user }) => {
                         className="history-item-conclusion"
                         style={{ color: getConclusionColor(item.conclusion) }}
                       >
-                        {item.conclusion}
+                        {getConclusionLabel(item.conclusion)}
                       </div>
                       <div className="history-item-time">
                         {formatDate(item.timestamp)}
@@ -184,7 +197,7 @@ const HistorySidebar = ({ isOpen, onClose, onSelectHistory, user }) => {
                     <button
                       className="history-item-delete"
                       onClick={(e) => handleDelete(item.id, e)}
-                      title="Xóa"
+                      title="Delete"
                     >
                       <X size={16} />
                     </button>
@@ -195,12 +208,65 @@ const HistorySidebar = ({ isOpen, onClose, onSelectHistory, user }) => {
                   {item.cached && (
                     <div className="history-item-cached">
                       <Clock size={12} />
-                      <span>Từ cache</span>
+                      <span>From cache</span>
                     </div>
                   )}
                 </div>
               ))}
             </div>
+          )}
+        </div>
+        <div className="history-account-section">
+          {user ? (
+            <>
+              <div className="history-account-info">
+                <div className="history-account-avatar">
+                  <User size={18} />
+                </div>
+                <div className="history-account-texts">
+                  <span className="history-account-name">
+                    {user.displayName || (user.email && user.email.split('@')[0]) || 'Account'}
+                  </span>
+                  {user.email && (
+                    <span className="history-account-email">
+                      {user.email}
+                    </span>
+                  )}
+                </div>
+              </div>
+              <button
+                className="history-account-logout"
+                onClick={() => {
+                  if (onLogout) onLogout();
+                }}
+              >
+                Log out
+              </button>
+            </>
+          ) : (
+            <>
+              <div className="history-account-info">
+                <div className="history-account-avatar">
+                  <User size={18} />
+                </div>
+                <div className="history-account-texts">
+                  <span className="history-account-name">
+                    Guest
+                  </span>
+                  <span className="history-account-email">
+                    Sign in to save your history
+                  </span>
+                </div>
+              </div>
+              <button
+                className="history-account-login"
+                onClick={() => {
+                  if (onOpenAuth) onOpenAuth();
+                }}
+              >
+                Sign in
+              </button>
+            </>
           )}
         </div>
       </div>

@@ -1,17 +1,43 @@
+# FastAPI Framework
 fastapi
 uvicorn[standard]
 pydantic
+
+# Environment & Config
 python-dotenv
+
+# HTTP Clients
+httpx[socks]
+requests
+cloudscraper
+
+# Google Services
 google-api-python-client
 google-generativeai
+
+# AI/ML Models
 sentence-transformers
-faiss-cpu
-requests
-PyQt6
-numpy
-httpx[socks]
-duckduckgo-search
-geopy
-cloudscraper
 groq
 cerebras-cloud-sdk
+
+# Vector Store & Data
+faiss-cpu
+numpy
+
+# Search Engines
+duckduckgo-search
+gnews
+wikipedia-api
+googlesearch-python
+fake-useragent
+
+# Web Scraping
+trafilatura
+newspaper4k
+lxml[html_clean]
+
+# GUI
+PyQt6
+
+# Utilities
+geopy

@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { IconCheck } from '@tabler/icons-react';
-import { CheckCircle, XCircle, AlertCircle, FileText, TrendingUp, Shield, X, Clock } from 'lucide-react';
+import { CheckCircle, XCircle, AlertCircle, FileText, TrendingUp, Shield, X, Clock, User } from 'lucide-react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import HistorySidebar from './HistorySidebar';
@@ -11,11 +11,10 @@ import './App.css';
 /* URL API backend */
 const API_URL = process.env.REACT_APP_API_URL || 'http://127.0.0.1:8000';
 
-/* Các bước tiến trình khi kiểm tra tin tức */
 const PROGRESS_STEPS = [
-  { label: 'Đang kiểm tra cache và tạo kế hoạch', duration: 2000 },
-  { label: 'Đang thu thập bằng chứng', duration: 4000 },
-  { label: 'Đang phân tích và tổng hợp', duration: 3000 },
+  { label: 'Checking cache and planning', duration: 2000 },
+  { label: 'Gathering evidence', duration: 4000 },
+  { label: 'Analyzing and summarizing', duration: 3000 },
 ];
 
 function App() {
@@ -42,6 +41,8 @@ function App() {
   const [showResultModal, setShowResultModal] = useState(false);
   const [activeTab, setActiveTab] = useState('reason');
   const [showHistorySidebar, setShowHistorySidebar] = useState(false);
+  const [showAccountMenu, setShowAccountMenu] = useState(false);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
   /* State quản lý popup feedback */
   const [showFeedbackPopup, setShowFeedbackPopup] = useState(false);
@@ -50,11 +51,14 @@ function App() {
   const [showCorrectionDialog, setShowCorrectionDialog] = useState(false);
   const [selectedCorrection, setSelectedCorrection] = useState('');
   const [correctionNotes, setCorrectionNotes] = useState('');
+  const accountMenuRef = useRef(null);
 
   /* Lắng nghe trạng thái đăng nhập Firebase */
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
       setUser(firebaseUser);
+      setShowAccountMenu(false);
+      setShowLogoutConfirm(false);
     });
 
     return () => unsubscribe();
@@ -101,10 +105,45 @@ function App() {
   const handleLogout = async () => {
     try {
       await signOut(auth);
+      setShowAccountMenu(false);
+      setShowLogoutConfirm(false);
     } catch (err) {
       console.error('Logout error:', err);
     }
   };
+
+  const handleConfirmLogout = () => {
+    setShowLogoutConfirm(true);
+    setShowAccountMenu(false);
+  };
+
+  const handleCloseLogoutConfirm = () => {
+    setShowLogoutConfirm(false);
+  };
+
+  const getDisplayName = (firebaseUser) => {
+    if (!firebaseUser) return 'Tài khoản';
+    if (firebaseUser.displayName) return firebaseUser.displayName;
+    if (firebaseUser.email) return firebaseUser.email.split('@')[0];
+    return 'Tài khoản';
+  };
+
+  const handleToggleAccountMenu = () => {
+    setShowAccountMenu((prev) => !prev);
+  };
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (accountMenuRef.current && !accountMenuRef.current.contains(event.target)) {
+        setShowAccountMenu(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
 
   const handleOpenAuth = () => {
     setShowAuthModal(true);
@@ -113,7 +152,7 @@ function App() {
   /* Xử lý kiểm tra tin tức */
   const handleCheck = async () => {
     if (!text.trim()) {
-      setError('Vui lòng nhập tin tức cần kiểm tra!');
+      setError('Please enter news to verify!');
       return;
     }
 
@@ -139,7 +178,7 @@ function App() {
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ detail: 'Lỗi kết nối' }));
+        const errorData = await response.json().catch(() => ({ detail: 'Connection error' }));
         throw new Error(errorData.detail || `Lỗi ${response.status}`);
       }
 
@@ -154,7 +193,7 @@ function App() {
       /* Lưu vào lịch sử cho user hiện tại (Firestore) - không chặn UI */
       saveToHistory(user, text.trim(), data);
     } catch (err) {
-      setError(err.message || 'Đã xảy ra lỗi. Vui lòng kiểm tra kết nối và thử lại.');
+      setError(err.message || 'Something went wrong. Please check your connection and try again.');
       setLoading(false);
     }
   };
@@ -180,11 +219,11 @@ function App() {
           }),
         });
         setFeedbackPopupType('success');
-        setFeedbackPopupMessage('Cảm ơn bạn đã phản hồi!');
+        setFeedbackPopupMessage('Thank you for your feedback!');
         setShowFeedbackPopup(true);
       } catch (err) {
         setFeedbackPopupType('error');
-        setFeedbackPopupMessage('Không thể gửi phản hồi. Vui lòng thử lại.');
+        setFeedbackPopupMessage('Unable to send feedback. Please try again.');
         setShowFeedbackPopup(true);
       }
       setShowFeedback(false);
@@ -200,7 +239,7 @@ function App() {
   const handleSubmitCorrection = async () => {
     if (!selectedCorrection) {
       setFeedbackPopupType('error');
-      setFeedbackPopupMessage('Vui lòng chọn kết quả đúng!');
+      setFeedbackPopupMessage('Please select the correct result!');
       setShowFeedbackPopup(true);
       return;
     }
@@ -231,11 +270,11 @@ function App() {
       setSelectedCorrection('');
       setCorrectionNotes('');
       setFeedbackPopupType('success');
-      setFeedbackPopupMessage('Cảm ơn bạn đã phản hồi!');
+      setFeedbackPopupMessage('Thank you for your feedback!');
       setShowFeedbackPopup(true);
     } catch (err) {
       setFeedbackPopupType('error');
-      setFeedbackPopupMessage('Không thể gửi phản hồi. Vui lòng thử lại.');
+      setFeedbackPopupMessage('Unable to send feedback. Please try again.');
       setShowFeedbackPopup(true);
     }
     setShowFeedback(false);
@@ -308,52 +347,69 @@ function App() {
         <header className="header">
           <div className="header-left">
             <h1 className="fancy">ZeroFake</h1>
-            <p className="subtitle">Kiểm tra tin tức thật giả</p>
+            <p className="subtitle">Fast fact-checking for news</p>
           </div>
           <div className="header-right">
             {user && (
               <button
                 className="history-button"
                 onClick={() => setShowHistorySidebar(true)}
-                title="Xem lịch sử kiểm tra"
+                title="View history"
               >
                 <Clock size={20} />
-                <span>Lịch sử</span>
+                <span className="history-button-label">History</span>
               </button>
             )}
             {user ? (
-              <button
-                className="account-button"
-                onClick={handleLogout}
-                title={user.email}
-              >
-                <span className="account-email">
-                  {user.email}
-                </span>
-                <span className="account-action">
-                  Đăng xuất
-                </span>
-              </button>
+              <div className="account-menu-wrapper" ref={accountMenuRef}>
+                <button
+                  className="account-button"
+                  onClick={handleToggleAccountMenu}
+                  title={getDisplayName(user)}
+                >
+                  <User className="account-icon" size={18} />
+                  <span className="account-email">
+                    {getDisplayName(user)}
+                  </span>
+                </button>
+                {showAccountMenu && (
+                  <div className="account-dropdown">
+                    <button
+                      className="account-dropdown-item danger"
+                      onClick={handleConfirmLogout}
+                    >
+                      Log out
+                    </button>
+                  </div>
+                )}
+              </div>
             ) : (
               <button
                 className="auth-button"
                 onClick={handleOpenAuth}
               >
-                Đăng nhập
+                Sign in
               </button>
             )}
           </div>
+          <button
+            className="more-button"
+            onClick={() => setShowHistorySidebar(true)}
+            aria-label="More options"
+          >
+            <span className="more-icon"></span>
+          </button>
         </header>
 
         <div className="main-content">
           <div className="input-section">
-            <label htmlFor="news-input">Nhập tin tức cần kiểm tra:</label>
+            <label htmlFor="news-input">Enter the news to verify:</label>
             <textarea
               id="news-input"
               className="text-input"
               value={text}
               onChange={(e) => setText(e.target.value)}
-              placeholder="Dán hoặc nhập tin tức cần kiểm tra tại đây..."
+              placeholder="Paste or type the news here..."
               rows="6"
             />
           </div>
@@ -364,7 +420,7 @@ function App() {
               onClick={handleCheck}
               disabled={loading}
             >
-              {loading ? 'Đang kiểm tra...' : 'Kiểm tra'}
+              {loading ? 'Checking...' : 'Verify'}
             </button>
 
             {showFeedback && result && (
@@ -373,13 +429,13 @@ function App() {
                   className="feedback-button feedback-correct"
                   onClick={() => handleFeedback(true)}
                 >
-                  Chính xác
+                  Accurate
                 </button>
                 <button
                   className="feedback-button feedback-incorrect"
                   onClick={() => handleFeedback(false)}
                 >
-                  Không chính xác
+                  Inaccurate
                 </button>
               </>
             )}
@@ -400,8 +456,8 @@ function App() {
             <div className="loader-wrapper">
               <div className="loader"></div>
             </div>
-            <h2 className="loading-title">Đang phân tích tin tức...</h2>
-            <p className="loading-subtitle">Vui lòng đợi trong giây lát</p>
+            <h2 className="loading-title">Analyzing the news...</h2>
+            <p className="loading-subtitle">Please wait a moment</p>
 
             <div className="progress-steps">
               {PROGRESS_STEPS.map((step, index) => (
@@ -450,7 +506,7 @@ function App() {
                 <div>
                   <h2 className="modal-title-dark">{result.conclusion}</h2>
                   <p className="modal-subtitle-dark">
-                    {result.cached ? 'Đã được xác minh (Từ Cache)' : 'Đã được xác minh'}
+                    {result.cached ? 'Verified (from cache)' : 'Verified'}
                   </p>
                 </div>
               </div>
@@ -463,21 +519,21 @@ function App() {
                 className={`modal-tab-dark ${activeTab === 'reason' ? 'active' : ''}`}
               >
                 <FileText size={18} />
-                Lý do
+                Reason
               </button>
               <button
                 onClick={() => setActiveTab('style')}
                 className={`modal-tab-dark ${activeTab === 'style' ? 'active' : ''}`}
               >
                 <TrendingUp size={18} />
-                Phân tích phong cách
+                Style analysis
               </button>
               <button
                 onClick={() => setActiveTab('evidence')}
                 className={`modal-tab-dark ${activeTab === 'evidence' ? 'active' : ''}`}
               >
                 <Shield size={18} />
-                Bằng chứng chính
+                Key evidence
               </button>
             </div>
 
@@ -485,24 +541,24 @@ function App() {
             <div className="modal-body-dark">
               {activeTab === 'reason' && (
                 <div className="tab-content-dark">
-                  <h3 className="tab-title-dark">Lý do xác minh</h3>
+                  <h3 className="tab-title-dark">Verification reasons</h3>
                   <div className="verification-box-dark">
                     <p className="verification-text-dark">
-                      {result.reason || 'Nội dung được xác nhận từ nhiều nguồn tin đáng tin cậy, bao gồm các tổ chức truyền thông chính thống và cơ quan chức năng. Thông tin được kiểm chứng chéo từ ít nhất 3 nguồn độc lập.'}
+                      {result.reason || 'Content confirmed from trusted sources including mainstream media and official agencies. Information cross-checked across at least 3 independent sources.'}
                     </p>
                   </div>
                   <ul className="verification-list-dark">
                     <li className="verification-item-dark">
                       <CheckCircle className="verification-check-icon" size={20} />
-                      <span>Có nguồn gốc rõ ràng từ tổ chức uy tín</span>
+                      <span>Clear origin from reputable organizations</span>
                     </li>
                     <li className="verification-item-dark">
                       <CheckCircle className="verification-check-icon" size={20} />
-                      <span>Thông tin nhất quán giữa các nguồn</span>
+                      <span>Consistent information across sources</span>
                     </li>
                     <li className="verification-item-dark">
                       <CheckCircle className="verification-check-icon" size={20} />
-                      <span>Có bằng chứng hình ảnh/video xác thực</span>
+                      <span>Supporting visual or video evidence</span>
                     </li>
                   </ul>
                 </div>
@@ -510,10 +566,10 @@ function App() {
 
               {activeTab === 'style' && (
                 <div className="tab-content-dark">
-                  <h3 className="tab-title-dark">Phân tích phong cách</h3>
+                  <h3 className="tab-title-dark">Style analysis</h3>
                   <div className="style-analysis-dark">
                     <div className="style-card-dark">
-                      <p className="style-card-title-dark">Phân tích từ AI</p>
+                      <p className="style-card-title-dark">AI analysis</p>
                       <div className="style-analysis-content-dark">
                         {result.style_analysis ? (
                           <p className="style-card-text-dark" style={{ whiteSpace: 'pre-wrap', lineHeight: '1.8' }}>
@@ -521,7 +577,7 @@ function App() {
                           </p>
                         ) : (
                           <p className="style-card-text-dark">
-                            Chưa có phân tích phong cách từ AI. Vui lòng thử lại.
+                            No style analysis available yet. Please try again.
                           </p>
                         )}
                       </div>
@@ -532,14 +588,14 @@ function App() {
 
               {activeTab === 'evidence' && (
                 <div className="tab-content-dark">
-                  <h3 className="tab-title-dark">Bằng chứng chính</h3>
+                  <h3 className="tab-title-dark">Key evidence</h3>
                   <div className="evidence-list-dark">
                     {result.key_evidence_source ? (
                       <div className="evidence-card-dark">
-                        <p className="evidence-source-title-dark">Nguồn chính</p>
-                        <p className="evidence-source-date-dark">Đã được xác minh</p>
+                        <p className="evidence-source-title-dark">Primary source</p>
+                        <p className="evidence-source-date-dark">Verified</p>
                         <blockquote className="evidence-quote-dark">
-                          "{result.key_evidence_snippet || 'Bằng chứng từ nguồn đáng tin cậy'}"
+                          "{result.key_evidence_snippet || 'Evidence from a trusted source'}"
                         </blockquote>
                         <a href={result.key_evidence_source} target="_blank" rel="noopener noreferrer" className="evidence-link-dark">
                           {result.key_evidence_source}
@@ -547,8 +603,8 @@ function App() {
                       </div>
                     ) : (
                       <div className="evidence-card-dark">
-                        <p className="evidence-source-title-dark">Chưa có bằng chứng cụ thể</p>
-                        <p className="evidence-source-date-dark">Đang cập nhật</p>
+                        <p className="evidence-source-title-dark">No specific evidence yet</p>
+                        <p className="evidence-source-date-dark">Updating</p>
                       </div>
                     )}
                   </div>
@@ -563,13 +619,13 @@ function App() {
                   className="action-button-dark action-button-correct"
                   onClick={() => handleFeedback(true)}
                 >
-                  Chính xác
+                  Accurate
                 </button>
                 <button
                   className="action-button-dark action-button-incorrect"
                   onClick={() => handleFeedback(false)}
                 >
-                  Không chính xác
+                  Inaccurate
                 </button>
               </div>
             )}
@@ -583,6 +639,8 @@ function App() {
         isOpen={showHistorySidebar}
         onClose={() => setShowHistorySidebar(false)}
         onSelectHistory={handleSelectHistory}
+        onOpenAuth={handleOpenAuth}
+        onLogout={handleConfirmLogout}
       />
 
       {/* Popup thông báo feedback */}
@@ -598,8 +656,32 @@ function App() {
               className="feedback-popup-button"
               onClick={() => setShowFeedbackPopup(false)}
             >
-              Đóng
+              Close
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Popup xác nhận đăng xuất */}
+      {showLogoutConfirm && (
+        <div className="logout-confirm-overlay" onClick={handleCloseLogoutConfirm}>
+          <div className="logout-confirm-dialog" onClick={(e) => e.stopPropagation()}>
+            <h3 className="logout-confirm-title">Are you sure you want to log out?</h3>
+            <p className="logout-confirm-text">Your session will end and you will need to sign back in to access history.</p>
+            <div className="logout-confirm-actions">
+              <button
+                className="logout-confirm-button secondary"
+                onClick={handleCloseLogoutConfirm}
+              >
+                Cancel
+              </button>
+              <button
+                className="logout-confirm-button"
+                onClick={handleLogout}
+              >
+                Log out
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -618,38 +700,38 @@ function App() {
             >
               <X size={20} />
             </button>
-            <h3 className="correction-dialog-title">Vui lòng chọn kết quả đúng</h3>
+            <h3 className="correction-dialog-title">Please choose the correct result</h3>
             <div className="correction-options">
               <button
                 className={`correction-option ${selectedCorrection === 'TIN THẬT' ? 'selected' : ''}`}
                 onClick={() => setSelectedCorrection('TIN THẬT')}
               >
                 <CheckCircle size={20} />
-                <span>TIN THẬT</span>
+                <span>REAL</span>
               </button>
               <button
                 className={`correction-option ${selectedCorrection === 'TIN GIẢ' ? 'selected' : ''}`}
                 onClick={() => setSelectedCorrection('TIN GIẢ')}
               >
                 <XCircle size={20} />
-                <span>TIN GIẢ</span>
+                <span>FAKE</span>
               </button>
               <button
                 className={`correction-option ${selectedCorrection === 'GÂY HIỂU LẦM' ? 'selected' : ''}`}
                 onClick={() => setSelectedCorrection('GÂY HIỂU LẦM')}
               >
                 <AlertCircle size={20} />
-                <span>GÂY HIỂU LẦM</span>
+                <span>MISLEADING</span>
               </button>
             </div>
             <div className="correction-notes-section">
-              <label htmlFor="correction-notes">Ghi chú (tùy chọn):</label>
+              <label htmlFor="correction-notes">Notes (optional):</label>
               <textarea
                 id="correction-notes"
                 className="correction-notes-input"
                 value={correctionNotes}
                 onChange={(e) => setCorrectionNotes(e.target.value)}
-                placeholder="Nhập ghi chú của bạn..."
+                placeholder="Enter your notes..."
                 rows="3"
               />
             </div>
@@ -662,13 +744,13 @@ function App() {
                   setCorrectionNotes('');
                 }}
               >
-                Hủy
+                Cancel
               </button>
               <button
                 className="correction-dialog-submit"
                 onClick={handleSubmitCorrection}
               >
-                Gửi phản hồi
+                Submit feedback
               </button>
             </div>
           </div>
