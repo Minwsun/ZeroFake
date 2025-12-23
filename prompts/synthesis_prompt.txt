@@ -66,7 +66,6 @@ ELIF evidence không rõ ràng:
     → Dùng KIẾN THỨC AI + suy luận để quyết định
     → KHÔNG mặc định là TIN GIẢ chỉ vì thiếu evidence
 ```
-
 ---
 
 ## ⏰ TƯ DUY VỀ THỜI GIAN (TEMPORAL REASONING) - QUAN TRỌNG!
@@ -76,15 +75,19 @@ ELIF evidence không rõ ràng:
 ### 1. CLAIM DÙNG "VỪA MỚI" NHƯNG SỰ KIỆN ĐÃ XẢY RA LÂU:
 ```
 Logic reasoning:
-- Claim dùng: "vừa mới", "hôm nay", "NÓNG", "BREAKING", "mới đây"
+- Claim dùng: "vừa mới", "hôm nay", "NÓNG", "BREAKING", "mới đây", "TIN SỐC"
 - NHƯNG sự kiện đã xảy ra > 1 năm trước
 - → Đây là ZOMBIE NEWS - tin cũ được "hâm nóng" lại
-- → Ví dụ: "TIN MỚI: Steve Jobs qua đời" (ông mất 2011)
-- → Ví dụ: "BREAKING: iPhone 12 vừa ra mắt" (ra mắt 2020)
 - → KẾT LUẬN: TIN GIẢ (zombie news)
 
+VÍ DỤ CỤ THỂ - AI PHẢI NHỚ:
++ "TIN SỐC: Samsung Galaxy Note 7 bị thu hồi" → Thu hồi năm 2016 → ZOMBIE NEWS → TIN GIẢ
++ "TIN MỚI: Steve Jobs qua đời" → Ông mất 2011 → ZOMBIE NEWS → TIN GIẢ
++ "BREAKING: iPhone 12 vừa ra mắt" → Ra mắt 2020 → ZOMBIE NEWS → TIN GIẢ
++ "NÓNG: Facebook đổi tên thành Metaverse" → Đổi tên 2021 → ZOMBIE NEWS → TIN GIẢ
++ "MH370 vừa mất tích" → Mất tích 2014 → ZOMBIE NEWS → TIN GIẢ
+
 CHÚ Ý: Nếu sự kiện THỰC SỰ vừa xảy ra gần đây → TIN THẬT
-- Ví dụ: "Bitcoin vừa đạt $100,000" (đúng nếu đang là 2024-2025)
 ```
 
 ### 2. SỰ KIỆN THỂ THAO/CHÍNH TRỊ ĐÃ ĐƯỢC XÁC NHẬN CHÍNH THỨC:
@@ -99,6 +102,67 @@ Logic reasoning:
 - AI ĐÃ BIẾT các quyết định này từ thông báo chính thức
 - → Không cần evidence bên ngoài để xác nhận
 - → Ưu tiên kiến thức AI đã có
+```
+
+---
+
+## 📚 KIẾN THỨC THỰC TẾ (FACTUAL KNOWLEDGE) - AI PHẢI BIẾT!
+
+**NGUYÊN TẮC: Nếu claim chứa THÔNG TIN SAI so với sự thật AI biết → TIN GIẢ**
+
+### 1. THÔNG TIN TIỂU SỬ (BIOGRAPHICAL FACTS):
+```
+Logic reasoning - AI ĐÃ BIẾT:
+- Elon Musk sinh năm 1971, tại Pretoria, Nam Phi (KHÔNG PHẢI 1975, KHÔNG PHẢI Johannesburg)
+- Bill Gates sinh năm 1955, tại Seattle, Mỹ
+- Steve Jobs mất năm 2011
+- Tim Cook là CEO Apple (từ 2011)
+- Satya Nadella là CEO Microsoft (từ 2014)
+
+→ Nếu claim nói Elon Musk sinh 1975 hoặc sinh tại Johannesburg → TIN GIẢ
+→ Nếu claim nói Steve Jobs vẫn còn sống → TIN GIẢ
+```
+
+### 2. SỰ KIỆN CÔNG NGHỆ ĐÃ XẢY RA:
+```
+Logic reasoning - AI ĐÃ BIẾT:
+- Samsung Galaxy Note 7 bị thu hồi năm 2016 (cháy pin)
+- Apple Vision Pro ra mắt tháng 2/2024, giá $3,499
+- Tesla Cybertruck giao hàng từ cuối 2023
+- ChatGPT ra mắt tháng 11/2022
+- iPhone đầu tiên ra mắt 2007
+
+→ Nếu claim dùng "vừa mới" + sự kiện cũ → TIN GIẢ
+```
+
+---
+
+## 🌍 THỰC TẾ CHÍNH TRỊ (POLITICAL REALITY) - AI PHẢI BIẾT!
+
+**NGUYÊN TẮC: Nếu claim về sự kiện chính trị KHÔNG THỂ XẢY RA → TIN GIẢ**
+
+### 1. CÁC TỔ CHỨC QUỐC TẾ - AI PHẢI BIẾT THÀNH VIÊN:
+```
+Logic reasoning:
+- NATO: Việt Nam KHÔNG phải thành viên, không trong lộ trình gia nhập
+- OECD: Việt Nam KHÔNG phải thành viên (chỉ có 38 nước phát triển)
+- EU: Việt Nam KHÔNG thể gia nhập (không phải nước châu Âu)
+- ASEAN: Việt Nam LÀ thành viên (từ 1995)
+- CPTPP: Việt Nam LÀ thành viên (từ 2018)
+
+→ Claim "Việt Nam gia nhập NATO" → KHÔNG THỂ XẢY RA → TIN GIẢ
+→ Claim "Việt Nam gia nhập OECD" → KHÔNG CHÍNH XÁC (chưa phải thành viên) → TIN GIẢ
+→ Claim "Việt Nam bị loại khỏi ASEAN" → RẤT KHÓ XẢY RA → CẦN EVIDENCE
+```
+
+### 2. CÁC SỰ KIỆN CHÍNH TRỊ PHI THỰC TẾ:
+```
+Logic reasoning:
+- Singapore sáp nhập Malaysia → KHÔNG THỂ XẢY RA (độc lập 1965)
+- Mỹ và Triều Tiên thống nhất → KHÔNG THỂ XẢY RA
+- Hà Nội đổi tên → KHÔNG CÓ THÔNG TIN CHÍNH THỨC
+
+→ Những claim như vậy mà không có evidence → TIN GIẢ
 ```
 
 ---

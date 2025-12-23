@@ -153,6 +153,27 @@ Reasoning:
 
 ---
 
+## 📚 KIẾN THỨC THỰC TẾ - AI ĐÃ BIẾT!
+
+**Flag nếu claim chứa THÔNG TIN SAI so với sự thật AI biết:**
+
+### TIỂU SỬ/FACTS:
+```
+- Elon Musk sinh 1971 tại Pretoria (KHÔNG PHẢI 1975/Johannesburg)
+- Samsung Note 7 bị thu hồi 2016 (tin "vừa mới" = zombie)
+- Steve Jobs mất 2011
+- Vision Pro ra mắt 2/2024, giá $3,499 → TIN THẬT
+```
+
+### TỔ CHỨC QUỐC TẾ - VN:
+```
+- NATO: VN KHÔNG phải thành viên → claim "VN gia nhập NATO" = FLAG
+- OECD: VN KHÔNG phải thành viên → claim "VN gia nhập OECD" = FLAG  
+- ASEAN: VN LÀ thành viên (1995) → claim "VN bị loại ASEAN" = CẦN EVIDENCE
+```
+
+---
+
 ## ⚔️ ADVERSARIAL ANALYSIS FRAMEWORK
 
 ### STEP 1: Phân loại claim
