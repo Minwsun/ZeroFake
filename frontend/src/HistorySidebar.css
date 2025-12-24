@@ -57,7 +57,7 @@
 }
 
 .history-account-section {
-  display: flex;
+  display: none; /* Mặc định ẩn trên màn hình lớn để không trùng với account ở header */
   align-items: center;
   justify-content: space-between;
   padding: 12px 20px;
@@ -366,5 +366,9 @@
   .history-item-text {
     font-size: 0.85rem;
   }
-}
 
+  /* Chỉ hiển thị account trong lịch sử ở chế độ mobile (dùng nút more) */
+  .history-account-section {
+    display: flex;
+  }
+}
