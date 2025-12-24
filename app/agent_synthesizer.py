@@ -616,6 +616,103 @@ def load_filter_prompt(prompt_path="prompts/filter_search_result.txt"):
         print(f"LỖI: không thể tải {prompt_path}: {e}")
 
 
+def _parse_filter_json(text: str) -> dict:
+    """
+    Dedicated JSON parser for filter responses.
+    More robust than the general parser - handles common LLM output issues.
+    """
+    if not text:
+        print("[FILTER-PARSE] Empty response")
+        return {}
+    
+    cleaned = text.strip()
+    
+    # Remove <think>...</think> blocks
+    cleaned = re.sub(r'<think>.*?</think>', '', cleaned, flags=re.DOTALL)
+    cleaned = cleaned.strip()
+    
+    # Remove markdown code fences
+    cleaned = re.sub(r'^```[a-zA-Z0-9_-]*\s*', '', cleaned)
+    cleaned = re.sub(r'```\s*$', '', cleaned)
+    cleaned = cleaned.strip()
+    
+    # METHOD 1: Find JSON by balanced braces (most reliable)
+    def find_json_object(s: str) -> str | None:
+        start = s.find('{')
+        if start == -1:
+            return None
+        depth = 0
+        for i, c in enumerate(s[start:], start):
+            if c == '{':
+                depth += 1
+            elif c == '}':
+                depth -= 1
+                if depth == 0:
+                    return s[start:i+1]
+        return None
+    
+    json_str = find_json_object(cleaned)
+    if json_str:
+        try:
+            result = json.loads(json_str)
+            if isinstance(result, dict):
+                return result
+        except json.JSONDecodeError as e:
+            # Try to fix common JSON issues
+            fixed = json_str
+            # Fix trailing commas
+            fixed = re.sub(r',\s*([}\]])', r'\1', fixed)
+            # Fix unescaped quotes in strings (simple heuristic)
+            fixed = re.sub(r'(?<=[{,:])"([^"]*)"([^:,}\]]*)"', r'"\1\2"', fixed)
+            try:
+                result = json.loads(fixed)
+                if isinstance(result, dict):
+                    print(f"[FILTER-PARSE] Fixed JSON issues, parsed successfully")
+                    return result
+            except:
+                pass
+            print(f"[FILTER-PARSE] JSON decode error: {e}")
+    
+    # METHOD 2: Try direct JSON load
+    try:
+        result = json.loads(cleaned)
+        if isinstance(result, dict):
+            return result
+    except:
+        pass
+    
+    # METHOD 3: Extract array of indices as fallback
+    # Look for patterns like [0, 2, 4] or "keep": [0, 2, 4]
+    indices_match = re.search(r'(?:filtered|keep)\s*["\']?\s*:\s*\[([^\]]+)\]', cleaned)
+    if indices_match:
+        try:
+            indices_str = indices_match.group(1)
+            # Parse indices
+            indices = []
+            for part in indices_str.split(','):
+                part = part.strip()
+                # Check if it's an object like {"i": 0, ...}
+                if '{' in part:
+                    obj_match = re.search(r'"i"\s*:\s*(\d+)', part)
+                    if obj_match:
+                        indices.append({"i": int(obj_match.group(1))})
+                else:
+                    # Plain number
+                    num_match = re.search(r'\d+', part)
+                    if num_match:
+                        indices.append({"i": int(num_match.group())})
+            
+            if indices:
+                print(f"[FILTER-PARSE] Extracted {len(indices)} indices from pattern matching")
+                return {"filtered": indices}
+        except Exception as e:
+            print(f"[FILTER-PARSE] Fallback pattern matching failed: {e}")
+    
+    # METHOD 4: If nothing works, log the raw response and return empty
+    print(f"[FILTER-PARSE] Could not parse response. Raw (first 300 chars): {cleaned[:300]}...")
+    return {}
+
+
 async def filter_evidence_with_llm(claim: str, evidence_bundle: dict, current_date: str) -> dict:
     """
     Use LLM to intelligently filter search results before passing to CRITIC/JUDGE.
@@ -727,7 +824,8 @@ async def filter_evidence_with_llm(claim: str, evidence_bundle: dict, current_da
     
     # Parse response - expect {"filtered": [{"i": 0, "s": "source", "info": "..."}, ...], "removed": [...]}
     try:
-        filter_result = _parse_json_from_text(filter_response)
+        # Try dedicated filter parser first (more robust for filter responses)
+        filter_result = _parse_filter_json(filter_response)
         
         if not filter_result:
             print("[FILTER] Failed to parse JSON, returning original evidence")
@@ -2220,19 +2318,79 @@ This claim has been fact-checked by {fc_source}. The verdict is {fc_conclusion}.
         judge_result["conclusion"] = normalize_conclusion(judge_result.get("conclusion"))
         
         # =========================================================================
-        # FIX: Ensure evidence_link is populated from evidence bundle
+        # BUILD DETAILED REASON WITH SOURCE CITATIONS
+        # Format: Lý do tổng hợp + danh sách nguồn với trích dẫn đầy đủ
         # =========================================================================
-        if not judge_result.get("evidence_link"):
-            # Extract first evidence URL from bundle
-            for layer in ["layer_2_high_trust", "layer_3_general", "layer_1_tools", "layer_4_social_low"]:
-                items = evidence_bundle.get(layer, [])
-                for item in items:
-                    url = item.get("url") or item.get("link")
-                    if url:
+        collected_links = []
+        seen_urls = set()
+        source_quotes = []  # For building detailed reason
+        
+        for layer in ["layer_2_high_trust", "layer_3_general", "layer_1_tools", "layer_4_social_low"]:
+            items = evidence_bundle.get(layer, [])
+            for item in items:
+                url = item.get("url") or item.get("link")
+                if url and url not in seen_urls:
+                    seen_urls.add(url)
+                    source = item.get("source") or item.get("title") or ""
+                    snippet = item.get("snippet") or item.get("text") or ""
+                    
+                    # Extract domain if no source name
+                    if not source:
+                        from urllib.parse import urlparse
+                        domain = urlparse(url).netloc.replace("www.", "")
+                        source = domain or "Nguồn"
+                    
+                    # Clean up snippet - remove HTML, extra whitespace
+                    snippet = re.sub(r'<[^>]+>', '', snippet)
+                    snippet = re.sub(r'\s+', ' ', snippet).strip()
+                    
+                    # Store full data for frontend
+                    collected_links.append({
+                        "url": url,
+                        "source": source[:50],
+                        "snippet": snippet  # Full snippet, no truncation
+                    })
+                    
+                    # Build source quote for reason (only first 5)
+                    if len(source_quotes) < 5 and snippet:
+                        source_quotes.append({
+                            "source": source[:30],
+                            "quote": snippet
+                        })
+                    
+                    # Set first link as evidence_link for backward compatibility
+                    if not judge_result.get("evidence_link"):
                         judge_result["evidence_link"] = url
+                    
+                    if len(collected_links) >= 5:
                         break
-                if judge_result.get("evidence_link"):
-                    break
+            if len(collected_links) >= 5:
+                break
+        
+        # Store collected links with full snippets
+        judge_result["evidence_links"] = collected_links
+        
+        # Build detailed reason with source citations (if not already detailed)
+        current_reason = judge_result.get("reason", "")
+        
+        # Only rebuild if current reason is too short or generic
+        if source_quotes and (len(current_reason) < 50 or "..." in current_reason):
+            conclusion = judge_result.get("conclusion", "")
+            
+            # Build natural summary
+            if len(source_quotes) == 1:
+                summary = f"Theo {source_quotes[0]['source']}: {source_quotes[0]['quote']}"
+            else:
+                # Multiple sources - create summary
+                sources_list = ", ".join(sq["source"] for sq in source_quotes[:3])
+                if conclusion == "TIN THẬT":
+                    summary = f"Các nguồn {sources_list} đều đưa tin xác nhận thông tin này."
+                elif conclusion == "TIN GIẢ":
+                    summary = f"Không tìm thấy nguồn đáng tin cậy xác nhận thông tin này. Các nguồn {sources_list} không đề cập hoặc bác bỏ."
+                else:
+                    summary = f"Thông tin được đưa tin bởi {sources_list}."
+            
+            judge_result["reason"] = summary
         
         return judge_result
 

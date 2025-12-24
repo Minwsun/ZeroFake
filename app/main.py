@@ -69,6 +69,9 @@ def _sanitize_check_response(obj: dict) -> dict:
                 obj[k] = ""
     if "cached" not in obj or obj.get("cached") is None:
         obj["cached"] = False
+    # Handle evidence_links as list
+    if "evidence_links" not in obj or not isinstance(obj.get("evidence_links"), list):
+        obj["evidence_links"] = []
     return obj
 
 
@@ -257,6 +260,7 @@ class CheckResponse(BaseModel):
     key_evidence_snippet: str
     key_evidence_source: str
     evidence_link: str = ""
+    evidence_links: list = []  # NEW: Up to 5 evidence links with source names
     cached: bool = False
 
 
