@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { IconCheck } from '@tabler/icons-react';
 import { CheckCircle, XCircle, AlertCircle, FileText, TrendingUp, Shield, X, Clock, Moon, Sun } from 'lucide-react';
 import HistorySidebar from './HistorySidebar';
+import Snowfall from 'react-snowfall';
 import './App.css';
 
 /* URL API backend */
@@ -240,16 +241,6 @@ function App() {
     setActiveTab('reason');
   };
 
-  /* Lấy màu sắc tương ứng với kết luận */
-  const getConclusionColor = (conclusion) => {
-    const colorMap = {
-      'TIN THẬT': '#28a745',
-      'TIN GIẢ': '#dc3545',
-      'GÂY HIỂU LẦM': '#ffc107',
-    };
-    return colorMap[conclusion] || '#6c757d';
-  };
-
   /* Lưu kết quả kiểm tra vào lịch sử localStorage */
   const saveToHistory = (newsText, resultData) => {
     try {
@@ -308,6 +299,18 @@ function App() {
 
   return (
     <div className="App">
+      {/* Snowfall Effect */}
+      <Snowfall
+        color={isDarkMode ? "#F9F8F6" : "#313647"}
+        snowflakeCount={100}
+        style={{
+          position: 'fixed',
+          width: '100vw',
+          height: '100vh',
+          zIndex: 0
+        }}
+      />
+
       {/* Feedback Toast Popup */}
       {showFeedbackPopup && (
         <div className="feedback-toast" onClick={() => setShowFeedbackPopup(false)}>
