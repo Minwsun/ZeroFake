@@ -398,6 +398,48 @@ function App() {
                 <p>{result.reason || 'Không có lý do cụ thể từ AI.'}</p>
               </div>
 
+              {/* Evidence Links Section - Only web sources (filter out fact check) */}
+              {result.evidence_links && result.evidence_links.length > 0 && (() => {
+                // Filter out fact check sources - only show web sources
+                const factCheckPatterns = [
+                  'factcheck', 'fact-check', 'snopes', 'politifact',
+                  'fullfact', 'factcheckvn', 'factcheck.org', 'factchecker',
+                  'kiểm chứng', 'kiem chung', 'xác minh', 'xac minh'
+                ];
+
+                const webSources = result.evidence_links.filter(link => {
+                  const urlLower = (link.url || '').toLowerCase();
+                  const sourceLower = (link.source || '').toLowerCase();
+                  // Exclude if matches any fact check pattern
+                  return !factCheckPatterns.some(pattern =>
+                    urlLower.includes(pattern) || sourceLower.includes(pattern)
+                  );
+                }).slice(0, 5); // Max 5 web sources
+
+                return webSources.length > 0 ? (
+                  <div className="evidence-links-section">
+                    <h4 className="evidence-links-title">Các nguồn:</h4>
+                    <div className="evidence-sources-list">
+                      {webSources.map((link, index) => (
+                        <div key={index} className="evidence-source-item">
+                          <a
+                            href={link.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="evidence-source-name"
+                          >
+                            {link.source || `Nguồn ${index + 1}`}
+                          </a>
+                          {link.snippet && (
+                            <p className="evidence-source-quote">{link.snippet}</p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null;
+              })()}
+
               {/* Feedback Buttons - Đúng/Sai */}
               {showFeedback && (
                 <div className="feedback-buttons-row">
