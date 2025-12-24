@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { IconCheck } from '@tabler/icons-react';
-import { CheckCircle, XCircle, AlertCircle, FileText, TrendingUp, Shield, X, Clock } from 'lucide-react';
+import { CheckCircle, XCircle, AlertCircle, FileText, TrendingUp, Shield, X, Clock, Moon, Sun } from 'lucide-react';
 import HistorySidebar from './HistorySidebar';
 import './App.css';
 
@@ -31,6 +31,11 @@ function App() {
   const [showResultModal, setShowResultModal] = useState(false);
   const [activeTab, setActiveTab] = useState('reason');
   const [showHistorySidebar, setShowHistorySidebar] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    // Load theme from localStorage, default to dark mode
+    const savedTheme = localStorage.getItem('zerofake_theme');
+    return savedTheme !== 'light';
+  });
 
   /* State quản lý popup feedback */
   const [showFeedbackPopup, setShowFeedbackPopup] = useState(false);
@@ -284,6 +289,23 @@ function App() {
     }, 300);
   };
 
+  /* Xử lý chuyển đổi chế độ sáng/tối */
+  const toggleTheme = () => {
+    const newTheme = !isDarkMode;
+    setIsDarkMode(newTheme);
+    // Save to localStorage
+    localStorage.setItem('zerofake_theme', newTheme ? 'dark' : 'light');
+  };
+
+  /* Áp dụng theme cho document */
+  useEffect(() => {
+    if (isDarkMode) {
+      document.documentElement.setAttribute('data-theme', 'dark');
+    } else {
+      document.documentElement.setAttribute('data-theme', 'light');
+    }
+  }, [isDarkMode]);
+
   return (
     <div className="App">
       {/* Feedback Toast Popup */}
@@ -301,13 +323,22 @@ function App() {
             <h1 className="fancy">ZeroFake</h1>
             <p className="subtitle">Kiểm tra tin tức thật giả</p>
           </div>
-          <button
-            className="history-button"
-            onClick={() => setShowHistorySidebar(true)}
-            title="Xem lịch sử kiểm tra"
-          >
-            <Clock size={18} />
-          </button>
+          <div className="header-buttons">
+            <button
+              className="theme-toggle-button"
+              onClick={toggleTheme}
+              title={isDarkMode ? 'Chuyển sang chế độ sáng' : 'Chuyển sang chế độ tối'}
+            >
+              {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
+            </button>
+            <button
+              className="history-button"
+              onClick={() => setShowHistorySidebar(true)}
+              title="Xem lịch sử kiểm tra"
+            >
+              <Clock size={18} />
+            </button>
+          </div>
         </header>
 
         <div className="main-content">
