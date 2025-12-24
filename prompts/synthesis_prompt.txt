@@ -33,29 +33,31 @@ Bạn PHẢI suy nghĩ theo các bước sau TRƯỚC KHI đưa ra kết luận:
 - **Kiến thức chung**: Cho phép AI dùng kiến thức training (nếu nguồn không đủ)
 
 ```
-IF evidence XÁC NHẬN claim trực tiếp:
-    → TIN THẬT (có bằng chứng từ nguồn)
-    
+BƯỚC 1: KIỂM TRA EVIDENCE TRƯỚC!
+- Đọc KỸ tất cả evidence trong layer_2_high_trust
+- Evidence từ nguồn chính thức (apple.com, theverge.com, reuters.com...) = ĐỘ TIN CẬY CAO
+
+IF evidence TỪ NGUỒN CHÍNH THỨC/UY TÍN đề cập đến cùng sự kiện/sản phẩm như claim:
+    → TIN THẬT (nguồn uy tín xác nhận)
+    VÍ DỤ: 
+    - Claim: "Apple ra mắt iPhone Air"
+    - Evidence: apple.com nói "Apple announces iPhone Air" 
+    - → TIN THẬT (nguồn chính thức)
+
 ELIF evidence BÁC BỎ claim trực tiếp:
     → TIN GIẢ (có phản chứng từ nguồn)
     
 ELIF claim có dấu hiệu LỪA ĐẢO/ZOMBIE/CONSPIRACY rõ ràng:
     → TIN GIẢ (pattern đáng ngờ)
     
-ELIF claim là KIẾN THỨC CHUNG PHỔ BIẾN (địa lý, lịch sử, khoa học cơ bản):
-    IF AI biết chắc chắn 100% (VD: Hà Nội là thủ đô VN):
-        → TIN THẬT
-    ELSE:
-        → TIN GIẢ (không xác minh được)
-    
-ELIF claim là SỰ KIỆN CŨ mà AI đã biết (trước 2024):
-    IF AI có kiến thức chắc chắn (VD: Messi vô địch WC 2022):
+ELIF claim là KIẾN THỨC CHUNG PHỔ BIẾN:
+    IF AI biết chắc chắn 100%:
         → TIN THẬT
     ELSE:
         → TIN GIẢ (không xác minh được)
 
-ELSE (Mọi trường hợp khác - KHÔNG CÓ BẰNG CHỨNG XÁC NHẬN):
-    → TIN GIẢ (Mặc định. Không có bằng chứng = Không đáng tin)
+ELIF KHÔNG CÓ EVIDENCE NÀO liên quan:
+    → TIN GIẢ (không có bằng chứng)
 ```
 ---
 
