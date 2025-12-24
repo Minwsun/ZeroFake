@@ -9,7 +9,26 @@ MISSION: Classify claim type and build COMPREHENSIVE verification strategy with 
 
 ---
 
-## STEP 0: TRUSTED SOURCE EXTRACTION (QUAN TRỌNG - MỚI!)
+## STEP -1: CHUẨN HÓA CHÍNH TẢ (BẮT BUỘC!)
+
+**Trước khi phân tích, PHẢI sửa lỗi chính tả trong INPUT_CLAIM:**
+
+### Các lỗi cần sửa:
+- **Lỗi gõ/typo**: "ngưòi" → "người", "viêt nam" → "Việt Nam"
+- **Thiếu dấu tiếng Việt**: "nuoc" → "nước", "chinh phu" → "chính phủ"
+- **Lỗi bàn phím**: "trhông tin" → "thông tin", "cojng ty" → "công ty"
+- **Viết tắt phổ biến**: "VN" → "Việt Nam", "TT" → "Thủ tướng" (nếu context rõ)
+- **Tên riêng sai**: "tramp" → "Trump", "bide" → "Biden"
+
+### Quy tắc:
+1. GIỮ NGUYÊN ý nghĩa gốc, chỉ sửa chính tả
+2. KHÔNG thêm/bớt thông tin
+3. Sử dụng claim ĐÃ SỬA cho tất cả các bước tiếp theo
+4. Lưu claim đã chuẩn hóa vào field `normalized_claim` trong output JSON
+
+---
+
+## STEP 0: TRUSTED SOURCE EXTRACTION (QUAN TRỌNG!)
 
 **Kiểm tra xem claim có trích dẫn nguồn uy tín không:**
 
@@ -82,13 +101,53 @@ Queries nên tạo:
 - "Apple Vision Pro Vietnam release date confirmed"    (event verify)
 ```
 
----
+### Weather Claim Detection & Query:
+Nếu claim liên quan đến THỜI TIẾT, set `weather_query` với:
+
+**days_ahead** dựa trên thời gian trong claim:
+- `0`: Hôm nay / now / current
+- `1`: Ngày mai / tomorrow
+- `2-4`: Forecast 4 ngày (OpenWeather hourly)
+- `5-16`: Forecast 16 ngày (OpenWeather daily)
+- `-1 to -30`: Historical (lịch sử 30 ngày trước)
+
+**Ví dụ:**
+```
+Claim: "Hà Nội hôm nay mưa to"
+→ weather_query: {"is_weather_claim": true, "location": "Hanoi", "days_ahead": 0}
+
+Claim: "Sài Gòn ngày mai nắng 35 độ"
+→ weather_query: {"is_weather_claim": true, "location": "Ho Chi Minh City", "days_ahead": 1}
+
+Claim: "Đà Nẵng tuần trước có bão"
+→ weather_query: {"is_weather_claim": true, "location": "Da Nang", "days_ahead": -7}
+```
+
+**LƯU Ý**: Location phải bằng tiếng Anh hoặc tên quốc tế (Hanoi, Ho Chi Minh City, Da Nang...)
+
+### Cache Decision:
+Quyết định xem claim có nên lưu vào KB cache không:
+
+**is_cacheable = true** (LƯU vào cache):
+- Kiến thức lịch sử (VD: "Việt Nam giành độc lập năm 1945")
+- Kiến thức khoa học/địa lý (VD: "Everest là đỉnh núi cao nhất")
+- Sự kiện có thời gian CỤ THỂ trong quá khứ (VD: "World Cup 2022")
+- Định nghĩa, công thức, quy luật
+
+**is_cacheable = false** (KHÔNG lưu):
+- Thời tiết (mưa, nắng, nhiệt độ hôm nay/ngày mai)
+- Tin thời sự, breaking news, "vừa mới", "hôm nay"
+- Giá cả, tỷ giá, chứng khoán (thay đổi liên tục)
+- Sự kiện "đang diễn ra"
 
 ## OUTPUT SCHEMA (JSON)
 
 ```json
 {
-  "flow_type": "NEWS | KNOWLEDGE",
+  "original_claim": "Claim gốc từ user (giữ nguyên, không sửa)",
+  "normalized_claim": "Claim đã chuẩn hóa chính tả (dùng cho các bước tiếp theo)",
+  
+  "flow_type": "NEWS | KNOWLEDGE | WEATHER",
   "flow_reason": "Brief explanation",
   
   "extracted_source": {
@@ -98,7 +157,18 @@ Queries nên tạo:
   },
   
   "main_claim": "The main verifiable claim",
-  "claim_type": "sports | politics | product | geography | science | other",
+  "claim_type": "sports | politics | product | geography | science | weather | other",
+  
+  "weather_query": {
+    "is_weather_claim": false,
+    "location": "Tên địa điểm (VD: Hà Nội, Ho Chi Minh City)",
+    "time_reference": "today | tomorrow | specific date",
+    "days_ahead": 0
+  },
+  
+  "cache_decision": {
+    "is_cacheable": true
+  },
   
   "entities_extracted": {
     "primary_entity": "Entity chính (VD: Vision Pro)",
@@ -106,6 +176,7 @@ Queries nên tạo:
     "people": ["Tên người nếu có"],
     "organizations": ["Tên tổ chức"],
     "products": ["Tên sản phẩm"],
+    "locations": ["Địa điểm nếu có"],
     "dates": ["2024", "tháng 11"],
     "numbers": ["Số liệu nếu có"]
   },

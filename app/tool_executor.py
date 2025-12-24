@@ -264,6 +264,31 @@ async def execute_tool_plan(plan: dict, site_query_string: str, flash_mode: bool
 		"layer_4_social_low": []
 	}
 
+	# =========================================================================
+	# AUTO WEATHER: Check if planner detected weather claim
+	# =========================================================================
+	weather_query = plan.get("weather_query", {})
+	if weather_query.get("is_weather_claim") and weather_query.get("location"):
+		location = weather_query.get("location")
+		days_ahead = weather_query.get("days_ahead", 0)
+		time_ref = weather_query.get("time_reference", "today")
+		
+		# Convert time_reference to days_ahead if not set
+		if time_ref == "tomorrow" and days_ahead == 0:
+			days_ahead = 1
+		
+		print(f"\n[WEATHER] Auto-detected weather claim: {location}, days_ahead={days_ahead}")
+		
+		# Execute weather tool
+		weather_result = await _execute_weather_tool({
+			"city": location,
+			"days_ahead": days_ahead
+		}, flash_mode=flash_mode)
+		
+		if weather_result.get("status") == "success":
+			evidence_bundle["layer_1_tools"].extend(weather_result.get("layer_1_tools", []))
+			print(f"[WEATHER] OpenWeather data added to evidence")
+
 	# FIX: Đảm bảo LUÔN có search tool nếu không có tool nào được lập kế hoạch
 	has_search = any(m.get("tool_name") == "search" for m in required_tools)
 	if not has_search:
@@ -423,12 +448,9 @@ async def execute_tool_plan(plan: dict, site_query_string: str, flash_mode: bool
 			# Thêm dữ liệu OpenWeather vào layer_1_tools
 			evidence_bundle["layer_1_tools"].extend(res.get("layer_1_tools", []))
 
-	# Nếu đã có bất kỳ evidence nào từ web (L2/L3/L4),
-	# thì layer_1_tools chỉ được sử dụng như fallback: xoá để Agent 2 không ưu tiên dùng.
-	if evidence_bundle["layer_2_high_trust"] or evidence_bundle["layer_3_general"] or evidence_bundle["layer_4_social_low"]:
-		if evidence_bundle["layer_1_tools"]:
-			print("ToolExecutor: Đã có evidence từ web, bỏ qua layer_1_tools (tool) theo yêu cầu ưu tiên.")
-			evidence_bundle["layer_1_tools"] = []
+	# IMPORTANT: Keep OpenWeather data in layer_1_tools for weather claims
+	# Previously this was clearing layer_1_tools if web evidence existed - DON'T DO THAT
+	# Weather data is essential for Judge to verify weather claims
 
 	# (Fallback) nếu bundle trống, chạy CSE batch
 	if not (evidence_bundle["layer_1_tools"] or evidence_bundle["layer_2_high_trust"] or evidence_bundle["layer_3_general"] or evidence_bundle["layer_4_social_low"]):

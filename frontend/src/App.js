@@ -15,10 +15,8 @@ const PROGRESS_STEPS = [
 ];
 
 function App() {
-  /* State quản lý nội dung tin tức và cấu hình */
+  /* State quản lý nội dung tin tức */
   const [text, setText] = useState('');
-  const [agent1Model, setAgent1Model] = useState('models/gemini-2.5-flash');
-  const [agent2Model, setAgent2Model] = useState('models/gemini-2.5-pro');
 
   /* State quản lý trạng thái loading và tiến trình */
   const [loading, setLoading] = useState(false);
@@ -41,6 +39,14 @@ function App() {
   const [showCorrectionDialog, setShowCorrectionDialog] = useState(false);
   const [selectedCorrection, setSelectedCorrection] = useState('');
   const [correctionNotes, setCorrectionNotes] = useState('');
+
+  /* Auto-hide feedback toast after 2 seconds */
+  useEffect(() => {
+    if (showFeedbackPopup) {
+      const timer = setTimeout(() => setShowFeedbackPopup(false), 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [showFeedbackPopup]);
 
   /* Quản lý hiển thị tiến trình loading và vô hiệu hóa scroll */
   useEffect(() => {
@@ -93,8 +99,6 @@ function App() {
     setShowFeedback(false);
 
     try {
-      /* Kiểm tra xem có sử dụng flash mode không */
-      const flashMode = agent1Model.includes('flash') && agent2Model.includes('flash');
       const response = await fetch(`${API_URL}/check_news`, {
         method: 'POST',
         headers: {
@@ -102,9 +106,6 @@ function App() {
         },
         body: JSON.stringify({
           text: text.trim(),
-          agent1_model: agent1Model,
-          agent2_model: agent2Model,
-          flash_mode: flashMode,
         }),
       });
 
@@ -134,40 +135,52 @@ function App() {
   };
 
   /* Xử lý phản hồi từ người dùng về độ chính xác của kết quả */
-  const handleFeedback = async (isCorrect) => {
+  const handleFeedback = (isCorrect) => {
     if (!result) return;
 
-    if (isCorrect) {
-      /* Gửi phản hồi khi kết quả chính xác */
-      try {
-        await fetch(`${API_URL}/feedback`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            original_text: text,
-            gemini_conclusion: result.conclusion,
-            gemini_reason: result.reason,
-            human_correction: result.conclusion,
-            notes: 'Đúng',
-          }),
-        });
-        setFeedbackPopupType('success');
-        setFeedbackPopupMessage('Cảm ơn bạn đã phản hồi!');
-        setShowFeedbackPopup(true);
-      } catch (err) {
-        setFeedbackPopupType('error');
-        setFeedbackPopupMessage('Không thể gửi phản hồi. Vui lòng thử lại.');
-        setShowFeedbackPopup(true);
-      }
-      setShowFeedback(false);
-      setShowResultModal(false);
-      return;
-    }
+    const conclusion = isCorrect ? result.conclusion : (result.conclusion === 'TIN THẬT' ? 'TIN GIẢ' : 'TIN THẬT');
+    const notes = isCorrect ? 'Đúng - xác nhận kết quả' : 'Sai - đã sửa kết quả';
 
-    /* Xử lý khi kết quả không chính xác - hiển thị dialog chọn kết quả đúng */
-    setShowCorrectionDialog(true);
+    // Fire-and-forget: Send feedback async without blocking UI
+    fetch(`${API_URL}/feedback`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        original_text: text,
+        gemini_conclusion: result.conclusion,
+        gemini_reason: result.reason,
+        human_correction: conclusion,
+        notes: notes,
+      }),
+    }).catch(err => console.log('Feedback error:', err));
+
+    // Save to localStorage immediately
+    try {
+      const historyItem = {
+        id: Date.now().toString(),
+        text: text,
+        conclusion: conclusion,
+        reason: result.reason,
+        timestamp: new Date().toISOString(),
+        feedbackGiven: true,
+      };
+      const stored = localStorage.getItem('zerofake_history');
+      const history = stored ? JSON.parse(stored) : [];
+      const existingIndex = history.findIndex(h => h.text === text);
+      if (existingIndex >= 0) {
+        history[existingIndex] = historyItem;
+      } else {
+        history.unshift(historyItem);
+      }
+      localStorage.setItem('zerofake_history', JSON.stringify(history.slice(0, 100)));
+    } catch (e) { }
+
+    // Immediate UI update - show thank you toast
+    setFeedbackPopupType('success');
+    setFeedbackPopupMessage('Cảm ơn đóng góp của bạn!');
+    setShowFeedbackPopup(true);
+    setShowFeedback(false);
+    setShowResultModal(false);
   };
 
   /* Xử lý khi người dùng chọn kết quả đúng và gửi phản hồi */
@@ -273,11 +286,14 @@ function App() {
 
   return (
     <div className="App">
-      {/* Các điểm màu phát sáng làm nền */}
-      <div className="glow-orb orb-1"></div>
-      <div className="glow-orb orb-2"></div>
-      <div className="glow-orb orb-3"></div>
-      <div className="glow-orb orb-4"></div>
+      {/* Feedback Toast Popup */}
+      {showFeedbackPopup && (
+        <div className="feedback-toast" onClick={() => setShowFeedbackPopup(false)}>
+          <span>{feedbackPopupMessage}</span>
+        </div>
+      )}
+
+      {/* Plain dark background */}
 
       <div className="container">
         <header className="header">
@@ -290,86 +306,42 @@ function App() {
             onClick={() => setShowHistorySidebar(true)}
             title="Xem lịch sử kiểm tra"
           >
-            <Clock size={20} />
-            <span>Lịch sử</span>
+            <Clock size={18} />
           </button>
         </header>
 
         <div className="main-content">
-          <div className="input-section">
-            <label htmlFor="news-input">Nhập tin tức cần kiểm tra:</label>
-            <textarea
-              id="news-input"
-              className="text-input"
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              placeholder="Dán hoặc nhập tin tức cần kiểm tra tại đây..."
-              rows="6"
-            />
-          </div>
-
-          <div className="model-selection">
-            <div className="model-group">
-              <label htmlFor="agent1">Agent 1 model:</label>
-              <select
-                id="agent1"
-                value={agent1Model}
-                onChange={(e) => setAgent1Model(e.target.value)}
-                className="model-select"
-              >
-                <option value="models/gemini-2.5-flash">Gemini Flash</option>
-                <option value="models/gemma-3-4b-it">Gemma 3 4B IT</option>
-                <option value="models/gemma-3-1b-it">Gemma 3 1B IT</option>
-                <option value="models/gemma-3n-e2b-it">Gemma 3n E2B IT</option>
-                <option value="models/gemma-3n-e4b-it">Gemma 3n E4B IT</option>
-              </select>
+          {/* Modern Form Input */}
+          <form className="particle-form" onSubmit={(e) => { e.preventDefault(); handleCheck(); }}>
+            <div className="field">
+              <label className="field-label" htmlFor="news-input">
+                Nhập tin tức cần kiểm tra
+              </label>
+              <div className="input-wrapper">
+                <textarea
+                  id="news-input"
+                  className="particle-input"
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                  onInput={(e) => {
+                    e.target.style.height = 'auto';
+                    e.target.style.height = e.target.scrollHeight + 'px';
+                  }}
+                  placeholder="Nhập hoặc dán tin tức cần kiểm tra..."
+                  disabled={loading}
+                  rows={1}
+                />
+              </div>
             </div>
-
-            <div className="model-group">
-              <label htmlFor="agent2">Agent 2 model:</label>
-              <select
-                id="agent2"
-                value={agent2Model}
-                onChange={(e) => setAgent2Model(e.target.value)}
-                className="model-select"
-              >
-                <option value="models/gemini-2.5-pro">Gemini Pro</option>
-                <option value="models/gemini-2.5-flash">Gemini Flash</option>
-                <option value="models/gemma-3-27b-it">Gemma 3 27B IT</option>
-                <option value="models/gemma-3-12b-it">Gemma 3 12B IT</option>
-                <option value="models/gemma-3-4b-it">Gemma 3 4B IT</option>
-                <option value="models/gemma-3n-e4b-it">Gemma 3n E4B IT</option>
-                <option value="models/gemma-3n-e2b-it">Gemma 3n E2B IT</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="button-group">
             <button
-              className="check-button"
-              onClick={handleCheck}
-              disabled={loading}
+              className="particle-submit"
+              type="submit"
+              disabled={loading || !text.trim()}
             >
-              {loading ? 'Đang kiểm tra...' : 'Kiểm tra'}
+              <span className="circle"></span>
+              <span className="text">{loading ? 'Đang kiểm tra...' : 'Kiểm tra'}</span>
             </button>
-
-            {showFeedback && result && (
-              <>
-                <button
-                  className="feedback-button feedback-correct"
-                  onClick={() => handleFeedback(true)}
-                >
-                  Chính xác
-                </button>
-                <button
-                  className="feedback-button feedback-incorrect"
-                  onClick={() => handleFeedback(false)}
-                >
-                  Không chính xác
-                </button>
-              </>
-            )}
-          </div>
+          </form>
 
           {error && (
             <div className="error-message">
@@ -380,188 +352,75 @@ function App() {
       </div>
 
       {/* Overlay hiển thị khi đang kiểm tra */}
-      {loading && (
-        <div className="loading-overlay">
-          <div className="loading-content">
-            <div className="loader-wrapper">
-              <div className="loader"></div>
-            </div>
-            <h2 className="loading-title">Đang phân tích tin tức...</h2>
-            <p className="loading-subtitle">Vui lòng đợi trong giây lát</p>
-
-            <div className="progress-steps">
-              {PROGRESS_STEPS.map((step, index) => (
-                <div
-                  key={index}
-                  className={`progress-step ${index < currentStep ? 'completed' : ''} ${index === currentStep ? 'current' : ''} ${index < currentStep || index === currentStep ? 'active' : ''}`}
-                >
-                  <div className="progress-step-indicator">
-                    {index < currentStep ? (
-                      <IconCheck size={14} stroke={2.5} />
-                    ) : (
-                      <div className="progress-step-number">{index + 1}</div>
-                    )}
-                  </div>
-                  <div className="progress-step-label">{step.label}</div>
-                </div>
-              ))}
+      {
+        loading && (
+          <div className="loading-overlay">
+            <div className="loading-content">
+              <div className="loader-wrapper">
+                <div className="loader"></div>
+                <span className="loader-letter">T</span>
+                <span className="loader-letter">h</span>
+                <span className="loader-letter">i</span>
+                <span className="loader-letter">n</span>
+                <span className="loader-letter">k</span>
+                <span className="loader-letter">i</span>
+                <span className="loader-letter">n</span>
+                <span className="loader-letter">g</span>
+                <span className="loader-letter">.</span>
+                <span className="loader-letter">.</span>
+                <span className="loader-letter">.</span>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      }
 
       {/* Modal hiển thị kết quả kiểm tra */}
-      {showResultModal && result && (
-        <div className="modal-overlay">
-          <div className="modal-content-dark">
-            <button className="modal-close-dark" onClick={closeModal}>
-              <X size={20} />
-            </button>
+      {
+        showResultModal && result && (
+          <div className="modal-overlay">
+            <div className="modal-content-dark">
+              <button className="modal-close-dark" onClick={closeModal}>
+                <X size={18} />
+              </button>
 
-            {/* Header modal với màu sắc theo kết luận */}
-            <div
-              className="modal-header-dark"
-              style={{
-                background: result.conclusion === 'TIN THẬT'
-                  ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
-                  : result.conclusion === 'TIN GIẢ'
-                    ? 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)'
-                    : 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)'
-              }}
-            >
-              <div className="modal-header-content">
-                {result.conclusion === 'TIN THẬT' && <CheckCircle className="modal-header-icon" size={48} />}
-                {result.conclusion === 'TIN GIẢ' && <XCircle className="modal-header-icon" size={48} />}
-                {result.conclusion === 'GÂY HIỂU LẦM' && <AlertCircle className="modal-header-icon" size={48} />}
-                <div>
-                  <h2 className="modal-title-dark">{result.conclusion}</h2>
-                  <p className="modal-subtitle-dark">
-                    {result.cached ? 'Đã được xác minh (Từ Cache)' : 'Đã được xác minh'}
-                  </p>
-                </div>
+              {/* Simple Result Card */}
+              <div className="result-header">
+                {result.conclusion === 'TIN THẬT' ? (
+                  <CheckCircle size={24} />
+                ) : (
+                  <XCircle size={24} />
+                )}
+                <span className="result-conclusion">{result.conclusion}</span>
               </div>
-            </div>
 
-            {/* Các tab chuyển đổi giữa các phần thông tin */}
-            <div className="modal-tabs-dark">
-              <button
-                onClick={() => setActiveTab('reason')}
-                className={`modal-tab-dark ${activeTab === 'reason' ? 'active' : ''}`}
-              >
-                <FileText size={18} />
-                Lý do
-              </button>
-              <button
-                onClick={() => setActiveTab('style')}
-                className={`modal-tab-dark ${activeTab === 'style' ? 'active' : ''}`}
-              >
-                <TrendingUp size={18} />
-                Phân tích phong cách
-              </button>
-              <button
-                onClick={() => setActiveTab('evidence')}
-                className={`modal-tab-dark ${activeTab === 'evidence' ? 'active' : ''}`}
-              >
-                <Shield size={18} />
-                Bằng chứng chính
-              </button>
-            </div>
-
-            {/* Nội dung của các tab */}
-            <div className="modal-body-dark">
-              {activeTab === 'reason' && (
-                <div className="tab-content-dark">
-                  <h3 className="tab-title-dark">Lý do xác minh</h3>
-                  <div className="verification-box-dark">
-                    <p className="verification-text-dark">
-                      {result.reason || 'Nội dung được xác nhận từ nhiều nguồn tin đáng tin cậy, bao gồm các tổ chức truyền thông chính thống và cơ quan chức năng. Thông tin được kiểm chứng chéo từ ít nhất 3 nguồn độc lập.'}
-                    </p>
-                  </div>
-                  <ul className="verification-list-dark">
-                    <li className="verification-item-dark">
-                      <CheckCircle className="verification-check-icon" size={20} />
-                      <span>Có nguồn gốc rõ ràng từ tổ chức uy tín</span>
-                    </li>
-                    <li className="verification-item-dark">
-                      <CheckCircle className="verification-check-icon" size={20} />
-                      <span>Thông tin nhất quán giữa các nguồn</span>
-                    </li>
-                    <li className="verification-item-dark">
-                      <CheckCircle className="verification-check-icon" size={20} />
-                      <span>Có bằng chứng hình ảnh/video xác thực</span>
-                    </li>
-                  </ul>
-                </div>
-              )}
-
-              {activeTab === 'style' && (
-                <div className="tab-content-dark">
-                  <h3 className="tab-title-dark">Phân tích phong cách</h3>
-                  <div className="style-analysis-dark">
-                    <div className="style-card-dark">
-                      <p className="style-card-title-dark">Phân tích từ AI</p>
-                      <div className="style-analysis-content-dark">
-                        {result.style_analysis ? (
-                          <p className="style-card-text-dark" style={{ whiteSpace: 'pre-wrap', lineHeight: '1.8' }}>
-                            {result.style_analysis}
-                          </p>
-                        ) : (
-                          <p className="style-card-text-dark">
-                            Chưa có phân tích phong cách từ AI. Vui lòng thử lại.
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {activeTab === 'evidence' && (
-                <div className="tab-content-dark">
-                  <h3 className="tab-title-dark">Bằng chứng chính</h3>
-                  <div className="evidence-list-dark">
-                    {result.key_evidence_source ? (
-                      <div className="evidence-card-dark">
-                        <p className="evidence-source-title-dark">Nguồn chính</p>
-                        <p className="evidence-source-date-dark">Đã được xác minh</p>
-                        <blockquote className="evidence-quote-dark">
-                          "{result.key_evidence_snippet || 'Bằng chứng từ nguồn đáng tin cậy'}"
-                        </blockquote>
-                        <a href={result.key_evidence_source} target="_blank" rel="noopener noreferrer" className="evidence-link-dark">
-                          {result.key_evidence_source}
-                        </a>
-                      </div>
-                    ) : (
-                      <div className="evidence-card-dark">
-                        <p className="evidence-source-title-dark">Chưa có bằng chứng cụ thể</p>
-                        <p className="evidence-source-date-dark">Đang cập nhật</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Các nút phản hồi */}
-            {showFeedback && (
-              <div className="modal-actions-dark">
-                <button
-                  className="action-button-dark action-button-correct"
-                  onClick={() => handleFeedback(true)}
-                >
-                  Chính xác
-                </button>
-                <button
-                  className="action-button-dark action-button-incorrect"
-                  onClick={() => handleFeedback(false)}
-                >
-                  Không chính xác
-                </button>
+              <div className="result-reason">
+                <p>{result.reason || 'Không có lý do cụ thể từ AI.'}</p>
               </div>
-            )}
+
+              {/* Feedback Buttons - Đúng/Sai */}
+              {showFeedback && (
+                <div className="feedback-buttons-row">
+                  <button
+                    className="feedback-btn feedback-btn-correct"
+                    onClick={() => handleFeedback(true)}
+                  >
+                    <i className="fi fi-rs-check"></i>
+                    Đúng
+                  </button>
+                  <button
+                    className="feedback-btn feedback-btn-incorrect"
+                    onClick={() => handleFeedback(false)}
+                  >
+                    <i className="fi fi-rr-cross-small"></i>
+                    Sai
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        )
+      }
 
       {/* Sidebar hiển thị lịch sử kiểm tra */}
       <HistorySidebar
@@ -571,95 +430,26 @@ function App() {
       />
 
       {/* Popup thông báo feedback */}
-      {showFeedbackPopup && (
-        <div className="feedback-popup-overlay" onClick={() => setShowFeedbackPopup(false)}>
-          <div className="feedback-popup" onClick={(e) => e.stopPropagation()}>
-            <div className={`feedback-popup-icon ${feedbackPopupType}`}>
-              {feedbackPopupType === 'success' && <CheckCircle size={48} />}
-              {feedbackPopupType === 'error' && <XCircle size={48} />}
-            </div>
-            <p className="feedback-popup-message">{feedbackPopupMessage}</p>
-            <button
-              className="feedback-popup-button"
-              onClick={() => setShowFeedbackPopup(false)}
-            >
-              Đóng
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Dialog chọn kết quả đúng khi feedback không chính xác */}
-      {showCorrectionDialog && (
-        <div className="correction-dialog-overlay" onClick={() => setShowCorrectionDialog(false)}>
-          <div className="correction-dialog" onClick={(e) => e.stopPropagation()}>
-            <button
-              className="correction-dialog-close"
-              onClick={() => {
-                setShowCorrectionDialog(false);
-                setSelectedCorrection('');
-                setCorrectionNotes('');
-              }}
-            >
-              <X size={20} />
-            </button>
-            <h3 className="correction-dialog-title">Vui lòng chọn kết quả đúng</h3>
-            <div className="correction-options">
+      {
+        showFeedbackPopup && (
+          <div className="feedback-popup-overlay" onClick={() => setShowFeedbackPopup(false)}>
+            <div className="feedback-popup" onClick={(e) => e.stopPropagation()}>
+              <div className={`feedback-popup-icon ${feedbackPopupType}`}>
+                {feedbackPopupType === 'success' && <CheckCircle size={48} />}
+                {feedbackPopupType === 'error' && <XCircle size={48} />}
+              </div>
+              <p className="feedback-popup-message">{feedbackPopupMessage}</p>
               <button
-                className={`correction-option ${selectedCorrection === 'TIN THẬT' ? 'selected' : ''}`}
-                onClick={() => setSelectedCorrection('TIN THẬT')}
+                className="feedback-popup-button"
+                onClick={() => setShowFeedbackPopup(false)}
               >
-                <CheckCircle size={20} />
-                <span>TIN THẬT</span>
-              </button>
-              <button
-                className={`correction-option ${selectedCorrection === 'TIN GIẢ' ? 'selected' : ''}`}
-                onClick={() => setSelectedCorrection('TIN GIẢ')}
-              >
-                <XCircle size={20} />
-                <span>TIN GIẢ</span>
-              </button>
-              <button
-                className={`correction-option ${selectedCorrection === 'GÂY HIỂU LẦM' ? 'selected' : ''}`}
-                onClick={() => setSelectedCorrection('GÂY HIỂU LẦM')}
-              >
-                <AlertCircle size={20} />
-                <span>GÂY HIỂU LẦM</span>
-              </button>
-            </div>
-            <div className="correction-notes-section">
-              <label htmlFor="correction-notes">Ghi chú (tùy chọn):</label>
-              <textarea
-                id="correction-notes"
-                className="correction-notes-input"
-                value={correctionNotes}
-                onChange={(e) => setCorrectionNotes(e.target.value)}
-                placeholder="Nhập ghi chú của bạn..."
-                rows="3"
-              />
-            </div>
-            <div className="correction-dialog-actions">
-              <button
-                className="correction-dialog-cancel"
-                onClick={() => {
-                  setShowCorrectionDialog(false);
-                  setSelectedCorrection('');
-                  setCorrectionNotes('');
-                }}
-              >
-                Hủy
-              </button>
-              <button
-                className="correction-dialog-submit"
-                onClick={handleSubmitCorrection}
-              >
-                Gửi phản hồi
+                Đóng
               </button>
             </div>
           </div>
-        </div>
-      )}
-    </div>
+        )
+      }
+    </div >
   );
 }
 

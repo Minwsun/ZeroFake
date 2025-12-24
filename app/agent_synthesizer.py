@@ -82,43 +82,41 @@ def normalize_conclusion(conclusion: str) -> str:
     """
     Normalize conclusion to BINARY classification: TIN THẬT or TIN GIẢ only.
     
-    🟢 NGUYÊN TẮC MỚI: PRESUMPTION OF TRUTH
-    - Mặc định là TIN THẬT nếu không có dấu hiệu TIN GIẢ rõ ràng
-    - Chỉ trả về TIN GIẢ khi có keywords chỉ định rõ ràng
+    🔴 NGUYÊN TẮC MỚI: PRESUMPTION OF DOUBT
+    - Mặc định là TIN GIẢ nếu không chứng minh được TIN THẬT
+    - Chỉ trả về TIN THẬT khi có keywords chỉ định rõ ràng
     """
     if not conclusion:
-        return "TIN THẬT"  # ĐỔI: Mặc định TIN THẬT nếu không có kết luận
+        return "TIN GIẢ"  # MẶC ĐỊNH: Không có kết luận = TIN GIẢ
     
     conclusion_upper = conclusion.upper().strip()
     
-    # 🔴 CHỈ TIN GIẢ KHI CÓ DẤU HIỆU RÕ RÀNG
-    fake_indicators = [
-        # English fake indicators (new prompts are in English)
-        "FAKE NEWS", "FAKE", "FALSE", "UNTRUE", "NOT TRUE",
-        # Vietnamese fake indicators
-        "TIN GIẢ", "TIN GIA", "GIẢ MẠO",
-        "BỊA ĐẶT", "BIA DAT", "LỪA ĐẢO", "LUA DAO", "SCAM",
-        "ZOMBIE", "OUTDATED", "LỖI THỜI", "LOI THOI",
-        "KHÔNG ĐÚNG", "KHONG DUNG", "SAI SỰ THẬT", "SAI SU THAT",
-        "KHÔNG CÓ CƠ SỞ", "KHONG CO CO SO", "VÔ CĂN CỨ", "VO CAN CU",
-        "ALMOST CERTAINLY FALSE", "HIGHLY UNLIKELY",
-        "BÁC BỎ", "BAC BO", "KHÔNG XÁC NHẬN", "KHONG XAC NHAN",
-        # Y tế sai
-        "Y TẾ SAI", "Y TE SAI", "MISLEADING",
-        # Số liệu phi thực tế
-        "PHI THỰC TẾ", "PHI THUC TE", "UNREALISTIC",
-        # GÂY HIỂU LẦM - vẫn coi là TIN GIẢ
-        "GÂY HIỂU LẦM", "GAY HIEU LAM",
+    # 🟢 CHỈ TIN THẬT KHI CÓ DẤU HIỆU RÕ RÀNG
+    true_indicators = [
+        # English true indicators
+        "TRUE NEWS", "TRUE", "REAL", "VERIFIED", "CONFIRMED",
+        # Vietnamese true indicators
+        "TIN THẬT", "TIN THAT", "THẬT", "THAT", "ĐÚNG", "DUNG",
+        "XÁC NHẬN", "XAC NHAN", "CHÍNH XÁC", "CHINH XAC",
     ]
     
-    # Nếu có bất kỳ indicator TIN GIẢ nào -> TIN GIẢ
-    for indicator in fake_indicators:
+    for indicator in true_indicators:
         if indicator in conclusion_upper:
-            return "TIN GIẢ"
+            return "TIN THẬT"
     
-    # 🟢 TẤT CẢ CÁC TRƯỜNG HỢP KHÁC -> TIN THẬT
-    # Bao gồm: TIN THẬT, CHƯA KIỂM CHỨNG, TRUE, PROBABLE, LIKELY, etc.
-    return "TIN THẬT"
+    # MẶC ĐỊNH: Không chứng minh được TIN THẬT → TIN GIẢ
+    # Bao gồm cả các trường hợp: TIN GIẢ, FAKE, FALSE, UNVERIFIED, etc.
+    return "TIN GIẢ"
+
+
+# Some legacy fake indicators for reference (deprecated - logic đảo ngược)
+_DEPRECATED_FAKE_INDICATORS = [
+    # English fake indicators (new prompts are in English)
+    "FAKE NEWS", "FAKE", "FALSE", "UNTRUE", "NOT TRUE",
+    # Vietnamese fake indicators
+    "TIN GIẢ", "TIN GIA", "GIẢ MẠO",
+    "BỊA ĐẶT", "BIA DAT", "LỪA ĐẢO", "LUA DAO", "SCAM",
+]
 
 
 # Product version database for outdated information detection
@@ -841,14 +839,30 @@ def _trim_evidence_bundle(bundle: Dict[str, Any], cap_l2: int = 1000, cap_l3: in
         claim_keywords = {w for w in words if w not in stop_words}
     
     def is_relevant(item: Dict) -> bool:
-        """Check if evidence snippet mentions at least 1 claim keyword."""
+        """
+        Check if evidence snippet is TRULY relevant to the claim.
+        IMPROVED: Requires at least 2 keyword matches OR 50% of keywords.
+        This prevents false positives like "Bill Clinton" matching "Bill Gates".
+        """
         if not claim_keywords:
             return True  # No filtering if no claim provided
+        
         snippet = (item.get("snippet") or "").lower()
         title = (item.get("title") or "").lower()
-        combined = snippet + " " + title
-        # Need at least 1 keyword match
-        return any(kw in combined for kw in claim_keywords)
+        url = (item.get("url") or "").lower()
+        combined = snippet + " " + title + " " + url
+        
+        # Count how many keywords match
+        matched_keywords = [kw for kw in claim_keywords if kw in combined]
+        match_count = len(matched_keywords)
+        
+        # STRICTER MATCHING:
+        # - If claim has 3+ keywords: need at least 2 matches
+        # - If claim has 1-2 keywords: need at least 1 match
+        min_required = 2 if len(claim_keywords) >= 3 else 1
+        
+        return match_count >= min_required
+
     
     out = {
         "layer_1_tools": [],
@@ -868,38 +882,42 @@ def _trim_evidence_bundle(bundle: Dict[str, Any], cap_l2: int = 1000, cap_l3: in
             "weather_data": it.get("weather_data")
         })
     
-    # Lớp 2: REMOVED FILTER - Giữ TẤT CẢ evidence, không filter by relevance
+    # Lớp 2: RE-ENABLED FILTER - Lọc theo relevance để tránh nhầm lẫn (Bill Gates vs Bill Clinton)
     all_l2 = bundle.get("layer_2_high_trust") or []
     for it in all_l2[:cap_l2]:
-        out["layer_2_high_trust"].append({
-            "source": it.get("source"),
-            "url": it.get("url"),
-            "snippet": _trim_snippet(it.get("snippet")),
-            "rank_score": it.get("rank_score"),
-            "date": it.get("date")
-        })
+        if is_relevant(it):
+            out["layer_2_high_trust"].append({
+                "source": it.get("source"),
+                "url": it.get("url"),
+                "snippet": _trim_snippet(it.get("snippet")),
+                "rank_score": it.get("rank_score"),
+                "date": it.get("date")
+            })
     
-    # Lớp 3: REMOVED FILTER - Giữ TẤT CẢ evidence, không filter by relevance
+    # Lớp 3: RE-ENABLED FILTER - Lọc theo relevance
     all_l3 = bundle.get("layer_3_general") or []
     for it in all_l3[:cap_l3]:
-        out["layer_3_general"].append({
-            "source": it.get("source"),
-            "url": it.get("url"),
-            "snippet": _trim_snippet(it.get("snippet")),
-            "rank_score": it.get("rank_score"),
-            "date": it.get("date")
-        })
+        if is_relevant(it):
+            out["layer_3_general"].append({
+                "source": it.get("source"),
+                "url": it.get("url"),
+                "snippet": _trim_snippet(it.get("snippet")),
+                "rank_score": it.get("rank_score"),
+                "date": it.get("date")
+            })
     
-    # Lớp 4: Giữ TẤT CẢ evidence từ Layer 4 (trước đây bị excluded)
+    # Lớp 4: RE-ENABLED FILTER - Lọc theo relevance
     all_l4 = bundle.get("layer_4_social_low") or []
     for it in all_l4[:cap_l4]:
-        out["layer_4_social_low"].append({
-            "source": it.get("source"),
-            "url": it.get("url"),
-            "snippet": _trim_snippet(it.get("snippet")),
-            "rank_score": it.get("rank_score"),
-            "date": it.get("date")
-        })
+        if is_relevant(it):
+            out["layer_4_social_low"].append({
+                "source": it.get("source"),
+                "url": it.get("url"),
+                "snippet": _trim_snippet(it.get("snippet")),
+                "rank_score": it.get("rank_score"),
+                "date": it.get("date")
+            })
+
     
     # Log số lượng evidence (không filter nữa)
     total_evidence = len(all_l2) + len(all_l3) + len(all_l4)
@@ -1502,6 +1520,14 @@ async def execute_final_analysis(
 
     # Trim evidence before sending to models (using FILTERED bundle)
     trimmed_bundle = _trim_evidence_bundle(filtered_evidence_bundle, claim_text=text_input)
+    
+    # DEBUG: Log weather data
+    weather_items = trimmed_bundle.get("layer_1_tools", [])
+    if weather_items:
+        print(f"[WEATHER→JUDGE] Found {len(weather_items)} weather items in evidence:")
+        for item in weather_items:
+            print(f"  → {item.get('source')}: {item.get('snippet', '')[:100]}...")
+    
     evidence_bundle_json = json.dumps(trimmed_bundle, indent=2, ensure_ascii=False)
 
     # =========================================================================
@@ -1724,12 +1750,60 @@ This claim has been fact-checked by {fc_source}. The verdict is {fc_conclusion}.
                 "judge_reasoning": critic_resp.get("judge_reasoning", "N/A")
             }
         
-        # Fallback for reason
+        # Fallback for reason - more comprehensive extraction
         if not judge_result.get("reason"):
+            # Try alternate field names first
             for key in ["reasoning", "explanation", "rationale", "analysis", "summary"]:
                 if judge_result.get(key):
                     judge_result["reason"] = str(judge_result[key])
                     break
+            
+            # Try extracting from thinking_process
+            if not judge_result.get("reason"):
+                thinking = judge_result.get("thinking_process")
+                if thinking and isinstance(thinking, dict):
+                    logical_reasoning = thinking.get("step3_logical_reasoning") or thinking.get("logical_reasoning")
+                    if logical_reasoning:
+                        judge_result["reason"] = str(logical_reasoning)
+                    elif thinking.get("key_factors"):
+                        factors = thinking.get("key_factors", [])
+                        if isinstance(factors, list) and factors:
+                            judge_result["reason"] = "; ".join(str(f) for f in factors[:3])
+            
+            # Try extracting from key_evidence
+            if not judge_result.get("reason"):
+                key_ev = judge_result.get("key_evidence")
+                if key_ev and isinstance(key_ev, dict):
+                    quote = key_ev.get("quote", "")
+                    source = key_ev.get("source", "")
+                    if quote and source:
+                        judge_result["reason"] = f"Theo {source}: \"{quote[:200]}...\""
+            
+            # Final fallback: generate reason from conclusion with claim input
+            if not judge_result.get("reason"):
+                conclusion = judge_result.get("conclusion", "")
+                verdict_meta = judge_result.get("verdict_metadata", {})
+                verdict_type = verdict_meta.get("verdict_type", "") if isinstance(verdict_meta, dict) else ""
+                
+                # Truncate claim for display (max 100 chars)
+                claim_display = text_input[:100] + "..." if len(text_input) > 100 else text_input
+                
+                if conclusion == "TIN GIẢ":
+                    if verdict_type == "ZOMBIE_NEWS":
+                        judge_result["reason"] = f"Đây là tin cũ được trình bày như tin mới (Zombie News): \"{claim_display}\""
+                    elif verdict_type == "SCAM":
+                        judge_result["reason"] = f"Nội dung có dấu hiệu lừa đảo/scam: \"{claim_display}\""
+                    elif verdict_type == "UNVERIFIED":
+                        judge_result["reason"] = f"Không có thông tin nào đề cập đến \"{claim_display}\""
+                    else:
+                        judge_result["reason"] = f"Không có thông tin nào đề cập đến \"{claim_display}\""
+                elif conclusion == "TIN THẬT":
+                    judge_result["reason"] = f"Thông tin được xác nhận từ nguồn đáng tin cậy: \"{claim_display}\""
+                else:
+                    # Nếu không xác minh được → TIN GIẢ (theo yêu cầu user)
+                    judge_result["conclusion"] = "TIN GIẢ"
+                    judge_result["reason"] = f"Không có thông tin nào đề cập đến \"{claim_display}\""
+                    judge_result["confidence_score"] = 60  # Medium confidence for unverified
         
         # Final log
         if judge_result.get("conclusion"):

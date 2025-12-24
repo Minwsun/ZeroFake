@@ -54,23 +54,12 @@ const HistorySidebar = ({ isOpen, onClose, onSelectHistory }) => {
   const getConclusionIcon = (conclusion) => {
     switch (conclusion) {
       case 'TIN THẬT':
-        return <CheckCircle size={20} className="history-icon history-icon-true" />;
+        return <CheckCircle size={18} className="history-icon" />;
       case 'TIN GIẢ':
-        return <XCircle size={20} className="history-icon history-icon-fake" />;
-      case 'GÂY HIỂU LẦM':
-        return <AlertCircle size={20} className="history-icon history-icon-misleading" />;
+        return <XCircle size={18} className="history-icon" />;
       default:
-        return <Clock size={20} className="history-icon" />;
+        return <Clock size={18} className="history-icon" />;
     }
-  };
-
-  const getConclusionColor = (conclusion) => {
-    const colorMap = {
-      'TIN THẬT': '#28a745',
-      'TIN GIẢ': '#dc3545',
-      'GÂY HIỂU LẦM': '#ffc107',
-    };
-    return colorMap[conclusion] || '#6c757d';
   };
 
   const formatDate = (timestamp) => {
@@ -139,12 +128,6 @@ const HistorySidebar = ({ isOpen, onClose, onSelectHistory }) => {
                       {getConclusionIcon(item.conclusion)}
                     </div>
                     <div className="history-item-info">
-                      <div
-                        className="history-item-conclusion"
-                        style={{ color: getConclusionColor(item.conclusion) }}
-                      >
-                        {item.conclusion}
-                      </div>
                       <div className="history-item-time">
                         {formatDate(item.timestamp)}
                       </div>

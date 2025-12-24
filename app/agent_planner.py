@@ -970,6 +970,7 @@ async def create_action_plan(
     from datetime import datetime
 
     current_date = datetime.now().strftime('%Y-%m-%d')
+    # PLANNER sẽ tự chuẩn hóa chính tả trong prompt
     prompt = PLANNER_PROMPT.replace("{text_input}", text_input)
     prompt = prompt.replace("{current_date}", current_date)
 
@@ -996,6 +997,9 @@ async def create_action_plan(
         plan_json = _parse_json_from_text(text) if text else {}
         plan_json = _normalize_plan(plan_json, text_input, flash_mode)
         
+        # PLANNER đã chuẩn hóa chính tả trong output (normalized_claim)
+        plan_json["original_input"] = text_input
+        
         if plan_json:
             print(f"[PLANNER] Successfully generated plan")
             return plan_json
@@ -1006,4 +1010,5 @@ async def create_action_plan(
     # Fallback về plan tĩnh (Heuristic) nếu AI sập hoàn toàn
     print("[PLANNER] All models failed, falling back to heuristic plan normalization.")
     fallback = _normalize_plan({}, text_input, flash_mode)
+    fallback["original_input"] = text_input
     return fallback

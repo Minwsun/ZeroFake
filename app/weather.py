@@ -35,89 +35,67 @@ TIME_STOPWORDS = {
 
 def _smart_weather_classifier(text: str) -> Dict:
     """
-    LLM-based intelligent classifier to determine if text is about weather.
-    More flexible than pattern matching - can understand context.
+    Fast pattern-based weather classifier.
+    No LLM calls - uses regex patterns for speed.
     
     Returns: {"is_weather": bool, "location": str|None, "confidence": float}
     """
-    import os
-    import json
-    
-    # Quick pre-filter: must have SOME weather-related word (diacritics-aware)
     text_lower = text.lower()
-    quick_check_words = ["thời tiết", "mưa", "nắng", "bão", "weather", "rain", "forecast", "temperature", "nhiệt độ"]
-    if not any(w in text_lower for w in quick_check_words):
+    text_norm = _norm(text)
+    
+    # Weather keywords
+    weather_keywords = [
+        "thời tiết", "mưa", "nắng", "bão", "lũ lụt", "giông", "sấm", "nhiệt độ",
+        "độ ẩm", "gió", "áp thấp", "áp cao", "dự báo", "weather", "rain", "sunny",
+        "storm", "forecast", "temperature", "humidity", "typhoon", "tropical"
+    ]
+    
+    # Check if any weather keyword exists
+    has_weather_keyword = any(kw in text_lower for kw in weather_keywords)
+    if not has_weather_keyword:
         return {"is_weather": False, "location": None, "confidence": 1.0}
     
-    # Use LLM to classify
-    try:
-        import google.generativeai as genai
-        
-        api_key = os.getenv("GEMINI_API_KEY")
-        if not api_key:
-            print("[Weather Classifier] No GEMINI_API_KEY, falling back to heuristics")
-            return {"is_weather": None, "location": None, "confidence": 0}  # Let caller use fallback
-        
-        genai.configure(api_key=api_key)
-        
-        # Use Gemma models for classification (lighter, faster)
-        # Try Gemma 4B first, fallback to 12B if needed
-        models_to_try = ["models/gemma-3-4b-it", "models/gemma-3-12b-it"]
-        
-        prompt = f'''Phân loại câu sau có phải là TIN THỜI TIẾT về một ĐỊA ĐIỂM CỤ THỂ không?
-
-Câu: "{text}"
-
-Trả lời JSON (chỉ JSON, không giải thích):
-{{"is_weather_claim": true/false, "location": "tên địa điểm" hoặc null, "reason": "lý do ngắn"}}
-
-LƯU Ý:
-- "mua" = MUA (buy), "mưa" = MƯA (rain) - khác nhau!
-- Tên người (Nguyễn, Trần...) KHÔNG phải địa điểm
-- Tin về bão số X ở vùng Y = weather claim
-- "Thời tiết hôm nay" không có địa điểm = false
-- Tin về người nói về thời tiết = false (không phải claim thời tiết)'''
-
-        response = None
-        for model_name in models_to_try:
-            try:
-                model = genai.GenerativeModel(model_name)
-                response = model.generate_content(
-                    prompt,
-                    generation_config={"temperature": 0, "max_output_tokens": 200}
-                )
-                print(f"[Weather Classifier] Using model: {model_name}")
+    # Vietnam city patterns
+    vietnam_cities = [
+        r"hà nội", r"hồ chí minh", r"đà nẵng", r"hải phòng", r"cần thơ",
+        r"nha trang", r"huế", r"vũng tàu", r"đà lạt", r"quy nhơn",
+        r"biên hòa", r"thủ đức", r"buôn ma thuột", r"thanh hóa", r"vinh",
+        r"nam định", r"thái nguyên", r"bắc ninh", r"hải dương", r"quảng ninh",
+        r"hanoi", r"ho chi minh", r"da nang", r"saigon", r"vietnam"
+    ]
+    
+    # Province patterns
+    provinces = [
+        r"tỉnh\s+\w+", r"thành phố\s+\w+", r"tp\.\s*\w+", r"q\.\s*\w+"
+    ]
+    
+    # Try to extract location
+    location = None
+    for city in vietnam_cities:
+        if re.search(city, text_lower):
+            # Capitalize first letter of each word
+            match = re.search(city, text_lower)
+            if match:
+                location = text[match.start():match.end()].title()
                 break
-            except Exception as model_error:
-                print(f"[Weather Classifier] Model {model_name} failed: {model_error}")
-                continue
-        
-        if not response:
-            return {"is_weather": None, "location": None, "confidence": 0}
-        
-        result_text = response.text.strip()
-        # Extract JSON from response
-        if "```json" in result_text:
-            result_text = result_text.split("```json")[1].split("```")[0].strip()
-        elif "```" in result_text:
-            result_text = result_text.split("```")[1].split("```")[0].strip()
-        
-        result = json.loads(result_text)
-        
-        is_weather = result.get("is_weather_claim", False)
-        location = result.get("location")
-        
-        print(f"[Weather Classifier] LLM result: is_weather={is_weather}, location={location}")
-        
-        return {
-            "is_weather": is_weather,
-            "location": location if is_weather else None,
-            "confidence": 0.9
-        }
-        
-    except Exception as e:
-        print(f"[Weather Classifier] LLM error: {e}, falling back to heuristics")
-        return {"is_weather": None, "location": None, "confidence": 0}
+    
+    # If no city found, check for province patterns
+    if not location:
+        for pattern in provinces:
+            match = re.search(pattern, text_lower)
+            if match:
+                location = text[match.start():match.end()].title()
+                break
+    
+    is_weather = has_weather_keyword and location is not None
+    
+    print(f"[Weather Classifier] Pattern result: is_weather={is_weather}, location={location}")
+    
+    return {
+        "is_weather": is_weather,
+        "location": location,
+        "confidence": 0.85 if is_weather else 1.0
+    }
 
 
 def extract_weather_info(text: str) -> Optional[Dict]:

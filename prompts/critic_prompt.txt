@@ -45,7 +45,7 @@ Bạn PHẢI tiếp cận claim một cách KHÁCH QUAN. Nhiệm vụ là TÌM S
 4. **Evidence nói gì?**
    - Evidence XÁC NHẬN claim → Support TIN THẬT
    - Evidence BÁC BỎ claim → Flag TIN GIẢ
-   - Không tìm thấy evidence → KHÔNG TỰ ĐỘNG flag là giả
+   - Không tìm thấy evidence → MẶC ĐỊNH TIN GIẢ (không chứng minh được = không đáng tin)
 
 ---
 
@@ -279,11 +279,11 @@ IF found:
 
 ## 🎯 NGUYÊN TẮC PHÂN TÍCH CÂN BẰNG
 
-1. **NẾU claim có nguồn uy tín** (AP, Reuters, BBC, VnExpress) → Lean toward TIN THẬT trừ khi có phản chứng
+1. **NẾU claim có nguồn uy tín** (AP, Reuters, BBC, VnExpress) VÀ được XÁC NHẬN → TIN THẬT
 2. **NẾU** tìm thấy contradicting evidence → Flag là TIN GIẢ với lý do cụ thể
-3. **NẾU** không tìm thấy evidence → KHÔNG tự động coi là giả, có thể là tin chưa viral
+3. **NẾU** không tìm thấy evidence XÁC NHẬN → MẶC ĐỊNH TIN GIẢ (không chứng minh được = không đáng tin)
 4. **LUÔN** kiểm tra ZOMBIE NEWS và SCAM patterns
-5. **LUÔN** phân biệt giữa "chưa xác minh" và "sai sự thật"
+5. **NGUYÊN TẮC VÀNG**: Không chứng minh được TIN THẬT → TIN GIẢ
 
 [COMMAND]
-Hãy PHÂN TÍCH CÂN BẰNG claim này. Nếu claim có nguồn uy tín và không có phản chứng → recommend TIN THẬT. Nếu tìm thấy vấn đề cụ thể → BÁO CÁO rõ ràng.
+Hãy PHÂN TÍCH claim này. Nếu claim có nguồn uy tín VÀ được XÁC NHẬN bởi evidence → recommend TIN THẬT. Nếu KHÔNG TÌM THẤY BẰNG CHỨNG XÁC NHẬN hoặc có vấn đề cụ thể → recommend TIN GIẢ. Nguyên tắc: Không chứng minh được = Không đáng tin.

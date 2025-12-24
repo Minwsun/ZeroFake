@@ -1,6 +1,6 @@
 # app/main.py (Restructured with Agent Architecture)
 
-from fastapi import FastAPI, BackgroundTasks, HTTPException
+from fastapi import FastAPI, BackgroundTasks, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import asyncio
@@ -302,7 +302,7 @@ def _is_flash_model(model_name: str | None) -> bool:
 
 
 @app.post("/check_news", response_model=CheckResponse)
-async def handle_check_news(request: CheckRequest, background_tasks: BackgroundTasks):
+async def handle_check_news(request: CheckRequest, req: Request, background_tasks: BackgroundTasks):
     """
     Main endpoint (Agent Workflow):
     Input -> Agent 1 (learnlm Planner) creates plan
@@ -311,6 +311,9 @@ async def handle_check_news(request: CheckRequest, background_tasks: BackgroundT
     """
     agent1_model = request.agent1_model or "models/gemini-2.5-flash"
     agent2_model = request.agent2_model or "models/gemini-2.5-flash"
+    
+    # Capture client IP for logging
+    client_ip = req.client.host if req.client else "unknown"
 
     flash_mode = request.flash_mode or (_is_flash_model(agent1_model) and _is_flash_model(agent2_model))
 
@@ -321,6 +324,7 @@ async def handle_check_news(request: CheckRequest, background_tasks: BackgroundT
             agent1_model=agent1_model,
             agent2_model=agent2_model,
             flash_mode=flash_mode,
+            client_ip=client_ip,
         )
     try:
         return await asyncio.wait_for(
@@ -330,8 +334,9 @@ async def handle_check_news(request: CheckRequest, background_tasks: BackgroundT
                 agent1_model=agent1_model,
                 agent2_model=agent2_model,
                 flash_mode=flash_mode,
+                client_ip=client_ip,
             ),
-            timeout=100.0,
+            timeout=180.0,
         )
     except asyncio.TimeoutError:
         logger.error("Overall timeout when processing check_news")
@@ -345,15 +350,31 @@ async def _handle_check_news_internal(
     agent1_model: str,
     agent2_model: str,
     flash_mode: bool,
+    client_ip: str = "",
 ):
     """Internal handler for check_news"""
     try:
-        # Step 1: Check KB Cache (FAISS + SQLite) - DISABLED for fresh testing
-        # cached_result = await asyncio.to_thread(search_knowledge_base, request.text)
-        # if cached_result:
-        #     logger.info("KB cache hit - returning cached result")
-        #     return CheckResponse(**cached_result)
-        cached_result = None  # KB disabled
+        # Step 1: Check Firebase KB Cache - DISABLED TEMPORARILY
+        # cached_result = None
+        # try:
+        #     from app.firebase_client import get_cached_result
+        #     firebase_cache = await get_cached_result(request.text)
+        #     if firebase_cache:
+        #         logger.info(f"[Firebase] KB cache hit - source: {firebase_cache.get('source', 'unknown')}")
+        #         print(f"\n[CACHE HIT] Found in Firebase KB (source: {firebase_cache.get('source', 'AI')})")
+        #         cached_result = {
+        #             "conclusion": firebase_cache.get("conclusion", ""),
+        #             "reason": firebase_cache.get("reason", ""),
+        #             "style_analysis": "",
+        #             "key_evidence_snippet": "",
+        #             "key_evidence_source": "KB Cache",
+        #             "evidence_link": "",
+        #             "cached": True
+        #         }
+        #         return CheckResponse(**cached_result)
+        # except Exception as cache_err:
+        #     logger.warning(f"Firebase cache check failed (non-fatal): {cache_err}")
+        logger.info("[Firebase] KB cache DISABLED")
         
         # Step 2: Agent 1 (Planner) creates plan
         print(f"\n{'='*60}")
@@ -424,12 +445,13 @@ async def _handle_check_news_internal(
         print(f"[JUDGE] Reason: {reason}...")
         print(f"{'='*60}\n")
         
-        # Step 5: Save to KB for future deduplication
-        try:
-            await asyncio.to_thread(add_to_knowledge_base, request.text, gemini_result)
-            logger.info("Result saved to KB cache")
-        except Exception as kb_err:
-            logger.warning(f"KB save failed (non-fatal): {kb_err}")
+        # Step 5: Save to Firebase - DISABLED TEMPORARILY
+        # try:
+        #     from app.firebase_client import save_to_cache, save_result_log
+        #     ... (all Firebase save code disabled)
+        # except Exception as kb_err:
+        #     logger.warning(f"Firebase save failed (non-fatal): {kb_err}")
+        logger.info("[Firebase] Saving DISABLED")
         
         return CheckResponse(**gemini_result)
     
@@ -446,7 +468,9 @@ async def _handle_check_news_internal(
 async def handle_feedback(request: FeedbackRequest):
     """
     Endpoint: Record feedback from user
+    Also updates Firebase KB cache with human-verified result
     """
+    # Log to local file (existing behavior)
     await asyncio.to_thread(
         log_human_feedback,
         request.original_text,
@@ -455,6 +479,18 @@ async def handle_feedback(request: FeedbackRequest):
         request.human_correction,
         request.notes
     )
+    
+    # Save to Firebase KB cache (new behavior)
+    try:
+        from app.firebase_client import update_from_feedback
+        await update_from_feedback(
+            claim=request.original_text,
+            human_correction=request.human_correction,
+            reason=request.gemini_reason
+        )
+    except Exception as e:
+        logging.warning(f"Failed to save feedback to Firebase: {e}")
+    
     return {"status": "success", "message": "Feedback recorded"}
 
 

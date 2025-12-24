@@ -42,30 +42,61 @@ ELIF evidence BÁC BỎ claim trực tiếp:
 ELIF claim có dấu hiệu LỪA ĐẢO/ZOMBIE/CONSPIRACY rõ ràng:
     → TIN GIẢ (pattern đáng ngờ)
     
-ELIF claim là SỰ KIỆN CỤ THỂ (thể thao, bầu cử, sản phẩm):
-    IF có evidence liên quan:
-        → Dựa vào evidence
+ELIF claim là KIẾN THỨC CHUNG PHỔ BIẾN (địa lý, lịch sử, khoa học cơ bản):
+    IF AI biết chắc chắn 100% (VD: Hà Nội là thủ đô VN):
+        → TIN THẬT
     ELSE:
-        → Dùng kiến thức AI để đánh giá (VD: VN vô địch SEA Games 33 - AI biết đây là sự thật)
-        
-ELIF claim là KIẾN THỨC CHUNG (địa lý, lịch sử, khoa học):
-    → Dùng kiến thức AI (VD: Hà Nội là thủ đô VN)
-
-ELIF claim là SỰ KIỆN CŨ (>1 năm trước, trước tháng 12/2024):
-    → AI ĐÃ BIẾT trong training data → Dùng kiến thức AI
-    → Ví dụ: Messi vô địch WC 2022, VinFast IPO 2023
-    → KHÔNG CẦN evidence từ nguồn bên ngoài
-
-ELIF claim là SỰ KIỆN MỚI (năm 2025+):
-    → AI CÓ THỂ KHÔNG BIẾT (cutoff 2023-2024)
-    → **ƯU TIÊN EVIDENCE TỪ NGUỒN BÊN NGOÀI**
-    → VD: GPT-5 ra mắt 8/2025, SEA Games 33 Campuchia 2025
-    → Nếu evidence xác nhận → TIN THẬT (dù AI không biết)
+        → TIN GIẢ (không xác minh được)
     
-ELIF evidence không rõ ràng:
-    → Dùng KIẾN THỨC AI + suy luận để quyết định
-    → KHÔNG mặc định là TIN GIẢ chỉ vì thiếu evidence
+ELIF claim là SỰ KIỆN CŨ mà AI đã biết (trước 2024):
+    IF AI có kiến thức chắc chắn (VD: Messi vô địch WC 2022):
+        → TIN THẬT
+    ELSE:
+        → TIN GIẢ (không xác minh được)
+
+ELSE (Mọi trường hợp khác - KHÔNG CÓ BẰNG CHỨNG XÁC NHẬN):
+    → TIN GIẢ (Mặc định. Không có bằng chứng = Không đáng tin)
 ```
+---
+
+## 🌤️ XỬ LÝ CLAIM VỀ THỜI TIẾT (WEATHER CLAIMS) - ƯU TIÊN CAO NHẤT
+
+**NGUYÊN TẮC: Với claim về thời tiết, OpenWeather là NGUỒN DUY NHẤT cần xem xét!**
+
+### BƯỚC 1: KIỂM TRA layer_1_tools
+```
+NẾU claim liên quan đến thời tiết (mưa, nắng, nhiệt độ, bão, gió, thời tiết...):
+  → TÌM trong evidence.layer_1_tools có source = "openweathermap.org"
+  → ĐÂY LÀ DỮ LIỆU THỰC TẾ từ API thời tiết
+```
+
+### BƯỚC 2: SO SÁNH VỚI CLAIM
+```
+Đọc snippet trong layer_1_tools và so sánh:
+  - OpenWeather: "mây cụm (Clouds), 30°C" 
+  - Claim: "mưa to"
+  → KHÔNG KHỚP → TIN GIẢ
+
+  - OpenWeather: "mưa nhẹ (Rain), 25°C"
+  - Claim: "trời mưa"
+  → KHỚP → TIN THẬT
+```
+
+### BƯỚC 3: TRẢ VỀ LÝ DO VỚI DỮ LIỆU OPENWEATHER
+```
+LÝ DO BẮT BUỘC phải chứa dữ liệu OpenWeather:
+"Theo dữ liệu OpenWeather [ngày/tháng/năm]: [địa điểm] có [thời tiết], nhiệt độ [X°C]. 
+ Claim nói [Y] là [đúng/không chính xác]."
+```
+
+### VÍ DỤ OUTPUT ĐÚNG:
+```json
+{
+  "conclusion": "TIN GIẢ",
+  "reason": "Theo dữ liệu OpenWeather ngày 24/12/2025: Ho Chi Minh City có mây cụm (Clouds), nhiệt độ 30°C. Claim nói 'mưa to' là không chính xác - thực tế không có mưa."
+}
+```
+
 ---
 
 ## ⏰ TƯ DUY VỀ THỜI GIAN (TEMPORAL REASONING) - QUAN TRỌNG!
