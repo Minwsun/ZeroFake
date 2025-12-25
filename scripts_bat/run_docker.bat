@@ -3,6 +3,9 @@ echo ========================================
 echo   ZeroFake - Docker Startup Script
 echo ========================================
 
+:: Switch to project root directory
+cd /d "%~dp0.."
+
 echo Checking Docker...
 docker --version >nul 2>&1
 if %errorlevel% neq 0 (

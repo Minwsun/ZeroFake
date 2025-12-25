@@ -3,6 +3,9 @@ echo ========================================
 echo   ZeroFake - Create Offline Package
 echo ========================================
 
+:: Switch to project root directory
+cd /d "%~dp0.."
+
 echo 1. Creating 'dist' folder...
 if not exist "dist" mkdir dist
 

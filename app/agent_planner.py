@@ -612,8 +612,9 @@ def _generate_search_queries(text_input: str, plan_struct: dict) -> list[str]:
         other_queries = [q for q in candidates if "site:" not in q and extracted_source not in q]
         candidates = site_queries + other_queries
 
-    # Limit to top queries for speed
-    return (candidates or [base or text_input])[:5]  # Increased from 1 to 5 for source verification
+    # Limit to top queries for better coverage
+    # Increased to 11 for comprehensive multi-query strategy
+    return (candidates or [base or text_input])[:10]
 
 
 
@@ -889,11 +890,10 @@ def _normalize_plan(plan: dict, text_input: str, flash_mode: bool = False) -> di
                 if raw_query:
                     # Đặt raw_query ở đầu danh sách, giữ các query khác phía sau và loại trùng
                     final_queries = [raw_query] + [q for q in final_queries if q != raw_query]
-                if not flash_mode:
-                    tool["parameters"]["queries"] = final_queries[:5]
-                else:
-                    tool["parameters"]["queries"] = list(dict.fromkeys(final_queries))
-                print(f"Agent Planner: Đã tối ưu hóa {len(queries)} queries thành {len(tool['parameters']['queries'])} queries")
+                # Always use all unique queries (up to 11) for comprehensive search
+                unique_queries = list(dict.fromkeys(final_queries))[:10]
+                tool["parameters"]["queries"] = unique_queries
+                print(f"Agent Planner: Đã tối ưu hóa {len(queries)} queries thành {len(unique_queries)} queries")
     else:
         print("Weather claim: Skipping search tool creation, only using OpenWeather API")
 
