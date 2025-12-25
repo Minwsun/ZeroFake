@@ -598,11 +598,11 @@ def call_google_search(text_input: str, site_query_string: str) -> list:
                     })
     
     # 4. DDG: FALLBACK only if still not enough results
-    if len(all_items) < 20:  # Always run DDG
+    if len(all_items) == 0:  # Only run DDG when NO sources found
         print(f"  [DDG] Fallback: cáº§n thÃªm evidence ({len(all_items)} < 5)...")
         _ingest_ddg(_run_ddg_news(cleaned_input, timelimit or "m", region="vi-vn"), source_type="news")
         
-        if en_query and len(en_query) > 5 and len(all_items) < 20:  # Always supplement with EN
+        if en_query and len(en_query) > 5 and len(all_items) < 3:  # Supplement with EN if still very few
             _ingest_ddg(_run_ddg_text(en_query, None, region="wt-wt"), source_type="web")
 
     # Sort by date (newest first)
