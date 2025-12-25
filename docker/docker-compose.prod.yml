@@ -3,9 +3,6 @@ version: '3.8'
 services:
   backend:
     image: zerofake-backend:latest
-    build:
-      context: ..            # Root directory (one level up)
-      dockerfile: docker/Dockerfile
     ports:
       - "8000:8000"
     environment:
@@ -16,7 +13,7 @@ services:
       - GNEWS_API_KEY=${GNEWS_API_KEY}
       - GOOGLE_FACT_CHECK_API_KEY=${GOOGLE_FACT_CHECK_API_KEY}
     env_file:
-      - ../.env           # Read .env from root
+      - .env
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/"]
@@ -26,9 +23,6 @@ services:
 
   frontend:
     image: zerofake-frontend:latest
-    build:
-      context: ..            # Root directory
-      dockerfile: docker/Dockerfile.frontend
     ports:
       - "3000:3000"
     environment:
