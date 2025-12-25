@@ -3,8 +3,8 @@ version: '3.8'
 services:
   backend:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ..            # Root directory (one level up)
+      dockerfile: docker/Dockerfile
     ports:
       - "8000:8000"
     environment:
@@ -15,7 +15,7 @@ services:
       - GNEWS_API_KEY=${GNEWS_API_KEY}
       - GOOGLE_FACT_CHECK_API_KEY=${GOOGLE_FACT_CHECK_API_KEY}
     env_file:
-      - .env
+      - ../.env           # Read .env from root
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/"]
@@ -25,8 +25,8 @@ services:
 
   frontend:
     build:
-      context: .
-      dockerfile: Dockerfile.frontend
+      context: ..            # Root directory
+      dockerfile: docker/Dockerfile.frontend
     ports:
       - "3000:3000"
     environment:
