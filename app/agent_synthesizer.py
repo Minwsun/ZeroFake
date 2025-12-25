@@ -783,11 +783,12 @@ async def filter_evidence_with_llm(claim: str, evidence_bundle: dict, current_da
     filter_response = None
     model_used = None
     
-    # Model cascade: Llama 8B (Groq) → Gemma 4B (fastest fallback)
-    # Reduced cascade for latency optimization
+    # Model cascade: Gemma 3 12B → Gemma 3 4B → Gemma2 9B (fallback)
+    # Gemma 3 uses Google API for better reasoning
     models_to_try = [
-        ("groq", "llama-3.1-8b-instant"),
-        ("gemini", "models/gemma-3-4b-it"),  # Skip 27B/12B for speed
+        ("gemini", "models/gemma-3-12b-it"),   # Primary: Best reasoning
+        ("gemini", "models/gemma-3-4b-it"),    # Fallback 1: Faster
+        ("groq", "gemma2-9b-it"),              # Fallback 2: Groq free tier
     ]
     
     for provider, model_name in models_to_try:

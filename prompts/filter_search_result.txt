@@ -1,6 +1,6 @@
 YOU ARE A STRICT EVIDENCE FILTER
 
-TASK: From all search results, extract ONLY high-quality, relevant evidence. Be AGGRESSIVE in removing junk.
+TASK: From all search results, extract ONLY high-quality, relevant evidence. Be AGGRESSIVE in removing junk but KEEP all trusted sources.
 
 ===== INPUT =====
 CLAIM TO VERIFY:
@@ -9,25 +9,38 @@ CLAIM TO VERIFY:
 ALL SEARCH RESULTS (i=index, s=source, t=text):
 {search_results}
 
+===== TRUSTED SOURCES - ALWAYS KEEP =====
+
+TIER 1 (Highest Trust - ALWAYS KEEP):
+- reuters.com, ap.com, bbc.com, cnn.com, afp.com
+- vnexpress.net, tuoitre.vn, thanhnien.vn, dantri.com.vn
+- wikipedia.org, gov.vn, .edu domains
+
+TIER 2 (High Trust - KEEP):
+- theguardian.com, nytimes.com, forbes.com, bloomberg.com
+- baochinhphu.vn, nhandan.vn, vov.vn
+- Official company sites (apple.com, google.com, etc.)
+
+TIER 3 (Medium Trust - KEEP if relevant):
+- blogtienao.com, cafebiz.vn, zingnews.vn
+- motthegioi.vn, laodong.vn, nguoilaodong.vn
+
 ===== STRICT REMOVAL RULES =====
 
 IMMEDIATELY REMOVE these sources (score = 0):
 - facebook.com, tiktok.com, twitter.com, instagram.com → SOCIAL MEDIA = REMOVE
 - youtube.com → USER CONTENT = REMOVE
 - soha.vn, kenh14.vn, 24h.com.vn, eva.vn, afamily.vn → CLICKBAIT = REMOVE
-- Any snippet with "!!!", "???", "Click xem ngay", "Share ngay", "NÓNG" → SPAM = REMOVE
+- Any snippet with "!!!", "???", "Click xem ngay", "Share ngay" → SPAM = REMOVE
 - Empty or broken snippets → USELESS = REMOVE
 
-KEEP only if ALL conditions met:
-1. Source is NEWS OUTLET or OFFICIAL SITE (vnexpress, tuoitre, thanhnien, dantri, wikipedia, gov.vn, etc.)
-2. Snippet contains ACTUAL INFORMATION (not just clickbait title)
-3. Content is DIRECTLY about the claim entities/events
-4. NOT a duplicate of already-kept evidence
+===== KEEP RULES =====
 
-===== DUPLICATE RULES =====
-If multiple sources report the SAME fact:
-- Keep ONLY the most trusted source (vnexpress > tuoitre > thanhnien > dantri > others)
-- Remove all duplicates
+KEEP if ANY condition met:
+1. Source is in TIER 1, 2, or 3 list above
+2. Source is NEWS OUTLET or OFFICIAL SITE
+3. Snippet contains ACTUAL INFORMATION about the claim
+4. Content is DIRECTLY about the claim entities/events
 
 ===== OUTPUT FORMAT =====
 
@@ -36,23 +49,27 @@ Return clean JSON:
 {
   "filtered": [
     {"i": 0, "s": "vnexpress.net", "info": "VFF xác nhận kế hoạch World Cup 2026"},
-    {"i": 4, "s": "wikipedia.org", "info": "Background về đội tuyển Việt Nam"}
+    {"i": 2, "s": "reuters.com", "info": "Reuters confirms the event"},
+    {"i": 4, "s": "wikipedia.org", "info": "Background về đội tuyển Việt Nam"},
+    {"i": 7, "s": "motthegioi.vn", "info": "Giá Bitcoin giữ vững trên 100.000 USD"}
   ],
-  "removed": ["facebook.com (social)", "soha.vn (clickbait)", "duplicate of #0"]
+  "removed": ["facebook.com (social)", "soha.vn (clickbait)"]
 }
 ```
 
 Fields:
 - "i" = original index
 - "s" = source domain
-- "info" = key information extracted from this source (1 sentence)
+- "info" = key information extracted from this source (1 sentence, GIỮ NGUYÊN con số và dữ liệu quan trọng)
 - "removed" = list of removed sources with reason
 
 ===== RULES =====
 
-1. AIM for 3-7 high-quality items (fewer is better)
+1. GIỮ 5-10 nguồn chất lượng (KHÔNG loại bỏ quá nhiều nguồn uy tín và chính xác, có liên quan đến claim)
 2. NEVER keep social media or clickbait
-3. Each kept item must add UNIQUE information
-4. Return ONLY JSON
+3. GIỮ TẤT CẢ nguồn từ TIER 1, 2, 3
+
+4. QUAN TRỌNG: GIỮ NGUYÊN các CON SỐ trong info (100.000 USD, 100k, etc.)
+5. Return ONLY JSON
 
 ===== START STRICT FILTERING =====
