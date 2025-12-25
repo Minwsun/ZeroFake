@@ -26,7 +26,7 @@ WARP_ENABLED = os.getenv("WARP_ENABLED", "false").lower() == "true"
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 GOOGLE_CSE_ID = os.getenv("GOOGLE_CSE_ID")
 
-MAX_RESULTS = 20  # Láº¥y Ä‘á»§ evidence cho táº¥t cáº£ nguá»“n
+MAX_RESULTS = 20  # Lấy đủ evidence cho tất cả nguồn
 SEARXNG_TIMEOUT = 30  # Timeout cho SearXNG requests
 DDG_TIMEOUT = 20  # Timeout cho DuckDuckGo fallback
 
@@ -52,11 +52,11 @@ def get_site_query(config_path: str = "config.json") -> str:
 def _clean_query(query: str) -> str:
     """Remove noise prefixes and emoji from query."""
     # Remove common Vietnamese news prefixes
-    query = re.sub(r'^(TIN NÃ“NG|NÃ“NG|BREAKING|TIN Má»šI|Sá»C|Cáº¢NH BÃO|âš ï¸|ðŸ”´|ðŸ“¢|ðŸš¨|â—)[:!]*\s*', '', query, flags=re.IGNORECASE)
+    query = re.sub(r'^(TIN NÓNG|NÓNG|BREAKING|TIN MỚI|SỐC|CẢNH BÁO|⚠️|🔴|📢|🚨|❗)[:!]*\s*', '', query, flags=re.IGNORECASE)
     # Remove source citations that aren't helpful for search
-    query = re.sub(r'^(Theo Reuters|Theo BBC|Theo AP|ThÃ´ng tin tá»« AP|BBC Ä‘Æ°a tin)[:]*\s*', '', query, flags=re.IGNORECASE)
+    query = re.sub(r'^(Theo Reuters|Theo BBC|Theo AP|Thông tin từ AP|BBC đưa tin)[:]*\s*', '', query, flags=re.IGNORECASE)
     # Remove call-to-action phrases
-    query = re.sub(r'\s*[-â€“]\s*(Xem ngay|Chia sáº» ngay|Äá»c thÃªm|Click here).*$', '', query, flags=re.IGNORECASE)
+    query = re.sub(r'\s*[-–]\s*(Xem ngay|Chia sẻ ngay|Đọc thêm|Click here).*$', '', query, flags=re.IGNORECASE)
     return query.strip()
 
 
@@ -73,41 +73,41 @@ def _extract_english_query(text: str) -> str:
     # Comprehensive Vietnamese to English translations
     translations = {
         # Sports
-        "vÃ´ Ä‘á»‹ch": "won championship",
-        "giáº£i vÃ´ Ä‘á»‹ch": "championship",
-        "Ä‘á»™i tuyá»ƒn Viá»‡t Nam": "Vietnam national team",
-        "bÃ³ng Ä‘Ã¡": "football soccer",
+        "vô địch": "won championship",
+        "giải vô địch": "championship",
+        "đội tuyển Việt Nam": "Vietnam national team",
+        "bóng đá": "football soccer",
         "SEA Games": "SEA Games",
         "AFF Cup": "AFF Cup",
         # Events
-        "ra máº¯t": "launched released",
-        "cÃ´ng bá»‘": "announced",
-        "qua Ä‘á»i": "died passed away",
-        "máº¥t tÃ­ch": "missing disappeared",
-        "tai náº¡n": "accident",
-        "sáº­p cáº§u": "bridge collapse",
-        "Ä‘á»™ng Ä‘áº¥t": "earthquake",
+        "ra mắt": "launched released",
+        "công bố": "announced",
+        "qua đời": "died passed away",
+        "mất tích": "missing disappeared",
+        "tai nạn": "accident",
+        "sập cầu": "bridge collapse",
+        "động đất": "earthquake",
         # Technology
-        "Ä‘iá»‡n thoáº¡i": "smartphone phone",
-        "mÃ¡y tÃ­nh": "computer",
-        "trÃ­ tuá»‡ nhÃ¢n táº¡o": "artificial intelligence AI",
+        "điện thoại": "smartphone phone",
+        "máy tính": "computer",
+        "trí tuệ nhân tạo": "artificial intelligence AI",
         # Politics
-        "báº§u cá»­": "election",
-        "tá»•ng thá»‘ng": "president",
-        "thá»§ tÆ°á»›ng": "prime minister",
-        "chÃ­nh phá»§": "government",
+        "bầu cử": "election",
+        "tổng thống": "president",
+        "thủ tướng": "prime minister",
+        "chính phủ": "government",
         # Geography
-        "Viá»‡t Nam": "Vietnam",
-        "HÃ  Ná»™i": "Hanoi",
+        "Việt Nam": "Vietnam",
+        "Hà Nội": "Hanoi",
         "Campuchia": "Cambodia",
-        "ThÃ¡i Lan": "Thailand",
+        "Thái Lan": "Thailand",
         # Time (remove Vietnamese, keep numbers)
-        "thÃ¡ng": "month",
-        "nÄƒm": "year",
-        "vá»«a": "just recently",
-        "Ä‘Ãªm qua": "last night",
-        "hÃ´m nay": "today",
-        "má»›i nháº¥t": "latest",
+        "tháng": "month",
+        "năm": "year",
+        "vừa": "just recently",
+        "đêm qua": "last night",
+        "hôm nay": "today",
+        "mới nhất": "latest",
     }
     
     result = text
@@ -124,8 +124,8 @@ def _extract_english_query(text: str) -> str:
 def _ensure_news_keyword(query: str) -> str:
     query = (query or "").strip()
     lower = query.lower()
-    if not any(kw in lower for kw in ["tin tá»©c", "news", "thÃ´ng tin", "bÃ¡o", "article"]):
-        return f"{query} tin tá»©c".strip()
+    if not any(kw in lower for kw in ["tin tức", "news", "thông tin", "báo", "article"]):
+        return f"{query} tin tức".strip()
     return query
 
 
@@ -142,7 +142,7 @@ def _sort_key(item: dict) -> tuple:
 def _create_http_client() -> httpx.Client:
     """Create HTTP client with optional WARP proxy."""
     if WARP_ENABLED:
-        print(f"ðŸ”’ Sá»­ dá»¥ng Cloudflare WARP proxy: {WARP_PROXY}")
+        print(f"🔒 Sử dụng Cloudflare WARP proxy: {WARP_PROXY}")
         return httpx.Client(
             proxy=WARP_PROXY,
             timeout=SEARXNG_TIMEOUT,
@@ -157,19 +157,19 @@ def _create_http_client() -> httpx.Client:
 
 def _run_searxng(query: str, time_range: str = "month") -> list:
     """
-    Gá»i SearXNG API Ä‘á»ƒ tÃ¬m kiáº¿m, chá»‰ sá»­ dá»¥ng Google engine.
+    Gọi SearXNG API để tìm kiếm, chỉ sử dụng Google engine.
     
     Args:
-        query: Tá»« khÃ³a tÃ¬m kiáº¿m
-        time_range: Khoáº£ng thá»i gian (day, week, month, year)
+        query: Từ khóa tìm kiếm
+        time_range: Khoảng thời gian (day, week, month, year)
     
     Returns:
-        List cÃ¡c káº¿t quáº£ tÃ¬m kiáº¿m, hoáº·c None náº¿u lá»—i (Ä‘á»ƒ trigger fallback)
+        List các kết quả tìm kiếm, hoặc None nếu lỗi (để trigger fallback)
     """
     params = {
         "q": query,
         "format": "json",
-        "engines": "google",  # CHá»ˆ sá»­ dá»¥ng Google Ä‘á»ƒ Ä‘áº¡t cháº¥t lÆ°á»£ng cao nháº¥t
+        "engines": "google",  # CHỈ sử dụng Google để đạt chất lượng cao nhất
         "language": "vi-VN",
         "safesearch": "0",
         "pageno": "1",
@@ -194,32 +194,32 @@ def _run_searxng(query: str, time_range: str = "month") -> list:
             data = response.json()
             
             results = data.get("results", [])
-            print(f"âœ… SearXNG (Google): TÃ¬m tháº¥y {len(results)} káº¿t quáº£")
+            print(f"✅ SearXNG (Google): Tìm thấy {len(results)} kết quả")
             return results
             
     except httpx.TimeoutException:
-        print(f"â±ï¸ SearXNG timeout sau {SEARXNG_TIMEOUT}s - sáº½ fallback sang DuckDuckGo")
+        print(f"⏱️ SearXNG timeout sau {SEARXNG_TIMEOUT}s - sẽ fallback sang DuckDuckGo")
         return None  # Trigger fallback
     except httpx.HTTPStatusError as e:
-        print(f"âŒ SearXNG HTTP error: {e.response.status_code} - sáº½ fallback sang DuckDuckGo")
+        print(f"❌ SearXNG HTTP error: {e.response.status_code} - sẽ fallback sang DuckDuckGo")
         return None  # Trigger fallback
     except Exception as exc:
-        print(f"âŒ SearXNG lá»—i: {exc} - sáº½ fallback sang DuckDuckGo")
+        print(f"❌ SearXNG lỗi: {exc} - sẽ fallback sang DuckDuckGo")
         return None  # Trigger fallback
 
 
 def _run_ddg_fallback(query: str, timelimit: str = "m") -> list:
     """
-    DuckDuckGo fallback khi SearXNG khÃ´ng kháº£ dá»¥ng.
+    DuckDuckGo fallback khi SearXNG không khả dụng.
     
     Args:
-        query: Tá»« khÃ³a tÃ¬m kiáº¿m
-        timelimit: Khoáº£ng thá»i gian (d, w, m, y)
+        query: Từ khóa tìm kiếm
+        timelimit: Khoảng thời gian (d, w, m, y)
     
     Returns:
-        List cÃ¡c káº¿t quáº£ tÃ¬m kiáº¿m
+        List các kết quả tìm kiếm
     """
-    print(f"ðŸ¦† Fallback: Äang gá»i DuckDuckGo cho: {query}")
+    print(f"🦆 Fallback: Đang gọi DuckDuckGo cho: {query}")
     try:
         with DDGS() as ddgs:
             results = ddgs.text(
@@ -229,19 +229,19 @@ def _run_ddg_fallback(query: str, timelimit: str = "m") -> list:
                 timelimit=timelimit,
                 max_results=MAX_RESULTS,
             ) or []
-            print(f"âœ… DuckDuckGo: TÃ¬m tháº¥y {len(results)} káº¿t quáº£")
+            print(f"✅ DuckDuckGo: Tìm thấy {len(results)} kết quả")
             return results
     except Exception as exc:
-        print(f"âŒ DuckDuckGo lá»—i: {exc}")
+        print(f"❌ DuckDuckGo lỗi: {exc}")
         return []
 
 
 def call_google_search(text_input: str, site_query_string: str) -> list:
     """
     IMPROVED: Use DDGS().news() for proper news search instead of text() with site: query.
-    Priority: VN News â†’ International News â†’ Web fallback
+    Priority: VN News → International News → Web fallback
     """
-    print(f"Äang gá»i Search cho: {text_input}")
+    print(f"Đang gọi Search cho: {text_input}")
     
     # Clean the query first
     cleaned_input = _clean_query(text_input)
@@ -250,7 +250,7 @@ def call_google_search(text_input: str, site_query_string: str) -> list:
     
     # Determine timelimit
     timelimit = None
-    if any(kw in query_vi.lower() for kw in ["má»›i nháº¥t", "latest", "hÃ´m nay", "today", "vá»«a"]):
+    if any(kw in query_vi.lower() for kw in ["mới nhất", "latest", "hôm nay", "today", "vừa"]):
         timelimit = "w"  # This week
 
     all_items = []
@@ -426,7 +426,7 @@ def call_google_search(text_input: str, site_query_string: str) -> list:
             })
     
     # --- OPTIMIZED SEARCH STRATEGY ---
-    # Priority: GNews (fast) â†’ Wikipedia (fast) â†’ DDG (fallback if < 5 results)
+    # Priority: GNews (fast) → Wikipedia (fast) → DDG (fallback if < 5 results)
     
     # =========================================================================
     # NEW: SITE-SPECIFIC QUERY DETECTION (Skip GNews/Wiki for trusted sources)
@@ -437,7 +437,7 @@ def call_google_search(text_input: str, site_query_string: str) -> list:
         print(f"  [SITE-QUERY] Detected site: query - using DDG primary, Google backup")
         
         # Skip GNews and Wikipedia for site: queries
-        # Priority: DDG (works better) â†’ Google with English
+        # Priority: DDG (works better) → Google with English
         
         site_query = text_input.strip()
         
@@ -450,24 +450,24 @@ def call_google_search(text_input: str, site_query_string: str) -> list:
             claim_content = site_match.group(2).strip()
         
         # 1. DDG WEB SEARCH (Primary - works best with site: queries)
-        print(f"  [DDG-SITE] TÃ¬m DDG: {site_query[:60]}...")
+        print(f"  [DDG-SITE] Tìm DDG: {site_query[:60]}...")
         _ingest_ddg(_run_ddg_text(site_query, None, region="wt-wt"), source_type="web")
         
         # 2. DDG search claim content only (Vietnamese)
         if claim_content != site_query:
-            print(f"  [DDG-CLAIM-VN] TÃ¬m DDG claim: {claim_content[:50]}...")
-            _ingest_ddg(_run_ddg_text(claim_content + " tin tá»©c", timelimit or "m", region="vi-vn"), source_type="web")
+            print(f"  [DDG-CLAIM-VN] Tìm DDG claim: {claim_content[:50]}...")
+            _ingest_ddg(_run_ddg_text(claim_content + " tin tức", timelimit or "m", region="vi-vn"), source_type="web")
         
         # 3. DDG search claim content (English) for international news
         en_claim = _extract_english_query(claim_content)
         if en_claim and len(en_claim) > 10:
-            print(f"  [DDG-CLAIM-EN] TÃ¬m DDG EN: {en_claim[:50]}...")
+            print(f"  [DDG-CLAIM-EN] Tìm DDG EN: {en_claim[:50]}...")
             _ingest_ddg(_run_ddg_text(en_claim + " news", None, region="wt-wt"), source_type="web")
         
         # 4. GOOGLE WEB with English query (backup)
         if domain and en_claim:
             google_site_query = f"site:{domain} {en_claim}"
-            print(f"  [GOOGLE-SITE-EN] TÃ¬m Google EN: {google_site_query[:60]}...")
+            print(f"  [GOOGLE-SITE-EN] Tìm Google EN: {google_site_query[:60]}...")
             try:
                 time.sleep(random.uniform(0.5, 1.5))
                 urls = list(google_search(google_site_query, num_results=5, lang="en"))
@@ -495,7 +495,7 @@ def call_google_search(text_input: str, site_query_string: str) -> list:
         
         # Sort and return early
         all_items.sort(key=_sort_key)
-        print(f"ðŸ“Š Site-Search: Tá»•ng cá»™ng {len(all_items)} báº±ng chá»©ng tá»« DDG/Google.")
+        print(f"📊 Site-Search: Tổng cộng {len(all_items)} bằng chứng từ DDG/Google.")
         return all_items[:MAX_RESULTS]
     
     # =========================================================================
@@ -503,11 +503,11 @@ def call_google_search(text_input: str, site_query_string: str) -> list:
     # =========================================================================
     
     # 1. GOOGLE NEWS: Primary news source (fast, reliable)
-    print(f"  [GNEWS-VN] TÃ¬m Google News VN: {cleaned_input[:50]}...")
+    print(f"  [GNEWS-VN] Tìm Google News VN: {cleaned_input[:50]}...")
     _ingest_gnews(_run_gnews(cleaned_input, language="vi", country="VN"))
     
     if en_query and len(en_query) > 5:
-        print(f"  [GNEWS-EN] TÃ¬m Google News QT: {en_query[:50]}...")
+        print(f"  [GNEWS-EN] Tìm Google News QT: {en_query[:50]}...")
         _ingest_gnews(_run_gnews(en_query, language="en", country="US"))
     
     # 2. WIKIPEDIA: Fast direct Wikipedia search for entities
@@ -537,7 +537,7 @@ def call_google_search(text_input: str, site_query_string: str) -> list:
     main_entity = cleaned_input.split()[0:5]  # First 5 words
     main_entity_str = " ".join(main_entity)
     
-    print(f"  [WIKI-VN] TÃ¬m Wikipedia VN: {main_entity_str[:30]}...")
+    print(f"  [WIKI-VN] Tìm Wikipedia VN: {main_entity_str[:30]}...")
     wiki_results = _search_wikipedia(main_entity_str, "vi")
     for wr in wiki_results:
         if wr["link"] not in seen:
@@ -545,7 +545,7 @@ def call_google_search(text_input: str, site_query_string: str) -> list:
             all_items.append(wr)
     
     if en_query:
-        print(f"  [WIKI-EN] TÃ¬m Wikipedia EN: {en_query[:30]}...")
+        print(f"  [WIKI-EN] Tìm Wikipedia EN: {en_query[:30]}...")
         wiki_results_en = _search_wikipedia(en_query.split()[0:3] if len(en_query.split()) > 3 else en_query, "en")
         for wr in wiki_results_en:
             if wr["link"] not in seen:
@@ -579,7 +579,7 @@ def call_google_search(text_input: str, site_query_string: str) -> list:
     
     # Run Google Web search for top URLs
     if len(all_items) < 10:
-        print(f"  [GOOGLE-WEB] TÃ¬m Google Web: {cleaned_input[:40]}...")
+        print(f"  [GOOGLE-WEB] Tìm Google Web: {cleaned_input[:40]}...")
         google_urls = _run_google_web(cleaned_input, num=5)
         
         for url in google_urls[:3]:  # Only extract top 3 to save time
@@ -599,17 +599,15 @@ def call_google_search(text_input: str, site_query_string: str) -> list:
     
     # 4. DDG: FALLBACK only if still not enough results
     if len(all_items) == 0:  # Only run DDG when NO sources found
-        print(f"  [DDG] Fallback: cáº§n thÃªm evidence ({len(all_items)} < 5)...")
+        print(f"  [DDG] Fallback: không có nguồn nào, đang tìm thêm từ DDG...")
         _ingest_ddg(_run_ddg_news(cleaned_input, timelimit or "m", region="vi-vn"), source_type="news")
         
-        if en_query and len(en_query) > 5 and len(all_items) < 3:  # Supplement with EN if still very few
+        if en_query and len(en_query) > 5 and len(all_items) < 3:  # Supplement if still very few
             _ingest_ddg(_run_ddg_text(en_query, None, region="wt-wt"), source_type="web")
 
     # Sort by date (newest first)
     all_items.sort(key=_sort_key)
 
-    print(f"ðŸ“Š Search: Tá»•ng cá»™ng {len(all_items)} báº±ng chá»©ng tá»« ALL sources.")
+    print(f"📊 Search: Tổng cộng {len(all_items)} bằng chứng từ ALL sources.")
     return all_items[:MAX_RESULTS]
-
-
 
