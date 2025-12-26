@@ -131,18 +131,6 @@ Hệ thống 2: Critic challenge Judge
 └─────────────────────────────────────────────────┘
 ```
 
-#### 3. **Cost Optimization** (Tối ưu chi phí)
-
-| Task | Độ phức tạp | Model phù hợp | Chi phí |
-|------|------------|---------------|---------|
-| Filter evidence | Thấp (classify) | Llama 8B | $0.001/call |
-| Generate queries | Trung bình | Gemini Flash | $0.01/call |
-| Adversarial thinking | Cao | Gemini Flash | $0.01/call |
-| Final verdict | Cao | Gemini Flash | $0.01/call |
-
-**Nếu dùng 1 model lớn cho tất cả**: $0.04/call x 1 = expensive
-**Dùng 4 model tối ưu**: $0.001 + $0.01 + $0.01 + $0.01 = $0.031/call (tiết kiệm ~25%)
-
 ---
 
 ## 4. TẠI SAO MULTI-AGENT TỐT HƠN VÀ TỐT HƠN BAO NHIÊU?
