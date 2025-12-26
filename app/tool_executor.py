@@ -17,113 +17,69 @@ from app.fact_check import call_google_fact_check, interpret_fact_check_rating, 
 # --- SEARCH TOOL (Gemini Web Search với fallback CSE) ---
 
 async def _execute_search_tool(parameters: dict, site_query_string: str, flash_mode: bool = False) -> dict:
-	"""Thực thi mô-đun "search" bằng DuckDuckGo (thông qua call_google_search)."""
+	"""SPEED MODE: Quick search with minimal processing."""
 	queries = parameters.get("queries", [])
 	if not queries:
 		return {"tool_name": "search", "status": "no_queries", "layer_2": [], "layer_3": [], "layer_4": []}
 
-	# Mỗi query chỉ được tìm kiếm 1 lần (không giới hạn số lượng queries)
+	# SPEED: Only process first 2 queries
+	queries = queries[:2]
+	
 	all_items = []
 	seen_urls = set()
 
 	for query in queries:
 		try:
-			if flash_mode:
-				search_items = await asyncio.to_thread(call_google_search, query, site_query_string)
-			else:
-				search_items = await asyncio.wait_for(
-					asyncio.to_thread(call_google_search, query, site_query_string),
-					timeout=25.0  # Tăng từ 15s để có thời gian thu thập nhiều evidence
-				)
+			search_items = await asyncio.wait_for(
+				asyncio.to_thread(call_google_search, query, site_query_string),
+				timeout=10.0  # SPEED: Reduced from 25s to 10s
+			)
 			for item in search_items or []:
 				link = item.get('link')
 				if link and link not in seen_urls:
 					all_items.append(item)
 					seen_urls.add(link)
+					# SPEED: Max 5 results per query
+					if len(all_items) >= 10:
+						break
+			if len(all_items) >= 10:
+				break
 		except asyncio.TimeoutError:
-			print(f"Timeout khi thực thi DuckDuckGo query '{query}'")
+			print(f"Timeout khi search '{query}'")
 			continue
 		except Exception as e:
-			print(f"Lỗi khi thực thi DuckDuckGo query '{query}': {e}")
+			print(f"Lỗi search '{query}': {e}")
 			continue
 
-	# Phân loại kết quả vào các Lớp
+	# Phân loại kết quả - SIMPLIFIED
 	layer_2 = []
-	layer_3 = []
 	layer_4 = []
 
-	for item in all_items:
+	for item in all_items[:10]:  # SPEED: Max 10 total
 		link = item.get('link', '')
 		domain = urlparse(link).netloc.replace('www.', '')
 		rank_score = get_rank_from_url(link)
 		date_str = _extract_date(item)
 
-		# Kiểm tra thông tin cũ (hơn 1 năm so với ngày hiện tại)
-		is_old = False
-		if date_str:
-			try:
-				from datetime import datetime, timedelta
-				item_date = datetime.strptime(date_str, '%Y-%m-%d').date()
-				today = datetime.now().date()
-				days_diff = (today - item_date).days
-				# Đánh dấu là thông tin cũ nếu hơn 365 ngày
-				if days_diff > 365:
-					is_old = True
-			except Exception:
-				pass
-
 		evidence_item = {
 			"source": domain,
 			"url": link,
-			"snippet": (item.get('snippet', '') or ''),
+			"snippet": (item.get('snippet', '') or '')[:500],  # SPEED: Limit snippet
 			"rank_score": rank_score,
 			"date": date_str,
-			"is_old": is_old,
 		}
-		if rank_score >= 0.5:  # BINARY: USABLE sources go to layer_2
+		if rank_score >= 0.5:
 			layer_2.append(evidence_item)
-		else:  # BLOCKED sources (social, blog, tabloid) go to layer_4
+		else:
 			layer_4.append(evidence_item)
 
-	# Sort by: date (newest first), rank_score (highest first)
-	def sort_key(item):
-		is_old = item.get('is_old', False)
-		date_str = item.get('date') or '1970-01-01'
-		rank_score = item.get('rank_score', 0.0)
-		try:
-			from datetime import datetime
-			date_obj = datetime.strptime(date_str, '%Y-%m-%d')
-			date_timestamp = date_obj.timestamp()
-		except Exception:
-			date_timestamp = 0
-		return (is_old, -date_timestamp, -rank_score)
-	
-	layer_2.sort(key=sort_key)
-
-	# Re-enabled article scraping for top 5 high-trust sources (accuracy > speed)
-	top_evidence = layer_2[:5]  # Only scrape top 5 layer_2 for speed
-	if top_evidence:
-		urls_to_scrape = [item["url"] for item in top_evidence]
-		try:
-			scraped_articles = await scrape_multiple_articles(urls_to_scrape, max_articles=5)
-			if scraped_articles:
-				print(f"[SCRAPER] Scraped {len(scraped_articles)} articles for enrichment")
-				# Enrich layer_2 snippets with full text
-				for item in layer_2:
-					for article in scraped_articles:
-						if article.get("url") == item.get("url") and article.get("success"):
-							full_text = article.get("text", "")
-							if full_text and len(full_text) > 100:
-								# Append first 800 chars of full text to snippet
-								item["snippet"] = item.get("snippet", "") + "\n\n[FULL_TEXT]: " + full_text[:800]
-							break
-		except Exception as e:
-			print(f"[SCRAPER] Warning (non-fatal): {e}")
+	# SPEED: Skip article scraping entirely
+	print(f"[SEARCH] Fast mode: {len(layer_2)} high-trust, {len(layer_4)} low-trust")
 
 	return {
 		"tool_name": "search", "status": "success",
 		"layer_2_high_trust": layer_2,
-		"layer_3_general": layer_3,
+		"layer_3_general": [],
 		"layer_4_social_low": layer_4
 	}
 
