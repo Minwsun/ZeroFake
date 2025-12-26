@@ -308,14 +308,10 @@ def _is_flash_model(model_name: str | None) -> bool:
 
 @app.post("/check_news", response_model=CheckResponse)
 async def handle_check_news(request: CheckRequest, req: Request, background_tasks: BackgroundTasks):
-    """
-    Main endpoint (Agent Workflow):
-    Input -> Agent 1 (learnlm Planner) creates plan
-    -> Tool Executor (DuckDuckGo search) -> Agent 2 (learnlm Synthesizer) synthesizes.
-    Overall timeout: 100 seconds (unless flash mode is enabled).
-    """
-    agent1_model = request.agent1_model or "models/gemini-2.5-flash"
-    agent2_model = request.agent2_model or "models/gemini-2.5-flash"
+    """SPEED MODE: Planner -> Judge (skip CRITIC). Use Groq for fast inference."""
+    # SPEED MODE: Use Groq models for faster inference
+    agent1_model = request.agent1_model or "groq:llama-3.3-70b-versatile"
+    agent2_model = request.agent2_model or "groq:llama-3.3-70b-versatile"
     
     # Capture client IP for logging
     client_ip = req.client.host if req.client else "unknown"
@@ -427,8 +423,8 @@ async def _handle_check_news_internal(
         enriched_plan = enrich_plan_with_evidence(plan, evidence_bundle)
         
         # Step 4: Agent 2 (Synthesizer) makes judgment
-        # Skip CRITIC if Fact Check already has verdict
-        skip_critic = fact_check_verdict is not None
+        # Skip CRITIC for faster processing - go directly to JUDGE
+        skip_critic = True  # SPEED MODE: Always skip CRITIC
         
         current_date = datetime.datetime.now().strftime('%Y-%m-%d')
         gemini_result = await execute_final_analysis(

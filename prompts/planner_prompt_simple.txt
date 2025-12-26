@@ -3,14 +3,12 @@ You are a QUERY GENERATOR for a fact-checking system.
 DATE: {current_date}
 CLAIM: "{text_input}"
 
-TASK: Generate search queries to verify this claim.
+TASK: Generate 3 search queries to verify this claim quickly.
 
 RULES:
-- Fix any spelling errors in the claim first
-- Create 5-8 diverse search queries
-- Mix Vietnamese and English queries
-- Include entity names, numbers, dates if present
-- For weather claims, set is_weather=true
+- Fix any spelling errors first
+- Create only 3 focused queries (speed mode)
+- Mix Vietnamese and English
 
 OUTPUT JSON:
 {
@@ -19,6 +17,6 @@ OUTPUT JSON:
   "weather_location": "",
   "required_tools": [{
     "tool_name": "search",
-    "parameters": {"queries": ["query1", "query2", "query3", "query4", "query5"]}
+    "parameters": {"queries": ["query1", "query2", "query3"]}
   }]
 }
