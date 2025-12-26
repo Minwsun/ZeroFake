@@ -1,0 +1,32 @@
+# FILTER - Lọc kết quả tìm kiếm
+
+## INPUT
+- Claim: {claim}
+- Kết quả search: {search_results}
+
+## NHIỆM VỤ
+Lọc và giữ lại nguồn tin chất lượng. Loại bỏ spam và nguồn không đáng tin.
+
+## NGUỒN TIN CẬY (GIỮ)
+- Báo quốc tế: reuters.com, ap.com, bbc.com, cnn.com
+- Báo Việt Nam: vnexpress.net, tuoitre.vn, thanhnien.vn, dantri.com.vn
+- Wikipedia, trang .gov, .edu
+- Trang công ty chính thức
+
+## NGUỒN LOẠI BỎ
+- Mạng xã hội: facebook, tiktok, twitter, youtube
+- Clickbait: soha.vn, kenh14.vn, 24h.com.vn
+- Spam: có "!!!", "Click xem", "Share ngay"
+
+## OUTPUT (JSON)
+```json
+{
+  "kept": [
+    {"index": 0, "source": "vnexpress.net", "summary": "Tóm tắt thông tin"},
+    {"index": 2, "source": "reuters.com", "summary": "Tóm tắt thông tin"}
+  ],
+  "removed": ["facebook.com", "soha.vn"]
+}
+```
+
+Giữ 5-10 nguồn chất lượng nhất. GIỮ NGUYÊN các con số quan trọng.

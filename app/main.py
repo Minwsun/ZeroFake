@@ -180,9 +180,10 @@ async def startup_event():
     init_feedback_db()
     
     # --- Load prompts for Agents ---
-    load_planner_prompt("prompts/planner_prompt.txt")
-    load_synthesis_prompt("prompts/synthesis_prompt.txt")
-    load_critic_prompt("prompts/critic_prompt.txt")  # NEW: Load CRITIC prompt
+    # SIMPLIFIED PROMPTS FOR TESTING
+    load_planner_prompt("prompts/planner_prompt_simple.txt")
+    load_synthesis_prompt("prompts/synthesis_prompt_simple.txt")
+    load_critic_prompt("prompts/critic_prompt_simple.txt")
     # ---------------------------------
     
     try:
